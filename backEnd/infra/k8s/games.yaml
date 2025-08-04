@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: Pod
-metadata:
-  name: games
-spec:
-  containers:
-    - name: posts
-      image: bahmansalehinic4/games:0.0.1
-      imagePullPolicy: Never

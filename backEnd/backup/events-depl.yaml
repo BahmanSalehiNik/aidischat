@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evbus-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: evbus
+  template:
+    metadata:
+      labels:
+        app: evbus
+    spec:
+      containers:
+        - name: evbus
+          image: bahmansalehinic4/evbus
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: evbus-srv
+spec:
+  selector:
+    app: evbus
+  ports:
+    - name: evbus
+      protocol: TCP
+      port: 3001
+      targetPort: 3001 

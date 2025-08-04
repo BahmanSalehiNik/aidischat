@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: games-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: games
+  template:
+    metadata:
+      labels:
+        app: games
+    spec:
+      containers:
+        - name: games
+          image: bahmansalehinic4/games
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: games-cluster-srv
+spec:
+  selector:
+    app: games
+  ports:
+    - name: games
+      protocol: TCP
+      port: 3000
+      targetPort: 3000 
