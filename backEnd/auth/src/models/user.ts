@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 import { Password } from "../utils/password";
+import { Types } from "mongoose"
+import { Interface } from "readline";
 
 
 interface UserAttrs {
@@ -18,7 +20,12 @@ interface UserModel extends mongoose.Model<UserDoc> {
 
 
 
-
+interface DummyRet {
+    _id: Types.ObjectId | undefined;
+    id?: Types.ObjectId | undefined;
+    password: string | undefined;
+    __v: number | undefined;
+}
 
 const userSchame = new mongoose.Schema({
     email:{
@@ -28,6 +35,15 @@ const userSchame = new mongoose.Schema({
     password: {
         type: String,
         required: true
+    }
+}, {
+    toJSON:{
+        transform(doc, ret: DummyRet){
+            ret.id = ret._id;
+            delete ret._id;
+            delete ret.password;
+            delete ret.__v;
+        }
     }
 })
 

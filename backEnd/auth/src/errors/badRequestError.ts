@@ -2,7 +2,7 @@ import { CustomError } from "./customError";
 
 class BadRequestError extends CustomError{
     data= "Bad Request!"
-    statusCode= 401
+    statusCode= 400
     constructor(public details:string){
         super(details)
         Object.setPrototypeOf(this, BadRequestError.prototype)

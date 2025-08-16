@@ -13,6 +13,15 @@ build:
         manual:
           - dest: .
             src: 'src/**/*.ts'
+    
+    - image: bahmansalehinic4/frontend
+      context: frontEnd
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
+            src: '**/*.js'
   
 manifests:
   rawYaml: 

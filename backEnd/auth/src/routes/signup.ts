@@ -1,8 +1,11 @@
 import express, { Request, Response } from "express";
 import { body, validationResult } from "express-validator";
+
+import { validateRequest } from "../middlewares/validate-request";
 import { User } from "../models/user";
 import { RequestValidationError } from "../errors/requestValidationError";
 import { BadRequestError } from "../errors/badRequestError"
+import jwt from "jsonwebtoken";
 
 const router = express.Router();
 
@@ -14,13 +17,9 @@ router.post("/api/users/signup", [
     .trim()
     .isLength({min:8, max: 64})
     .withMessage("Password must be between 8 and 64 characters!")
-],
+],validateRequest,
 async (req: Request, res: Response)=>{
-    const errors = validationResult(req);
 
-    if(!errors.isEmpty()){
-        throw new RequestValidationError(errors.array());
-    }
     const { email, password } = req.body;
     const userWithEmail = await User.findOne({email})
     if(userWithEmail){
@@ -29,6 +28,19 @@ async (req: Request, res: Response)=>{
 
     const user =  User.add({email, password});
     await user.save();
+    
+    // creating the jwt 
+    const userJwt = jwt.
+    sign(
+        {id: user.id, email: user.email}, 
+        process.env.JWT_DEV! 
+    );
+    console.log(userJwt)
+
+    req.session = {
+        jwt: userJwt
+    };
+
     res.status(201).send(user);
     
 })
