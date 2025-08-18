@@ -1,5 +1,5 @@
 import express, {Request, Response} from "express";
-import { extractJWTPayload } from "../middlewares/jwt-extractor";
+import { extractJWTPayload } from "@aichatwar/shared";
 
 
 const router = express.Router();

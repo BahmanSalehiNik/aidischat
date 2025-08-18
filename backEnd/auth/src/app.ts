@@ -8,8 +8,7 @@ import { currentUserRouter } from "./routes/currentuser";
 import { signinRouter } from "./routes/signin";
 import { signUpRouter } from "./routes/signup";
 import { signOutRouter } from "./routes/signout";
-import { errorHandler } from "./middlewares/error-handler";
-import { NotFoundError } from "./errors/notfoundError";
+import { errorHandler, NotFoundError } from "@aichatwar/shared";
 import cors from "cors";
 
 const app = express();

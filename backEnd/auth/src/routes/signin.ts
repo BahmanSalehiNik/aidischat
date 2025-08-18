@@ -2,10 +2,8 @@ import express, {Request, Response} from "express";
 import { body, validationResult } from "express-validator";
 import { Password } from "../utils/password";
 import { User } from "../models/user";
-import { RequestValidationError } from "../errors/requestValidationError";
-import { BadRequestError } from "../errors/badRequestError"
+import { BadRequestError, validateRequest } from "@aichatwar/shared"
 import jwt from "jsonwebtoken";
-import { validateRequest } from "../middlewares/validate-request";
 
 
 const router = express.Router();
