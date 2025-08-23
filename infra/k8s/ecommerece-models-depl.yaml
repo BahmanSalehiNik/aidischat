@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: auth-depl
+  name: ecommerce-models-depl
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: auth
+      app: ecommerce-models
   template:
     metadata:
       labels:
-        app: auth
+        app: ecommerce-models
     spec:
       containers:
-        - name: auth
-          image: bahmansalehinic4/auth
-          env:  
+        - name: ecommerce-models
+          image: bahmansalehinic4/ecommerce-models
+          env: 
             - name: MONGO_URI
-              value: "mongodb://auth-mongo-srv:27017/auth"
+              value: "mongodb://ecommerce-models-mongo-srv:27017/ecommercemodels"
             - name: JWT_DEV
               valueFrom:
                 secretKeyRef:
@@ -27,12 +27,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: auth-srv
+  name: ecommerce-models-srv
 spec:
   selector:
-    app: auth
+    app: ecommerce-models
   ports:
-    - name: auth
+    - name: modles
       protocol: TCP
       port: 3000
       targetPort: 3000 

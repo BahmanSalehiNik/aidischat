@@ -1,14 +1,11 @@
 import express, { Request } from "express";
 require("express-async-errors");
 import { json } from "body-parser";
+import { loginRequired } from '@aichatwar/shared'
 
 import cookieSession from "cookie-session";
-
-import { currentUserRouter } from "./routes/currentuser";
-import { signinRouter } from "./routes/signin";
-import { signUpRouter } from "./routes/signup";
-import { signOutRouter } from "./routes/signout";
 import { errorHandler, NotFoundError } from "@aichatwar/shared";
+import { createEcommerceModelRouter } from "./routes/createModel";
 import cors from "cors";
 
 const app = express();
@@ -20,10 +17,9 @@ app.use(cookieSession({
     sameSite: "lax"
 }))
 
-app.use(currentUserRouter);
-app.use(signUpRouter);
-app.use(signinRouter);
-app.use(signOutRouter);
+app.use(createEcommerceModelRouter);
+app.use(loginRequired);
+
 app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));
 
 
@@ -40,6 +36,9 @@ app.use(errorHandler);
 //     console.log(msg);
 //     res.send(msg);
 // })
+
+
+
 
 
 export {app}

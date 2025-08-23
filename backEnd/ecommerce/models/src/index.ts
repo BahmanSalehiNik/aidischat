@@ -1,4 +1,4 @@
-import { app } from "./app";
+
 import express from "express";
 import mongoose from "mongoose";
 
@@ -18,6 +18,8 @@ const startMongoose = async ()=>{
 }
 
 startMongoose()
+
+import { app } from "./app";
 
 app.listen(3000, ()=>{
     console.log("app listening on port 3000!, it is.. or is it soab")
