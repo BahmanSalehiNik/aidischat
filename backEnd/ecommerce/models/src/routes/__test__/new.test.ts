@@ -3,7 +3,6 @@ import {app} from "../../app"
 import { EcommerceModel } from "../../models/ecommerceModel";
 
 
-it('has a rout handler listening to /api/ecommerce/models post', async()=>{})
 it('login required', async()=>{
     const response = await request(app).post('/api/ecommerce/models').send({});
     expect(response.status).not.toEqual(404);

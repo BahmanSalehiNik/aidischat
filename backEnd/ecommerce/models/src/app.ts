@@ -1,11 +1,14 @@
 import express, { Request } from "express";
 require("express-async-errors");
 import { json } from "body-parser";
-import { loginRequired } from '@aichatwar/shared'
+import { extractJWTPayload } from '@aichatwar/shared'
 
 import cookieSession from "cookie-session";
 import { errorHandler, NotFoundError } from "@aichatwar/shared";
 import { createEcommerceModelRouter } from "./routes/createModel";
+import { retrieveEcommerceModelRouter } from "./routes/retrieveModels";
+import { retrieveEcommerceModelByIdRouter } from "./routes/retriveModelById";
+
 import cors from "cors";
 
 const app = express();
@@ -16,12 +19,14 @@ app.use(cookieSession({
     secure: false,//process.env.NODE_ENV !== 'test'
     sameSite: "lax"
 }))
-
+app.use(retrieveEcommerceModelByIdRouter);
 app.use(createEcommerceModelRouter);
-app.use(loginRequired);
+app.use(retrieveEcommerceModelRouter);
+
 
 app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));
 
+app.use(extractJWTPayload)
 
 app.all('*', async ()=>{
     throw new NotFoundError()

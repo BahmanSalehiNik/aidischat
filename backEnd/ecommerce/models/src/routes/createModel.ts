@@ -32,7 +32,7 @@ router.post("/api/ecommerce/models",
         })
     await newEcommerceModel.save();
 
-    res.status(201).send({newEcommerceModel});
+    res.status(201).send({data:newEcommerceModel});
 })
 
 export { router as createEcommerceModelRouter };
