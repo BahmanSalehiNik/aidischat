@@ -6,7 +6,7 @@ import { sign } from 'crypto';
 import jwt from 'jsonwebtoken';
 
 declare global{
-    var signin: () => string[];
+    var signin: (id?:string, email?:string) => string[];
 }
 
 let mongo: any
@@ -34,10 +34,10 @@ afterAll(async()=>{
     mongoose.connection.close();
 })
 
-global.signin = () => {
+global.signin = (id?:string, email?:string) => {
  const payload = {
-    id:'laksjdf234',
-    email: 'fakeuser@somesite.com'
+    id: id || 'laksjdf234',
+    email: email || 'fakeuser@somesite.com'
  }
  const token = jwt.sign(payload, process.env.JWT_DEV!)
  const jsonSession = JSON.stringify({jwt: token});
