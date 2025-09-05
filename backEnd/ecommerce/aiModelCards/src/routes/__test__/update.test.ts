@@ -2,7 +2,7 @@ import request from "supertest";
 import {app} from "../../app"
 import { EcommerceModel } from "../../models/ecommerceModel";
 import { Types } from "mongoose";
-
+import { natsClient } from "../../nats-client";
 
 
 const createEcommerceModle =()=>{
@@ -75,6 +75,7 @@ it('tests returns 403 if logged in but not this users currentmodel', async()=>{
     expect(responseUpdate.status).toEqual(401);
 
 })
+// TODO: implement these
 // it('tests return 400 with invalid price', async()=>{})
 // it('tests return 400 with invalid ecommerceModelId', async()=>{}) 
 it('tests return 200 with valid ecommerceModelId', async()=>{
@@ -98,4 +99,29 @@ it('tests return 200 with valid ecommerceModelId', async()=>{
     const model = await EcommerceModel.findById(createRequest.body.data.id)
     const models = await EcommerceModel.find({})
     expect(model!.price).toEqual(444)
+})
+
+
+it('tests event update publish called when model updated', async()=>{
+    const coockie = global.signin();
+    const createRequest = await request(app).post('/api/ecommerce/models')
+    .set('Cookie', coockie)
+    .send({
+        ecommerceModelId:'fakeModelId', 
+        price:23
+    })
+
+    expect(createRequest.status).toEqual(201)
+    const updateRequest = await request(app).put('/api/ecommerce/models')
+    .set('Cookie', coockie)
+    .send({
+        id:createRequest.body.data.id,
+        ecommerceModelId: 'fakeModelId',
+        price: 444
+    })
+    expect(updateRequest.status).toEqual(200)
+    const model = await EcommerceModel.findById(createRequest.body.data.id)
+    const models = await EcommerceModel.find({})
+    expect(model!.price).toEqual(444)
+    expect(natsClient.client.publish).toHaveBeenCalled();
 })

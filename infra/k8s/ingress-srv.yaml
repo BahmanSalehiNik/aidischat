@@ -17,6 +17,20 @@ spec:
                name: auth-srv
                port: 
                  number: 3000
+         - path: /api/ecommerce/models/?(.*)
+           pathType: ImplementationSpecific
+           backend:
+             service:
+               name: ecommerce-models-srv
+               port: 
+                 number: 3000
+         - path: /api/ecommerce/orders/?(.*)
+           pathType: ImplementationSpecific
+           backend:
+             service:
+               name: ecommerce-orders-srv
+               port: 
+                 number: 3000
          - path: /?(.*)
            pathType: ImplementationSpecific
            backend:

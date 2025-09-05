@@ -1,6 +1,7 @@
 import request from "supertest";
 import {app} from "../../app"
 import { EcommerceModel } from "../../models/ecommerceModel";
+import { natsClient } from "../../nats-client";
 
 
 it('login required', async()=>{
@@ -106,4 +107,24 @@ it('creates ecommerce-model with valid request', async()=>{
     ecommerceModels = await EcommerceModel.find({})
     expect(ecommerceModels.length).toEqual(1);
     expect(ecommerceModels[0].price).toEqual(234.0)
+})
+
+
+it('event get published on model creation', async()=>{
+    let ecommerceModels = await EcommerceModel.find({})
+    expect(ecommerceModels.length).toEqual(0);
+
+    const response = await request(app)
+    .post('/api/ecommerce/models')
+    .set('Cookie', global.signin())
+    .send({
+        ecommerceModelId: 'someId4',
+        price: 234.0
+    })
+    expect(response.status).toEqual(201)
+    ecommerceModels = await EcommerceModel.find({})
+    expect(ecommerceModels.length).toEqual(1);
+    expect(ecommerceModels[0].price).toEqual(234.0)
+    console.log(natsClient, "secret nats")
+    expect(natsClient.client.publish).toHaveBeenCalled();
 })

@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ecommerce-orders-mongodb-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ecommerce-orders-mongodb
+  template:
+    metadata:
+      labels:
+         app:  ecommerce-orders-mongodb
+    spec:
+      containers:
+        - name: ecommerce-orders-mongodb
+          image: mongo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ecommerce-orders-mongo-srv
+spec:
+  selector:
+    app: ecommerce-orders-mongodb
+  ports:
+    - name: ecommerce-orders-mongodb
+      protocol: TCP
+      port: 27017
+      targetPort: 27017 

@@ -3,6 +3,7 @@ import {app} from "../../app"
 import { EcommerceModel } from "../../models/ecommerceModel";
 import mongoose from "mongoose";
 
+
 it('test retrieves all ecommerce models!', async()=>{
     let ecommerceModels;
     const response = await request(app)
@@ -61,13 +62,12 @@ it('test retrieves ecommerce models by id', async()=>{
     const savedModelId = createModelResponse.body.data.id;
 
     ecommerceModel = await EcommerceModel.findById(savedModelId);
-    console.log(ecommerceModel, "secret model")
+
     expect(ecommerceModel).not.toBeNull()
     const responseModel = await request(app)
     .get(`/api/ecommerce/models/${savedModelId}`)
     .send();
-    console.log(responseModel.body)
-    // expect(responseModel.body.length).toEqual(1);
+
     expect(responseModel.body.id).toEqual(savedModelId)
     expect(responseModel.body.modelId).toEqual('modelId333')
 })

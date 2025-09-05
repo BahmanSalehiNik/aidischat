@@ -1,0 +1,22 @@
+{
+  "name": "tempnats",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "publishevent": "ts-node-dev --poll --rs --notify false src/publisher.ts",
+    "listen": "ts-node-dev --poll --rs --notify false src/listener.ts",
+    "classlisten": "ts-node-dev --poll --rs --notify false src/ecommerceListener.ts",
+    "classpublish": "ts-node-dev --poll --rs --notify false src/ecommercePublisher.ts"
+
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@types/node": "^24.3.0",
+    "node-nats-streaming": "^0.3.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.9.2"
+  }
+}

@@ -2,6 +2,9 @@ import express, {Request, Response} from "express";
 import { extractJWTPayload,loginRequired, NotAuthorizedError, NotFoundError, validateRequest } from "@aichatwar/shared";
 import { body } from "express-validator";
 import { EcommerceModel } from "../models/ecommerceModel";
+import { EcommerceUpdatePublisher } from "../events/publishers/ecommercePublishers";
+import { natsClient } from "../nats-client";
+
 
 const router = express.Router();
 
@@ -28,7 +31,6 @@ router.put("/api/ecommerce/models",
     ]
     ,validateRequest, 
     async (req:Request, res:Response)=>{
-        console.log(req.jwtPayload, "secret body")
         
         const newEcommerceModel = await EcommerceModel.findById(req.body.id)
         if(!newEcommerceModel){
@@ -39,8 +41,16 @@ router.put("/api/ecommerce/models",
         }
 
         const updatedModel = await EcommerceModel.findByIdAndUpdate(req.body.id, {$set:{price: req.body.price}}, {new: true})
-        await updatedModel?.save()
-        console.log(updatedModel, "secret update")
+        // await updatedModel?.save()
+        if(updatedModel)
+    new EcommerceUpdatePublisher(natsClient.client).publish({
+        id: updatedModel.id,
+        price: updatedModel.price,
+        modelId: updatedModel.modelId,
+        userId: updatedModel.userId,
+        rank: updatedModel.rank
+    })
+
         return res.status(200).send(updatedModel)
         })
 

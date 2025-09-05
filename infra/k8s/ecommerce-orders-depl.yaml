@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ecommerce-models-depl
+  name: ecommerce-orders-depl
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ecommerce-models
+      app: ecommerce-orders
   template:
     metadata:
       labels:
-        app: ecommerce-models
+        app: ecommerce-orders
     spec:
       containers:
-        - name: ecommerce-models
-          image: bahmansalehinic4/ecommerce-models
+        - name: ecommerce-orders
+          image: bahmansalehinic4/ecommerce-orders
           env: 
             - name: NATS_URL
               value: 'http://nats-srv:4222'
@@ -25,7 +25,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: MONGO_URI
-              value: "mongodb://ecommerce-models-mongo-srv:27017/ecommercemodels"
+              value: "mongodb://ecommerce-orders-mongo-srv:27017/ecommerceorders"
             - name: JWT_DEV
               valueFrom:
                 secretKeyRef:
@@ -35,12 +35,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ecommerce-models-srv
+  name: ecommerce-orders-srv
 spec:
   selector:
-    app: ecommerce-models
+    app: ecommerce-orders
   ports:
-    - name: modles
+    - name: orders
       protocol: TCP
       port: 3000
       targetPort: 3000 
