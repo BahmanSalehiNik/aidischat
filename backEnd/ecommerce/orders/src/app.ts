@@ -8,7 +8,7 @@ import { errorHandler, NotFoundError } from "@aichatwar/shared";
 import { createEcommerceOrderRouter } from "./routes/createOrder";
 import { getEcommerceOrderRouter } from "./routes/retrieveOrders";
 import { getEcommerceOrderByIdRouter } from "./routes/retriveOrderById";
-import { deleteEcommerceOrderRouter } from "./routes/deleteOrder";
+import { cancelEcommerceOrderRouter } from "./routes/cancelOrder";
 import cors from "cors";
 
 const app = express();
@@ -22,7 +22,7 @@ app.use(cookieSession({
 app.use(getEcommerceOrderByIdRouter);
 app.use(createEcommerceOrderRouter);
 app.use(getEcommerceOrderRouter);
-app.use(deleteEcommerceOrderRouter);
+app.use(cancelEcommerceOrderRouter);
 
 app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));
 

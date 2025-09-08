@@ -13,9 +13,9 @@ router.get("/api/ecommerce/orders/:orderId",
     loginRequired,
     validateRequest,
     async(req:Request, res:Response)=>{
-    const userId = req.jwtPayload?.id;
+    const userId = req.jwtPayload!.id;
     const orderId = req.params.orderId;
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(orderId).populate('aiModelCard');
     if(!order){
         throw new NotFoundError();
     }
