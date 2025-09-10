@@ -24,7 +24,7 @@ const startMongoose = async ()=>{
     }
     try{
       // ------------ Nats ------------
-      natsClient.connect(process.env.NATS_CLUSTER_ID,process.env.NATS_CLIENT_ID,process.env.NATS_URL);
+      await natsClient.connect(process.env.NATS_CLUSTER_ID,process.env.NATS_CLIENT_ID,process.env.NATS_URL);
         natsClient.client.on('close',()=>{
         console.log('NATS connection closed!')
         process.exit()

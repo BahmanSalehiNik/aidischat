@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import request from 'supertest';
 import { app } from '../../app';
 import { AiModelCard } from '../../models/aiModelCard';
+import { natsClient } from '../../nats-client';
+
 
 //TODO: add auth related tests
 
@@ -40,7 +42,7 @@ it('throws exception if aimodelcard is resereved', async()=>{
     
 
 
-it('reserve available aimodelcard', async()=>{
+it('successfully reserves available aimodelcard', async()=>{
         const card = new AiModelCard({
             userId:'someuser',
             cardRefId:'fakeCardRed',
@@ -57,6 +59,7 @@ it('reserve available aimodelcard', async()=>{
 
     const queryCard = await AiModelCard.findById(card.id);
     expect(await queryCard?.isAvailable()).toEqual(false);
+    expect(natsClient.client.publish).toHaveBeenCalled();
 })
 
 it.todo('publishes an order created event!')

@@ -1,7 +1,8 @@
 import request from "supertest";
 import { app } from "../../app";
-import { Order, OrderStatus } from "../../models/order";
+import { OrderStatus } from "../../models/order";
 import { AiModelCard } from "../../models/aiModelCard";
+import { natsClient } from "../../nats-client";
 
 
 it('test succeeds canceling an order', async()=>{
@@ -25,7 +26,7 @@ it('test succeeds canceling an order', async()=>{
     
     // Canceling the order
     const updatedOrderReq = await request(app)
-    .put('/api/ecommerce/orders')
+    .patch('/api/ecommerce/orders')
     .set('Cookie', user1)
     .send({
         orderId: orderReq.body.id,
@@ -35,6 +36,7 @@ it('test succeeds canceling an order', async()=>{
     expect(updatedOrderReq.status).toEqual(200);
     expect(updatedOrderReq.body.order.status).toEqual(OrderStatus.Cancelled);
     expect(await card.isAvailable()).toEqual(true);
+    expect(natsClient.client.publish).toHaveBeenCalled();
 
 
 })
@@ -51,7 +53,7 @@ it('tests cancelling another users order fails', async()=>{
         userId: 'id1'
     });
 
-    card.save()
+    await card.save()
 
     const orderReq = await request(app)
     .post('/api/ecommerce/orders')
@@ -63,7 +65,7 @@ it('tests cancelling another users order fails', async()=>{
     
     // user2 tries canceling the order created by 
     const updatedOrderReq = await request(app)
-    .put('/api/ecommerce/orders')
+    .patch('/api/ecommerce/orders')
     .set('Cookie', user2)
     .send({
         orderId: orderReq.body.id,
@@ -78,3 +80,5 @@ it('tests cancelling another users order fails', async()=>{
     expect(await card.isAvailable()).toEqual(false);
 
 })
+
+it.todo('tests event published for cancelling and event')

@@ -4,11 +4,11 @@ import { body } from "express-validator";
 import { natsClient } from "../nats-client";
 import { Types } from "mongoose";
 import { Order } from "../models/order";
-
+import { EcommerceOrderCancelledPublisher } from "../events/publishers/ordersPublishers";
 
 const router = express.Router();
 
-router.put("/api/ecommerce/orders",
+router.patch("/api/ecommerce/orders",
     extractJWTPayload,
     loginRequired,
     [
@@ -42,14 +42,23 @@ router.put("/api/ecommerce/orders",
             throw new NotAuthorizedError(['not authorized.']);
         }
  
-        const updatedOrder = await Order.findByIdAndUpdate(order.id, {$set:{status: OrderStatus.Cancelled}}, {new:true});
 
+        // TODO: check removing save(); result: Do not remove the save u will loose versioning
 
-        // TODO: check removing save();
-        updatedOrder!.save(); 
+        const orderToUpdate = await Order.findById(order.id);
+        orderToUpdate!.set("status", OrderStatus.Cancelled)
+        await orderToUpdate!.save(); 
 
+        new EcommerceOrderCancelledPublisher(natsClient.client).publish({
+            id: order.id,
+            userId: order.userId,
+            version: order.version,
+            aiModelCard:{
+                id:order.aiModelCard.id,
+            }
+        })
 
-        res.status(200).send({order:updatedOrder});
+        res.status(200).send({order:orderToUpdate});
 
 
 })

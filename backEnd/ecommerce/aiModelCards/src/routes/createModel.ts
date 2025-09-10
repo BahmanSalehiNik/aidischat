@@ -40,7 +40,8 @@ router.post("/api/ecommerce/models",
         price: newEcommerceModel.price,
         modelId: newEcommerceModel.modelId,
         userId: newEcommerceModel.userId,
-        rank: newEcommerceModel.rank
+        rank: newEcommerceModel.rank,
+        version: newEcommerceModel.version
     })
 
     res.status(201).send({data:newEcommerceModel});

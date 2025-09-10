@@ -22,8 +22,8 @@ class NatsClient {
         });
         this.client.on('error', (error)=>{
             reject(error)
-        })
-    })
+        });
+    });
     }
 }
 

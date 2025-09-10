@@ -10,6 +10,7 @@ class NatsClient {
         return this._client;
     }
     connect(clusterId: string, clientId: string, url: string): Promise<void>{
+        console.log(clientId, clientId, url, "secret client")
         this._client = nats.connect(clusterId, clientId, {url});
         
 

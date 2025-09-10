@@ -5,6 +5,8 @@ import { natsClient } from "../nats-client";
 import { AiModelCard } from "../models/aiModelCard";
 import { Order } from "../models/order";
 import { Types } from "mongoose";
+import { EcommerceModelCreatedEvent } from "@aichatwar/shared";
+import { EcommerceOrderCreatedPublisher } from "../events/publishers/ordersPublishers";
 
 const router = express.Router();
 
@@ -23,8 +25,9 @@ router.post("/api/ecommerce/orders",
     validateRequest,
     async(req:Request, res:Response)=>{
         // Find the ai model card in db
-        const {aiModelCardId} = req.body;
-        const aiModelCard = await AiModelCard.findById(aiModelCardId);
+        const {cardRefId} = req.body;
+        console.log(cardRefId);
+        const aiModelCard = await AiModelCard.findOne({cardRefIdRefId:cardRefId});
         if(!aiModelCard){
             throw new NotFoundError();
         }
@@ -32,7 +35,7 @@ router.post("/api/ecommerce/orders",
    
         const isAvailable = await aiModelCard.isAvailable();
         if(!isAvailable){
-            throw new BadRequestError('ai model not available');
+            throw new BadRequestError('ai model card not available');
         }
 
         const expiration = new Date();
@@ -47,8 +50,23 @@ router.post("/api/ecommerce/orders",
         
         await order.save();
 
-    console.log("order created", order);
-    res.status(201).send(order)
+        new EcommerceOrderCreatedPublisher(natsClient.client).publish({
+            id: order.id,
+            status: order.status,
+            expirationDate: order.expirationDate.toISOString(),
+            userId: order.userId,
+            version: order.version,
+            aiModelCard:{
+                id: aiModelCard.id,
+                price: aiModelCard.price,
+                cardRefId: aiModelCard.cardRefId,
+                modelRefId: aiModelCard.cardRefId,
+                userId: aiModelCard.userId,
+            }
+        })
+    
+        console.log("order created", order);
+        res.status(201).send(order)
 
 })
 

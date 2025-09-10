@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { Types} from "mongoose";
 import { OrderStatus } from "@aichatwar/shared";
 import { AiModelCardDocument } from "./aiModelCard";
+import { updateIfCurrentPlugin } from "mongoose-update-if-current";
 
 
 interface OrderAttrs{
@@ -16,6 +17,7 @@ interface OrderDocument extends mongoose.Document{
     status: OrderStatus;
     expirationDate: Date;
     aiModelCard: AiModelCardDocument;
+    version: number;
 }
 
 interface OrderModel extends mongoose.Model<OrderDocument> {
@@ -58,6 +60,9 @@ const orderSchema = new mongoose.Schema({
         }
   }
 })
+
+orderSchema.set('versionKey', 'version');
+orderSchema.plugin(updateIfCurrentPlugin);
 
 orderSchema.statics.add = (attr: OrderAttrs)=>{
     return new Order(attr);

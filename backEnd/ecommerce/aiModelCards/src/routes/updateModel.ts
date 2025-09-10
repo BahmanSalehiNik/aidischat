@@ -40,18 +40,20 @@ router.put("/api/ecommerce/models",
             throw new NotAuthorizedError(['not authorized!'])
         }
 
-        const updatedModel = await EcommerceModel.findByIdAndUpdate(req.body.id, {$set:{price: req.body.price}}, {new: true})
-        // await updatedModel?.save()
-        if(updatedModel)
+        const model = await EcommerceModel.findById(req.body.id)//, {$set:{price: req.body.price}}, {new: true})
+        model!.set("price", req.body.price);
+        await model!.save()
+        if(model){
     new EcommerceUpdatePublisher(natsClient.client).publish({
-        id: updatedModel.id,
-        price: updatedModel.price,
-        modelId: updatedModel.modelId,
-        userId: updatedModel.userId,
-        rank: updatedModel.rank
+        id: model.id,
+        price: model.price,
+        modelId: model.modelId,
+        userId: model.userId,
+        rank: model.rank,
+        version: model.version
     })
-
-        return res.status(200).send(updatedModel)
+        }
+        return res.status(200).send(model)
         })
 
 export { router as updateEcommerceModelRouter };

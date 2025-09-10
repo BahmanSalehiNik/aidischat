@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { Types} from "mongoose";
 import { Order, OrderStatus } from "./order";
-
+import { updateIfCurrentPlugin } from "mongoose-update-if-current";
 
 interface AiModelCardAttr {
     modelRefId: string;
@@ -15,6 +15,7 @@ interface AiModelCardDocument extends mongoose.Document {
     price: number;
     cardRefId: string;
     userId: string;
+    version: number;
     isAvailable(): Promise<boolean>;
 }
 
@@ -60,6 +61,9 @@ const aiModelCardSchema = new mongoose.Schema({
         }
     }
 })
+
+aiModelCardSchema.set('versionKey', 'version');
+aiModelCardSchema.plugin(updateIfCurrentPlugin);
 
 aiModelCardSchema.statics.add = (attr: AiModelCardAttr)=>{
     return new AiModelCard(attr);

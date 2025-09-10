@@ -18,22 +18,22 @@ abstract class BaseListener<T extends BaseEvent>{
     
     constructor(client: Stan){
         console.clear();
-
         this.client = client //nats.connect(subject, randomBytes(4).toString('hex'), {url:this.url})
 
-        
     }
 
     subscriptionOptions(){
             return this.client
             .subscriptionOptions()
+            .setDeliverAllAvailable()
             .setManualAckMode(true)
             .setAckWait(this.ackDeadline)
-            .setDeliverAllAvailable()
             .setDurableName(this.queueGroupName)
     }
 
     listen() {
+
+        console.log(this.subscriptionOptions())
         console.log(this.subject, this.queueGroupName,'subject')
         const subscription = this.client.subscribe(
             this.subject,

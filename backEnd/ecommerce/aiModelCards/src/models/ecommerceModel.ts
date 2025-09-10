@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { Types } from "mongoose"
+import { updateIfCurrentPlugin } from "mongoose-update-if-current";
 
 
 interface EcommerceModelAttrs{
@@ -10,10 +11,11 @@ interface EcommerceModelAttrs{
 }
 
 interface EcommerceModleDoc extends mongoose.Document{
-    rank: number
-    userId: string
-    modelId: string
-    price: number
+    rank: number;
+    userId: string;
+    modelId: string;
+    price: number;
+    version: number;
 }
 
 interface EcommerceModel extends mongoose.Model<EcommerceModleDoc>{
@@ -60,6 +62,8 @@ const ecommerceModelSchema = new mongoose.Schema({
 
 
 
+ecommerceModelSchema.set('versionKey', 'version');
+ecommerceModelSchema.plugin(updateIfCurrentPlugin);
 
 
 ecommerceModelSchema.statics.add = (attrs: EcommerceModelAttrs)=>{
