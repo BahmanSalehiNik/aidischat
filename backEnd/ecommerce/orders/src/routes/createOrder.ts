@@ -25,9 +25,9 @@ router.post("/api/ecommerce/orders",
     validateRequest,
     async(req:Request, res:Response)=>{
         // Find the ai model card in db
-        const {cardRefId} = req.body;
+        const cardRefId = req.body.aiModelCardId;
         console.log(cardRefId);
-        const aiModelCard = await AiModelCard.findOne({cardRefIdRefId:cardRefId});
+        const aiModelCard = await AiModelCard.findOne({cardRefId:cardRefId});
         if(!aiModelCard){
             throw new NotFoundError();
         }

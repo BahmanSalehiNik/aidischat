@@ -3,12 +3,12 @@ import { app } from "../../app";
 import { OrderStatus } from "../../models/order";
 import { AiModelCard } from "../../models/aiModelCard";
 import { natsClient } from "../../nats-client";
-
+import { Types } from "mongoose";
 
 it('test succeeds canceling an order', async()=>{
     const user1 = global.signin('id1', 'user1@test.com');
     const card = AiModelCard.add({
-        cardRefId: 'card1',
+        cardRefId: new Types.ObjectId().toHexString(),
         modelRefId: 'model1',
         price: 111,
         userId: 'id1'
@@ -19,7 +19,7 @@ it('test succeeds canceling an order', async()=>{
     const orderReq = await request(app)
     .post('/api/ecommerce/orders')
     .set('Cookie',user1)
-    .send({aiModelCardId:card.id})
+    .send({aiModelCardId:card.cardRefId})
 
     expect(orderReq.status).toEqual(201);
     expect(await card.isAvailable()).toEqual(false);
@@ -47,7 +47,7 @@ it('tests cancelling another users order fails', async()=>{
     const user2 = global.signin('id2', 'user2@test.com');
 
     const card = AiModelCard.add({
-        cardRefId: 'card1',
+        cardRefId: new Types.ObjectId().toHexString(),
         modelRefId: 'model1',
         price: 111,
         userId: 'id1'
@@ -58,7 +58,7 @@ it('tests cancelling another users order fails', async()=>{
     const orderReq = await request(app)
     .post('/api/ecommerce/orders')
     .set('Cookie',user1)
-    .send({aiModelCardId:card.id})
+    .send({aiModelCardId:card.cardRefId})
 
     expect(orderReq.status).toEqual(201);
     expect(await card.isAvailable()).toEqual(false);

@@ -2,6 +2,7 @@ import request from 'supertest';
 import { app } from '../../app';
 import { Order } from '../../models/order';
 import { AiModelCard } from '../../models/aiModelCard';
+import { Types } from 'mongoose';
 
 
 it('tests retrieves all orders of a user', async()=>{
@@ -16,7 +17,7 @@ it('tests retrieves all orders of a user', async()=>{
     // card added for another user!
     const card = AiModelCard.add({
             userId:'someuser',
-            cardRefId:'fakeCardRed',
+            cardRefId:new Types.ObjectId().toHexString(),
             price:234,
             modelRefId: 'someFakemodelId'
         })
@@ -26,7 +27,7 @@ it('tests retrieves all orders of a user', async()=>{
     await request(app)
     .post('/api/ecommerce/orders')
     .set('Cookie', global.signin())
-    .send({aiModelCardId:card.id})
+    .send({aiModelCardId:card.cardRefId})
     .expect(201);
     
         const getOredersReq2 = await request(app)
@@ -43,7 +44,7 @@ it('test user cannat see another users orders!', async()=>{
 
         const card = AiModelCard.add({
             userId:'someuser',
-            cardRefId:'fakeCardRed',
+            cardRefId: new Types.ObjectId().toHexString(),
             price:111,
             modelRefId: 'someFakemodelId'
         })
@@ -52,7 +53,7 @@ it('test user cannat see another users orders!', async()=>{
        await request(app)
     .post('/api/ecommerce/orders')
     .set('Cookie', global.signin())
-    .send({aiModelCardId:card.id})
+    .send({aiModelCardId:card.cardRefId})
     .expect(201);
     
         const getOredersReq2 = await request(app)
@@ -66,7 +67,7 @@ it('test user cannat see another users orders!', async()=>{
         // creating another card and assigning it to another user
             const anotherCard = AiModelCard.add({
             userId:'someuser2',
-            cardRefId:'fakeCardRed2',
+            cardRefId: new Types.ObjectId().toHexString(),
             price:222,
             modelRefId: 'someFakemodelId'
         })
@@ -76,7 +77,7 @@ it('test user cannat see another users orders!', async()=>{
        await request(app)
     .post('/api/ecommerce/orders')
     .set('Cookie', global.signin('anotherUser','anotherUser@ai.com'))
-    .send({aiModelCardId:anotherCard.id})
+    .send({aiModelCardId:anotherCard.cardRefId})
     .expect(201);
     
     // The first user stll only sees his own cards

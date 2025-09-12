@@ -24,19 +24,20 @@ class AiModelCardUpdatedListener extends BaseListener<EcommerceModelUpdatedEvent
     queueGroupName: string = orderAiModelCardQueueGroupeName;
     async onMessage(processedMessage: EcommerceModelUpdatedEvent['data'] , msg: Message){
         const {id, rank, modelId, price, userId, version} = processedMessage;
-
-        const updatedCard  = await AiModelCard.find({cardRefId:id, version: version - 1});
+        //const updatedCard  = await AiModelCard.find({cardRefId:id, version: version - 1})[0];
+        const tempEvent = {id, version}
+        const updatedCard  = await AiModelCard.findByEvent(tempEvent);
         if (!updatedCard){
             throw new Error('ai model card nopt found!')
         }
-        updatedCard[0].set( 
+        updatedCard.set( 
         { 
             modelRefId:modelId, 
             userId:JSON.parse(userId).id, 
             price:price,
         }
     )
-        await updatedCard[0].save()
+        await updatedCard.save()
 
         msg.ack();
     }

@@ -21,6 +21,7 @@ interface AiModelCardDocument extends mongoose.Document {
 
 interface AiModelCardModel extends mongoose.Model<AiModelCardDocument>{
     add(attrs: AiModelCardAttr): AiModelCardDocument;
+    findByEvent(event: {id: string, version: number}): Promise<AiModelCardDocument | null>
 }
 
 interface DummyRet {
@@ -68,6 +69,15 @@ aiModelCardSchema.plugin(updateIfCurrentPlugin);
 aiModelCardSchema.statics.add = (attr: AiModelCardAttr)=>{
     return new AiModelCard(attr);
 }
+
+
+aiModelCardSchema.statics.findByEvent = (event: {id: string, version: number})=>{
+    return AiModelCard.findOne({
+        cardRefId: event.id,
+        version: event.version -1,
+    });
+}
+
 
 aiModelCardSchema.methods.isAvailable = async function(){
          const orderPlaced = await Order.findOne({
