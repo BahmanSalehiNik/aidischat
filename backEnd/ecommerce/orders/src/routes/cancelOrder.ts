@@ -54,7 +54,7 @@ router.patch("/api/ecommerce/orders",
             userId: order.userId,
             version: order.version,
             aiModelCard:{
-                id:order.aiModelCard.id,
+                cardRefId:order.aiModelCard.id,
             }
         })
 

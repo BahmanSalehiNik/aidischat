@@ -62,6 +62,7 @@ router.post("/api/ecommerce/orders",
                 cardRefId: aiModelCard.cardRefId,
                 modelRefId: aiModelCard.cardRefId,
                 userId: aiModelCard.userId,
+                version: aiModelCard.version
             }
         })
     

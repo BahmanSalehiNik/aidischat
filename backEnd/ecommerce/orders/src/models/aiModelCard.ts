@@ -3,6 +3,8 @@ import { Types} from "mongoose";
 import { Order, OrderStatus } from "./order";
 import { updateIfCurrentPlugin } from "mongoose-update-if-current";
 
+//TODO: make cardRefId unique
+
 interface AiModelCardAttr {
     modelRefId: string;
     price: number;

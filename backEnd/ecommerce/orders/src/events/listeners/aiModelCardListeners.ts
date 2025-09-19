@@ -28,13 +28,14 @@ class AiModelCardUpdatedListener extends BaseListener<EcommerceModelUpdatedEvent
         const tempEvent = {id, version}
         const updatedCard  = await AiModelCard.findByEvent(tempEvent);
         if (!updatedCard){
-            throw new Error('ai model card nopt found!')
+            throw new Error('ai model card not found!')
         }
         updatedCard.set( 
         { 
-            modelRefId:modelId, 
-            userId:JSON.parse(userId).id, 
+            // modelRefId:modelId, 
+            // userId:JSON.parse(userId).id, 
             price:price,
+            rank: rank
         }
     )
         await updatedCard.save()

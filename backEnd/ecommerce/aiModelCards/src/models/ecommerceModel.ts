@@ -16,10 +16,17 @@ interface EcommerceModleDoc extends mongoose.Document{
     modelId: string;
     price: number;
     version: number;
+    orderId?: string;
+}
+
+interface Event{
+    id: string,
+    version: number
 }
 
 interface EcommerceModel extends mongoose.Model<EcommerceModleDoc>{
     add(attrs: EcommerceModelAttrs): EcommerceModleDoc
+    findByEvent(event: Event): Promise<EcommerceModleDoc | null>
 }
 
 
@@ -42,6 +49,10 @@ const ecommerceModelSchema = new mongoose.Schema({
     modelId: {
         type: String,
         required: true
+    },
+    orderId:{
+        type: String,
+        required: false
     },
     price:{
         // TODO: price can be best bid or free as well
@@ -70,6 +81,9 @@ ecommerceModelSchema.statics.add = (attrs: EcommerceModelAttrs)=>{
     return new EcommerceModel(attrs)
 }
 
+ecommerceModelSchema.statics.findByEvent = async (event:Event)=>{
+    return EcommerceModel.findOne({_id:event.id, version:event.version -1});
+}
 
 const EcommerceModel = mongoose.model<EcommerceModleDoc, EcommerceModel>('EcommerceModel', ecommerceModelSchema)
 
