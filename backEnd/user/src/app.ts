@@ -4,10 +4,10 @@ import { json } from "body-parser";
 
 import cookieSession from "cookie-session";
 
-import { currentUserRouter } from "./routes/currentuser";
-import { signinRouter } from "./routes/signin";
-import { signUpRouter } from "./routes/signup";
-import { signOutRouter } from "./routes/signout";
+import { currentUserRouter } from "./routes/authRouts/currentuser";
+import { signinRouter } from "./routes/authRouts/signin";
+import { signUpRouter } from "./routes/authRouts/signup";
+import { signOutRouter } from "./routes/authRouts/signout";
 import { errorHandler, NotFoundError } from "@aichatwar/shared";
 import cors from "cors";
 

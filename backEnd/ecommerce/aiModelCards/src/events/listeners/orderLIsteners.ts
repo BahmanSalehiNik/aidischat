@@ -2,7 +2,8 @@
 // if the order is canceled the card must become available again
 // if the order is completed the card status must become unavailabel (todo:Sold)
 
-import { BadRequestError, BaseListener, EcommerceOrderCancelledEvent, EcommerceOrderCreatedEvent, NotFoundError, Subjects } from "@aichatwar/shared";
+import { BadRequestError, BaseListener, EcommerceOrderCancelledEvent,
+     EcommerceOrderCreatedEvent, NotFoundError, Subjects, EcommerceOrderExpiredEvent } from "@aichatwar/shared";
 import { AiModelCardQueueGroupeName } from "./queGroupNames";
 import { Message } from "node-nats-streaming";
 import { EcommerceModel } from "../../models/ecommerceModel";
@@ -13,10 +14,9 @@ class OrderCreatedListener extends BaseListener<EcommerceOrderCreatedEvent>{
     queueGroupName: string = AiModelCardQueueGroupeName;
     async onMessage(processedMessage: EcommerceOrderCreatedEvent['data'] , msg: Message){
 
-        const card = await EcommerceModel.findByEvent({
-            id: processedMessage.aiModelCard.cardRefId,
-            version: processedMessage.aiModelCard.version});
+        const card = await EcommerceModel.findById(processedMessage.aiModelCard.cardRefId);
         if(!card){
+            console.log(processedMessage.aiModelCard)
             throw new NotFoundError();
         }
         card.set({orderId:processedMessage.id});
@@ -41,10 +41,9 @@ class OrderCancelledListener extends BaseListener<EcommerceOrderCancelledEvent>{
         readonly subject: Subjects.EcommerceOrderCancelled=  Subjects.EcommerceOrderCancelled;
     queueGroupName: string = AiModelCardQueueGroupeName;
     async onMessage(processedMessage: EcommerceOrderCancelledEvent['data'] , msg: Message){
-                const card = await EcommerceModel.findByEvent({
-            id: processedMessage.aiModelCard.cardRefId,
-            version: processedMessage.aiModelCard.version});
+        const card = await EcommerceModel.findById(processedMessage.aiModelCard.cardRefId);
         if(!card){
+            console.log('card not found!!!')
             throw new NotFoundError();
         }
 
@@ -70,4 +69,38 @@ class OrderCancelledListener extends BaseListener<EcommerceOrderCancelledEvent>{
 }
 }
 
-export {OrderCancelledListener, OrderCreatedListener}
+class EcommerceOrderExpiredListener extends BaseListener<EcommerceOrderExpiredEvent>{
+    readonly subject: Subjects.EcommerceOrderExpired = Subjects.EcommerceOrderExpired;
+    queueGroupName: string = AiModelCardQueueGroupeName;
+    async onMessage(processedMessage: { id: string; }, msg: Message) {
+        // change the card orderId to undefiended
+        const card = await EcommerceModel.find({orderId: processedMessage.id});
+        if(!card || card.length!==1){
+            console.log('card not found!!!')
+            throw new NotFoundError();
+        }
+        const targetCard = card[0]
+        if(!targetCard.orderId || targetCard.orderId !== processedMessage.id){
+            console.log(targetCard.orderId, processedMessage.id)
+            throw new BadRequestError('invalid order cancel!')
+        }
+
+        targetCard.set({orderId:undefined});
+        await targetCard.save()
+        await new EcommerceUpdatePublisher(this.client).publish({
+            id: targetCard.id,
+            rank: targetCard.rank,
+            modelId: targetCard.modelId,
+            price: targetCard.price,
+            userId: targetCard.userId,
+            orderId: undefined,
+            version: targetCard.version
+        })
+
+
+        msg.ack()
+
+    }
+}
+
+export {OrderCancelledListener, OrderCreatedListener, EcommerceOrderExpiredListener}

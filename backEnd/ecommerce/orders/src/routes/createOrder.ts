@@ -10,7 +10,7 @@ import { EcommerceOrderCreatedPublisher } from "../events/publishers/ordersPubli
 
 const router = express.Router();
 
-const EXPIRATION_SECONDS = 15 * 60; 
+const EXPIRATION_SECONDS = 10 * 60; 
 
 router.post("/api/ecommerce/orders",    
     extractJWTPayload,
@@ -49,6 +49,8 @@ router.post("/api/ecommerce/orders",
         })
         
         await order.save();
+
+
 
         new EcommerceOrderCreatedPublisher(natsClient.client).publish({
             id: order.id,

@@ -1,7 +1,5 @@
 import request from 'supertest';
-import { app } from '../../app';
-import { Password } from '../../utils/password';
-
+import { app } from '../../../app';
 
 
 it('signup returns 201 on success', async()=>{

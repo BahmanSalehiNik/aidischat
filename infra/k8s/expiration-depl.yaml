@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-expiration-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-expiration
+  template:
+    metadata:
+      labels:
+        app: order-expiration
+    spec:
+      containers:
+        - name: order-expiration
+          image: bahmansalehinic4/order-expiration
+          env: 
+            - name: NATS_URL
+              value: 'http://nats-srv:4222'
+            - name: NATS_CLUSTER_ID
+              value: "aichatwar"
+            - name: NATS_CLIENT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: REDIS_HOST
+              value: expiration-redis-srv

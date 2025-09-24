@@ -1,10 +1,12 @@
 import request from 'supertest';
+import { app } from '../../../app';
 import { Message } from 'node-nats-streaming'
 import { EcommerceModel } from '../../../models/ecommerceModel';
 import { Types} from 'mongoose';
 import { natsClient } from '../../../nats-client';
 import { OrderCreatedListener, OrderCancelledListener } from '../orderLIsteners';
-import { EcommerceOrderCreatedEvent, OrderStatus, EcommerceOrderCancelledEvent } from '@aichatwar/shared';
+import { EcommerceOrderCreatedEvent, OrderStatus, EcommerceOrderCancelledEvent, 
+    EcommerceModelUpdatedEvent } from '@aichatwar/shared';
 
 
 
@@ -16,7 +18,7 @@ const start = async()=>{
         modelId: modelId,
         price: 111,
         rank:11,
-        userId: 'user1'//global.signin().toString() 
+        userId: JSON.stringify({id:'user1Id', email:'user1@test.com'})//global.signin().toString() 
     })
     await card.save();
     // create a listener instance
@@ -29,6 +31,8 @@ const start = async()=>{
     const EXPIRATION_SECONDS= 15 * 1000
     const expiration = new Date();
     expiration.setSeconds(expiration.getSeconds()+ EXPIRATION_SECONDS)
+
+
     
     const orderCreatedEventData: EcommerceOrderCreatedEvent['data'] = {
         id: orderId,
@@ -49,7 +53,7 @@ const start = async()=>{
     // create fake cancel event data
     const orderCancelledEventData: EcommerceOrderCancelledEvent['data'] = {
         id:  orderId,
-        userId: 'user1',
+        userId: 'user1Id',
         version: 0,
         aiModelCard: {
             cardRefId: card.id,
@@ -66,7 +70,8 @@ const start = async()=>{
     const message: Message = {
         ack: jest.fn()
     } 
-    return {card,orderCancelledEventData, orderCreatedEventData, listener, message, orderCancelledListener};
+    return {card,orderCancelledEventData, orderCreatedEventData, 
+        listener, message, orderCancelledListener};
 }
 
 it('orderId is filled on order created event', async ()=>{
@@ -150,5 +155,57 @@ it('orderId is set to undefined after cancelling the order ', async()=>{
     expect(cardAfterCancelling).toBeDefined();
     expect(cardAfterCancelling!.orderId).toBeUndefined();
 
+
+})
+
+it('update gets rejected on a reserved card', async()=>{
+        const { card, orderCreatedEventData, listener, message, orderCancelledListener} = await start();
+
+    // the orderid on the card is not defined
+    const cardBeforeOrderEvent = await EcommerceModel.findById(orderCreatedEventData.aiModelCard.cardRefId)
+
+    expect(cardBeforeOrderEvent).toBeDefined();
+    expect(cardBeforeOrderEvent!.orderId).toBeUndefined();
+
+    // testing update will work before
+    const updateRequestBeforeOrder = await request(app).put('/api/ecommerce/models')
+    .set('Cookie', global.signin('user1Id', 'user1@test.com'))
+    .send({
+        id:card.id,
+        ecommerceModelId: 'fakeModelId',
+        price: 444
+    })
+    expect(updateRequestBeforeOrder.status).toEqual(200)
+    const model = await EcommerceModel.findById(card.id)
+    const models = await EcommerceModel.find({})
+    expect(model!.price).toEqual(444)
+
+
+    //reciveing the event
+    //incrementing the version as the card is updated once
+    orderCreatedEventData.aiModelCard.version = 2;
+    await listener.onMessage(orderCreatedEventData, message);
+
+    // now the order id must be equal to the fake data id 
+    
+    const cardAfterOrder = await EcommerceModel.findById(orderCreatedEventData.aiModelCard.cardRefId)
+
+    expect(cardAfterOrder).toBeDefined();
+    expect(cardAfterOrder!.orderId).toEqual(orderCreatedEventData.id);
+
+    expect(message.ack).toHaveBeenCalled();
+
+    //testing update will fail as the card is now reserved
+        const updateRequest = await request(app).put('/api/ecommerce/models')
+        .set('Cookie', global.signin('user1Id', 'user1@test.com'))
+        .send({
+            id:card.id,
+            ecommerceModelId: 'fakeModelId',
+            price: 445
+        })
+        expect(updateRequest.status).toEqual(400)
+        const modelAfter = await EcommerceModel.findById(card.id)
+        const modelsAfter = await EcommerceModel.find({})
+        expect(model!.price).toEqual(444)
 
 })

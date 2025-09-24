@@ -17,7 +17,7 @@ interface AiModelCardDocument extends mongoose.Document {
     price: number;
     cardRefId: string;
     userId: string;
-    version: number;
+    version?: number;
     isAvailable(): Promise<boolean>;
 }
 

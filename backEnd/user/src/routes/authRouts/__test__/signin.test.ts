@@ -1,6 +1,6 @@
 import request from 'supertest';
-import { app } from '../../app';
-import { Password } from '../../utils/password';
+import { app } from '../../../app';
+
 
 it('test signin success returns 200', async()=>{
     await request(app)
@@ -54,6 +54,6 @@ it('test signin fails returns 400 ', async()=>{
         email:"test@test.com",
         password: "abc1234567"
     })
-    .expect(200);
+    .expect(200);                                                                                                                                                                                                                                            
     expect(response.get("Set-Cookie")).toBeDefined();
 })

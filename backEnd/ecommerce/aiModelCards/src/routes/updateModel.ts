@@ -1,5 +1,5 @@
 import express, {Request, Response} from "express";
-import { extractJWTPayload,loginRequired, NotAuthorizedError, NotFoundError, validateRequest } from "@aichatwar/shared";
+import { BadRequestError, extractJWTPayload,loginRequired, NotAuthorizedError, NotFoundError, validateRequest } from "@aichatwar/shared";
 import { body } from "express-validator";
 import { EcommerceModel } from "../models/ecommerceModel";
 import { EcommerceUpdatePublisher } from "../events/publishers/ecommercePublishers";
@@ -40,9 +40,15 @@ router.put("/api/ecommerce/models",
             throw new NotAuthorizedError(['not authorized!'])
         }
 
+        if(newEcommerceModel.orderId){
+            throw new BadRequestError('ai model is not available!')
+        }
+
         const model = await EcommerceModel.findById(req.body.id)//, {$set:{price: req.body.price}}, {new: true})
+        
+        
         model!.set("price", req.body.price);
-        await model!.save()
+        await model!.save();
         if(model){
     new EcommerceUpdatePublisher(natsClient.client).publish({
         id: model.id,
@@ -50,7 +56,8 @@ router.put("/api/ecommerce/models",
         modelId: model.modelId,
         userId: model.userId,
         rank: model.rank,
-        version: model.version
+        version: model.version,
+        orderId: model.orderId
     })
         }
         return res.status(200).send(model)

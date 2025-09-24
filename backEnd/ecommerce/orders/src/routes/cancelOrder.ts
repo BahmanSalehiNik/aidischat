@@ -5,6 +5,7 @@ import { natsClient } from "../nats-client";
 import { Types } from "mongoose";
 import { Order } from "../models/order";
 import { EcommerceOrderCancelledPublisher } from "../events/publishers/ordersPublishers";
+import { AiModelCard } from "../models/aiModelCard";
 
 const router = express.Router();
 
@@ -54,7 +55,8 @@ router.patch("/api/ecommerce/orders",
             userId: order.userId,
             version: order.version,
             aiModelCard:{
-                cardRefId:order.aiModelCard.id,
+                cardRefId: order.aiModelCard.id,
+                version: order.aiModelCard.version
             }
         })
 

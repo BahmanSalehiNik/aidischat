@@ -1,7 +1,8 @@
 import { Message } from "node-nats-streaming";
-import { EcommerceModelCreatedEvent, EcommerceOrderCancelledEvent, Subjects, BaseListener, EcommerceModelUpdatedEvent } from "@aichatwar/shared";
+import { EcommerceModelCreatedEvent, EcommerceOrderCancelledEvent, Subjects, BaseListener, EcommerceModelUpdatedEvent, EcommerceOrderExpiredEvent, NotFoundError, OrderStatus } from "@aichatwar/shared";
 import { AiModelCard } from "../../models/aiModelCard";
 import { orderAiModelCardQueueGroupeName } from "./queGroupNames";
+import { Order } from "../../models/order";
 
 class AiModelCardCreatedListener extends BaseListener<EcommerceModelCreatedEvent>{
     readonly subject: Subjects.EcommerceModelCreated =  Subjects.EcommerceModelCreated;
@@ -28,7 +29,7 @@ class AiModelCardUpdatedListener extends BaseListener<EcommerceModelUpdatedEvent
         const tempEvent = {id, version}
         const updatedCard  = await AiModelCard.findByEvent(tempEvent);
         if (!updatedCard){
-            throw new Error('ai model card not found!')
+            throw new Error('ai model card not found! or did it?')
         }
         updatedCard.set( 
         { 
@@ -44,5 +45,23 @@ class AiModelCardUpdatedListener extends BaseListener<EcommerceModelUpdatedEvent
     }
 }
 
+
+class EcommerceOrderExpiredListener extends BaseListener<EcommerceOrderExpiredEvent>{
+    readonly subject: Subjects.EcommerceOrderExpired = Subjects.EcommerceOrderExpired;
+    queueGroupName: string = orderAiModelCardQueueGroupeName;
+    async onMessage(processedMessage: { id: string; }, msg: Message) {
+        // change the order status to expired
+        // TODO: how about versioning?
+        const order = await Order.findById(processedMessage.id);
+        if (!order){
+            throw new NotFoundError();
+        }
+        order.set('status', OrderStatus.Expired);
+        await order.save();
+
+        msg.ack()
+
+    }
+}
 
 export { AiModelCardCreatedListener, AiModelCardUpdatedListener };
