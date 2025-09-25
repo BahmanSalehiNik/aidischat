@@ -1,7 +1,7 @@
 import express, {Request, Response} from "express";
 import { body, validationResult } from "express-validator";
-import { Password } from "../utils/password";
-import { User } from "../models/user";
+import { Password } from "../../utils/password";
+import { User } from "../../models/user";
 import { BadRequestError, validateRequest } from "@aichatwar/shared"
 import jwt from "jsonwebtoken";
 

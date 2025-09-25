@@ -16,7 +16,7 @@ interface UserDoc extends mongoose.Document {
 
 interface UserModel extends mongoose.Model<UserDoc> {
     add(attrs: UserAttrs): UserDoc;
-}
+} 
 
 
 
@@ -63,4 +63,4 @@ userSchame.statics.add = (attrs: UserAttrs) => {
 const User = mongoose.model<UserDoc, UserModel>('User', userSchame);
 
 
-export { User };
+export { User, UserDoc };

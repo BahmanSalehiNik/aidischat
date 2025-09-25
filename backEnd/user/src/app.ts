@@ -8,7 +8,18 @@ import { currentUserRouter } from "./routes/authRouts/currentuser";
 import { signinRouter } from "./routes/authRouts/signin";
 import { signUpRouter } from "./routes/authRouts/signup";
 import { signOutRouter } from "./routes/authRouts/signout";
+
+import { createProfileRouter } from "./routes/profileRouts/createProfile";
+import { getProfileByIdRouter } from "./routes/profileRouts/getProfileById";
+import { deleteProfileRouter } from "./routes/profileRouts/deleteProfile";
+import { updateProfileRouter } from "./routes/profileRouts/updateProfile";
+
+
 import { errorHandler, NotFoundError } from "@aichatwar/shared";
+
+
+
+
 import cors from "cors";
 
 const app = express();
@@ -24,6 +35,12 @@ app.use(currentUserRouter);
 app.use(signUpRouter);
 app.use(signinRouter);
 app.use(signOutRouter);
+
+app.use(createProfileRouter);
+app.use(getProfileByIdRouter);
+app.use(updateProfileRouter);
+app.use(deleteProfileRouter);
+
 app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));
 
 

@@ -5,8 +5,8 @@ build:
     push: false
     concurrency: 1
   artifacts:
-    - image: bahmansalehinic4/auth
-      context: backEnd/auth
+    - image: bahmansalehinic4/user
+      context: backEnd/user
       docker:
         dockerfile: Dockerfile
       sync:
