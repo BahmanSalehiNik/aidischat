@@ -31,6 +31,13 @@ spec:
                name: ecommerce-orders-srv
                port: 
                  number: 3000
+         - path: /api/friends/?(.*)
+           pathType: ImplementationSpecific
+           backend:
+             service:
+               name: friendship-srv
+               port: 
+                 number: 3000
          - path: /?(.*)
            pathType: ImplementationSpecific
            backend:

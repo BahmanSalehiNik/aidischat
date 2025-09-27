@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 import { UserDoc } from './user'; // <-- Import your User model's interface
-import { updateIfCurrentPlugin } from "mongoose-update-if-current";
 
 //
 // 1️⃣ Interfaces
@@ -52,21 +51,12 @@ export interface ProfileDoc extends mongoose.Document {
       coordinates: [number, number];
     };
   };
-  profilePicture?: {
-    url: string;
-    publicId?: string;
-  };
-  coverPhoto?: {
-    url: string;
-    publicId?: string;
-  };
+
   privacy: {
     profileVisibility: 'public' | 'friends' | 'private';
     postDefault: 'public' | 'friends' | 'private';
   };
   status: 'active' | 'inactive' | 'banned';
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 // Model interface (collection) with custom build method
@@ -133,8 +123,8 @@ const profileSchema = new mongoose.Schema(
     },
   },
   {
-    // versionKey: 'version',          // use 'version' instead of __v TODO:test this instead of the lib
-    // optimisticConcurrency: true,    // built-in OCC
+    versionKey: 'version',          // use 'version' instead of __v
+    optimisticConcurrency: true,    // built-in OCC
     timestamps: true,
     toJSON: {
       transform(doc, ret: any) {
@@ -145,9 +135,6 @@ const profileSchema = new mongoose.Schema(
     },
   }
 );
-
-profileSchema.set('versionKey', 'version');
-profileSchema.plugin(updateIfCurrentPlugin);
 
 //
 // 3️⃣ Static Methods

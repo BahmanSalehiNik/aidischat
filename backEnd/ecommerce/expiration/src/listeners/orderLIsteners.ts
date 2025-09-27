@@ -1,4 +1,4 @@
-import { BadRequestError, BaseListener, EcommerceOrderCancelledEvent, EcommerceOrderCreatedEvent, NotFoundError, Subjects } from "@aichatwar/shared";
+import { BadRequestError, BaseListener, EcommerceOrderCancelledEvent,EcommerceOrderCreatedEvent,NotFoundError, Subjects } from "@aichatwar/shared";
 import { ExpirationQueueGroupeName } from "./queGroupNames";
 import { Message } from "node-nats-streaming";
 import { xQueue } from "../queues/expirationQueue";
@@ -10,7 +10,7 @@ class OrderCreatedListener extends BaseListener<EcommerceOrderCreatedEvent>{
         const expirationDelay = new Date(processedMessage.expirationDate).getTime() - (new Date().getTime())
         console.log('listener secret start --', new Date());
         console.log(`waitig for ${expirationDelay} to expire`)
-        await xQueue.add({orderId: processedMessage.id}, {delay:expirationDelay});
+        await xQueue.add({id: processedMessage.id}, {delay:expirationDelay});
         msg.ack();
 }
 }

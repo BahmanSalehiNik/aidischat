@@ -21,7 +21,7 @@ router.put(
       return res.status(404).send({ error: 'Profile not found' });
     }
 
-    if (profile.user.id!==req.jwtPayload!.id){
+    if (profile.user.toHexString()!==req.jwtPayload!.id){
         throw new NotAuthorizedError(['not authorized'])
     }
 

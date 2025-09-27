@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: friendship-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: friendship
+  template:
+    metadata:
+      labels:
+        app: friendship
+    spec:
+      containers:
+        - name: friendship
+          image: bahmansalehinic4/friendship
+          env:  
+            - name: MONGO_URI
+              value: "mongodb://friendship-mongo-srv:27017/friendship"
+            - name: JWT_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: JWT_DEV
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: friendship-srv
+spec:
+  selector:
+    app: friendship
+  ports:
+    - name: friendship
+      protocol: TCP
+      port: 3000
+      targetPort: 3000 
