@@ -47,12 +47,12 @@ export interface FriendshipDoc extends mongoose.Document {
   requesterProfile: mongoose.Types.ObjectId;
   recipientProfile: mongoose.Types.ObjectId;
   status: FriendshipStatus;
-  // snapshot?: {
-  //   requesterName?: string;
-  //   recipientName?: string;
-  //   requesterPhotoUrl?: string;
-  //   recipientPhotoUrl?: string;
-  // };
+  snapshot?: {
+    requesterName?: string;
+    recipientName?: string;
+    requesterPhotoUrl?: string;
+    recipientPhotoUrl?: string;
+  };
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -70,8 +70,8 @@ interface FriendshipModel extends mongoose.Model<FriendshipDoc> {
 // ----------------------------------
 const friendshipSchema = new mongoose.Schema(
   {
-    requester: { type: String, required: true, index: true },
-    recipient: { type: String, required: true, index: true },
+    requester: { type: String, required: true},
+    recipient: { type: String, required: true},
     requesterProfile: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Profile',
@@ -103,11 +103,13 @@ const friendshipSchema = new mongoose.Schema(
         delete ret._id;
       },
     },
-    versionKey: 'version',
+    // versionKey: 'version',
     timestamps: true,
   }
 );
 
+
+friendshipSchema.set('versionKey', 'version');
 // Optimistic concurrency (like Stephan Grider’s examples)
 friendshipSchema.plugin(updateIfCurrentPlugin);
 

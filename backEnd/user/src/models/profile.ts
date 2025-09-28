@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { UserDoc } from './user'; // <-- Import your User model's interface
 import { updateIfCurrentPlugin } from "mongoose-update-if-current";
-
+import { Visability } from '@aichatwar/shared'
 //
 // 1️⃣ Interfaces
 //
@@ -31,8 +31,8 @@ export interface ProfileAttrs {
     publicId?: string;
   };
   privacy?: {
-    profileVisibility?: 'public' | 'friends' | 'private';
-    postDefault?: 'public' | 'friends' | 'private';
+    profileVisibility?: Visability;
+    postDefault?: Visability;
   };
 }
 
@@ -61,10 +61,9 @@ export interface ProfileDoc extends mongoose.Document {
     publicId?: string;
   };
   privacy: {
-    profileVisibility: 'public' | 'friends' | 'private';
-    postDefault: 'public' | 'friends' | 'private';
+    profileVisibility: Visability;
+    postDefault: Visability;
   };
-  status: 'active' | 'inactive' | 'banned';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -125,12 +124,7 @@ const profileSchema = new mongoose.Schema(
         enum: ['public', 'friends', 'private'],
         default: 'friends',
       },
-    },
-    status: {
-      type: String,
-      enum: ['active', 'inactive', 'banned'],
-      default: 'active',
-    },
+    }
   },
   {
     // versionKey: 'version',          // use 'version' instead of __v TODO:test this instead of the lib

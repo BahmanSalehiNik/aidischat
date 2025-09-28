@@ -36,7 +36,6 @@ router.put(
       'profilePicture',
       'coverPhoto',
       'privacy',
-      'status',
     ];
 
     updatableFields.forEach((field) => {

@@ -1,18 +1,21 @@
 import mongoose from "mongoose";
 import { Password } from "../utils/password";
 import { Types } from "mongoose"
-import { Interface } from "readline";
+import { updateIfCurrentPlugin } from "mongoose-update-if-current";
+import { UserStatus, Visability } from '@aichatwar/shared'
 
 
 interface UserAttrs {
     email: string;
     password: string;
+    status?: UserStatus; 
 }
 
 interface UserDoc extends mongoose.Document {
     email: string;
     password: string;
-} 
+    status: UserStatus;
+}
 
 interface UserModel extends mongoose.Model<UserDoc> {
     add(attrs: UserAttrs): UserDoc;
@@ -35,8 +38,14 @@ const userSchame = new mongoose.Schema({
     password: {
         type: String,
         required: true
-    }
-}, {
+    },
+    status: {
+    type: String,
+    enum: Object.values(UserStatus),
+    default: UserStatus.Active,
+  },
+    }, {
+    timestamps: true,
     toJSON:{
         transform(doc, ret: DummyRet){
             ret.id = ret._id;
@@ -59,6 +68,9 @@ userSchame.statics.add = (attrs: UserAttrs) => {
     return new User(attrs)
 };
 
+
+userSchame.set('versionKey','version')
+userSchame.plugin(updateIfCurrentPlugin);
 
 const User = mongoose.model<UserDoc, UserModel>('User', userSchame);
 

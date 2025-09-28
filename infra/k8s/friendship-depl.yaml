@@ -16,6 +16,14 @@ spec:
         - name: friendship
           image: bahmansalehinic4/friendship
           env:  
+            - name: NATS_URL
+              value: 'http://nats-srv:4222'
+            - name: NATS_CLUSTER_ID
+              value: "aichatwar"
+            - name: NATS_CLIENT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: MONGO_URI
               value: "mongodb://friendship-mongo-srv:27017/friendship"
             - name: JWT_DEV

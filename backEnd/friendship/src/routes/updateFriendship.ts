@@ -1,13 +1,13 @@
 import express, { Request, Response } from 'express';
 import { body } from 'express-validator';
-import { extractJWTPayload,loginRequired, NotAuthorizedError, validateRequest } from "@aichatwar/shared"
+import { extractJWTPayload,loginRequired, NotAuthorizedError, NotFoundError, validateRequest } from "@aichatwar/shared"
 import { Friendship, FriendshipStatus } from '../models/friendship';
 
 const router = express.Router();
 
 
 router.patch(
-  '/:id',
+  '/api/friends/:id',
   extractJWTPayload,
   loginRequired,
   [
@@ -27,6 +27,7 @@ router.patch(
     const friendship = await Friendship.findById(req.params.id);
 
     if (!friendship) {
+      throw new NotFoundError();
       return res.status(404).send({ error: 'Friendship not found' });
     }
 
