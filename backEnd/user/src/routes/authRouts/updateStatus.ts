@@ -1,11 +1,15 @@
 import express, { Request, Response } from "express";
 import { body } from "express-validator";
 
-import { validateRequest, BadRequestError, loginRequired, 
-    extractJWTPayload, UserStatus, NotFoundError, NotAuthorizedError } from "@aichatwar/shared";
-import { User } from "../../models/user";
 
-import jwt from "jsonwebtoken";
+import { validateRequest, BadRequestError, loginRequired, 
+    extractJWTPayload, UserStatus, NotFoundError,
+     NotAuthorizedError } from "@aichatwar/shared";
+import { User } from "../../models/user";
+import { natsClient } from "../../nats-client";
+import { UserUpdatedPublisher } from "../../events/userPublishers";
+
+
 
 const router = express.Router();
 
@@ -56,6 +60,13 @@ router.patch(
     user.status = status;
     await user.save();
 
+    await  new UserUpdatedPublisher(natsClient.client).publish({
+        id:user.id,
+        email:user.email,
+        status:user.status,
+        version: user.version
+    }
+    )
     // 🔔 Publish a UserStatusUpdated event to NATS/Kafka if using event-driven services
     // new UserStatusUpdatedPublisher(natsWrapper.client).publish({
     //   id: user.id,

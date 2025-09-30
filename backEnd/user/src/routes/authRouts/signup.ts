@@ -1,10 +1,12 @@
 import express, { Request, Response } from "express";
 import { body } from "express-validator";
+import jwt from "jsonwebtoken";
 
 import { validateRequest, BadRequestError } from "@aichatwar/shared";
 import { User } from "../../models/user";
+import { natsClient } from "../../nats-client";
+import { UserCreatedPublisher } from "../../events/userPublishers";
 
-import jwt from "jsonwebtoken";
 
 const router = express.Router();
 
@@ -27,6 +29,14 @@ async (req: Request, res: Response)=>{
 
     const user =  User.add({email, password});
     await user.save();
+
+    await new UserCreatedPublisher(natsClient.client).publish({
+        id:user.id,
+        email:user.email,
+        status:user.status,
+        version: user.version
+    }
+    )
     
     // creating the jwt 
     const userJwt = jwt.
@@ -39,6 +49,9 @@ async (req: Request, res: Response)=>{
     req.session = {
         jwt: userJwt
     };
+
+
+
 
     res.status(201).send(user);
     

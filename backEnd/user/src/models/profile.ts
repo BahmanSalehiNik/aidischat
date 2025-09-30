@@ -17,10 +17,7 @@ export interface ProfileAttrs {
   location?: {
     city?: string;
     country?: string;
-    coordinates?: {
-      type: 'Point';
-      coordinates: [number, number];   // [lng, lat]
-    };
+    coordinates?: [number, number];   // [lng, lat]
   };
   profilePicture?: {
     url: string;
@@ -47,10 +44,7 @@ export interface ProfileDoc extends mongoose.Document {
   location?: {
     city?: string;
     country?: string;
-    coordinates?: {
-      type: 'Point';
-      coordinates: [number, number];
-    };
+    coordinates?: [number, number];
   };
   profilePicture?: {
     url: string;
@@ -66,6 +60,7 @@ export interface ProfileDoc extends mongoose.Document {
   };
   createdAt: Date;
   updatedAt: Date;
+  version: number;
 }
 
 // Model interface (collection) with custom build method
@@ -100,10 +95,7 @@ const profileSchema = new mongoose.Schema(
     location: {
       city: String,
       country: String,
-      coordinates: {
-        type: { type: String, enum: ['Point'], default: 'Point' },
-        coordinates: { type: [Number], default: undefined },
-      },
+      coordinates: { type: [Number], default: undefined },
     },
     profilePicture: {
       url: String,

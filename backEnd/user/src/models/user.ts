@@ -15,6 +15,7 @@ interface UserDoc extends mongoose.Document {
     email: string;
     password: string;
     status: UserStatus;
+    version: number;
 }
 
 interface UserModel extends mongoose.Model<UserDoc> {
@@ -56,6 +57,9 @@ const userSchame = new mongoose.Schema({
     }
 })
 
+userSchame.set('versionKey','version')
+userSchame.plugin(updateIfCurrentPlugin);
+
 userSchame.pre('save', async function(done) {
     if(this.isModified('password')){
         const hashed = await Password.hash(this.get('password'))
@@ -69,8 +73,7 @@ userSchame.statics.add = (attrs: UserAttrs) => {
 };
 
 
-userSchame.set('versionKey','version')
-userSchame.plugin(updateIfCurrentPlugin);
+
 
 const User = mongoose.model<UserDoc, UserModel>('User', userSchame);
 

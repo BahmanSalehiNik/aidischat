@@ -3,7 +3,8 @@ import express from "express";
 import mongoose from "mongoose";
 import { app } from "./app";
 import { natsClient } from "./nats-client";
-// import { OrderCancelledListener, OrderCreatedListener } from "./events/listeners/orderLIsteners";
+import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/userListeners";
+import { ProfileCreatedListener } from "./events/listeners/profileListeners";
 
 
 const startMongoose = async ()=>{
@@ -33,9 +34,14 @@ const startMongoose = async ()=>{
     process.on('SIGINT', ()=>natsClient.client.close());
     process.on('SIGTERM', ()=> natsClient.client.close());
       
-    // ------------- order listeners ------------
-    // new OrderCreatedListener(natsClient.client).listen();
-    // new OrderCancelledListener(natsClient.client).listen();
+    // ------------- user listeners ------------
+    new UserCreatedListener(natsClient.client).listen();
+    new UserUpdatedListener(natsClient.client).listen();
+
+        // ------------- profile listeners ------------
+    new ProfileCreatedListener(natsClient.client).listen()
+
+
 
       // ------------ Mongoose ----------
       await mongoose.connect(process.env.MONGO_URI);

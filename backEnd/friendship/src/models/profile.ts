@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
-import { UserDoc } from './user'; // <-- Import your User model's interface
+import { updateIfCurrentPlugin } from "mongoose-update-if-current";
+//import { UserDoc } from './user'; // <-- Import your User model's interface
 
 //
 // 1️⃣ Interfaces
@@ -7,6 +8,7 @@ import { UserDoc } from './user'; // <-- Import your User model's interface
 
 // Attributes required to create a new Profile
 export interface ProfileAttrs {
+  id:string;
   user: mongoose.Types.ObjectId;
   username: string;
   fullName: string;
@@ -16,10 +18,7 @@ export interface ProfileAttrs {
   location?: {
     city?: string;
     country?: string;
-    coordinates?: {
-      type: 'Point';
-      coordinates: [number, number];   // [lng, lat]
-    };
+    coordinates?: [number, number];   // [lng, lat]
   };
   profilePicture?: {
     url: string;
@@ -46,10 +45,7 @@ export interface ProfileDoc extends mongoose.Document {
   location?: {
     city?: string;
     country?: string;
-    coordinates?: {
-      type: 'Point';
-      coordinates: [number, number];
-    };
+    coordinates?: [number, number];
   };
 
   privacy: {
@@ -59,9 +55,9 @@ export interface ProfileDoc extends mongoose.Document {
   status: 'active' | 'inactive' | 'banned';
 }
 
-// Model interface (collection) with custom build method
+// Model interface (collection) with custom add method
 export interface ProfileModel extends mongoose.Model<ProfileDoc> {
-  build(attrs: ProfileAttrs): ProfileDoc;
+  add(attrs: ProfileAttrs): ProfileDoc;
   search(query: string): Promise<ProfileDoc[]>;
 }
 
@@ -91,10 +87,8 @@ const profileSchema = new mongoose.Schema(
     location: {
       city: String,
       country: String,
-      coordinates: {
-        type: { type: String, enum: ['Point'], default: 'Point' },
-        coordinates: { type: [Number], default: undefined },
-      },
+      coordinates: { type: [Number], default: undefined },
+      
     },
     profilePicture: {
       url: String,
@@ -123,8 +117,8 @@ const profileSchema = new mongoose.Schema(
     },
   },
   {
-    versionKey: 'version',          // use 'version' instead of __v
-    optimisticConcurrency: true,    // built-in OCC
+    // versionKey: 'version',          // use 'version' instead of __v
+    // optimisticConcurrency: true,    // built-in OCC
     timestamps: true,
     toJSON: {
       transform(doc, ret: any) {
@@ -136,12 +130,19 @@ const profileSchema = new mongoose.Schema(
   }
 );
 
+
+profileSchema.set('versionKey', 'version');
+profileSchema.plugin(updateIfCurrentPlugin);
 //
 // 3️⃣ Static Methods
 //
 
-profileSchema.statics.build = (attrs: ProfileAttrs) => {
-  return new Profile(attrs);
+profileSchema.statics.add = (attrs: ProfileAttrs) => {
+const { id, ...rest } = attrs;
+  return new Profile({
+    _id: id,
+    ...rest,
+  });
 };
 
 profileSchema.statics.search = function (query: string) {

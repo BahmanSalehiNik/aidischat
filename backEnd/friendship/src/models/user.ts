@@ -1,12 +1,18 @@
 import mongoose, { Types } from "mongoose";
-
+import { UserStatus } from "@aichatwar/shared";
+import { updateIfCurrentPlugin } from "mongoose-update-if-current";
 
 interface UserAttrs {
+    id: string;
     email: string;
+    version: number;
+    status: UserStatus;
 }
 
 interface UserDoc extends mongoose.Document {
     email: string;
+    version: number;
+    status: UserStatus;
 } 
 
 interface UserModel extends mongoose.Model<UserDoc> {
@@ -25,7 +31,12 @@ const userSchame = new mongoose.Schema({
     email:{
         type: String,
         required: true
-    }
+    },
+    status: {
+    type: String,
+    enum: Object.values(UserStatus),
+    default: UserStatus.Active,
+  },
 }, {
     toJSON:{
         transform(doc, ret: DummyRet){
@@ -36,10 +47,15 @@ const userSchame = new mongoose.Schema({
     }
 })
 
-
+userSchame.set('versionKey','version')
+userSchame.plugin(updateIfCurrentPlugin);
 
 userSchame.statics.add = (attrs: UserAttrs) => {
-    return new User(attrs)
+  const { id, ...rest } = attrs;
+  return new User({
+    _id: id,
+    ...rest,
+  });
 };
 
 
