@@ -1,7 +1,7 @@
-// src/services/storage-factory.ts
-import { AwsStorageGateway } from './aws-storage-gateway';
-import { GcpStorageGateway } from './gcp-storage-gateway';
-import { StorageGateway } from './storage-gateway';
+import { AwsStorageGateway } from './awsStorageGateway';
+import { GcpStorageGateway } from './gcpStorageGateway';
+import { AzureStorageGateway } from './azureStorageGateway';
+import { StorageGateway } from './storageGateway';
 import { StorageProvider } from '../models/media';
 
 export class StorageFactory {
@@ -16,7 +16,12 @@ export class StorageFactory {
       case StorageProvider.GCP:
         return new GcpStorageGateway(
           process.env.GCP_PROJECT_ID!,
-          process.env.GCP_KEYFILE_PATH! // path to service account JSON
+          process.env.GCP_KEYFILE_PATH!
+        );
+      case StorageProvider.AZURE:
+        return new AzureStorageGateway(
+          process.env.AZURE_STORAGE_ACCOUNT!,
+          process.env.AZURE_STORAGE_KEY!
         );
       default:
         throw new Error(`Unsupported storage provider: ${provider}`);

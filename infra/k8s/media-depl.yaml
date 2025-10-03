@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: media
+  template:
+    metadata:
+      labels:
+        app: media
+    spec:
+      containers:
+        - name: media
+          image: bahmansalehinic4/media
+          env:
+            - name: AZURE_STORAGE_ACCOUNT
+              valueFrom:
+                secretKeyRef:
+                  name: azure-storage
+                  key: AZURE_STORAGE_ACCOUNT
+            - name: AZURE_STORAGE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: azure-storage
+                  key: AZURE_STORAGE_KEY
+            - name: NATS_URL
+              value: 'http://nats-srv:4222'
+            - name: NATS_CLUSTER_ID
+              value: "aichatwar"
+            - name: NATS_CLIENT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MONGO_URI
+              value: "mongodb://media-mongo-srv:27017/media"
+            - name: JWT_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: JWT_DEV
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-srv
+spec:
+  selector:
+    app: media
+  ports:
+    - name: media
+      protocol: TCP
+      port: 3000
+      targetPort: 3000 

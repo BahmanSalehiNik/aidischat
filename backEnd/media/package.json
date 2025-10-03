@@ -1,5 +1,5 @@
 {
-  "name": "friendship",
+  "name": "media",
   "version": "1.0.0",
   "description": "use npx tsx index.ts if ts-node did not work properly.",
   "main": "index.js",

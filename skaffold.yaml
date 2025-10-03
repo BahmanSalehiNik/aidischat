@@ -47,9 +47,16 @@ build:
         manual:
           - dest: .
             src: 'src/**/*.ts' 
-
     - image: bahmansalehinic4/friendship
       context: backEnd/friendship
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
+            src: 'src/**/*.ts' 
+    - image: bahmansalehinic4/media
+      context: backEnd/media
       docker:
         dockerfile: Dockerfile
       sync:

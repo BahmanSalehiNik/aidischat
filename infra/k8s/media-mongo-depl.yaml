@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-mongodb-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: media-mongodb
+  template:
+    metadata:
+      labels:
+         app:  media-mongodb
+    spec:
+      containers:
+        - name: media-mongodb
+          image: mongo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-mongo-srv
+spec:
+  selector:
+    app: media-mongodb
+  ports:
+    - name: media-mongodb
+      protocol: TCP
+      port: 27017
+      targetPort: 27017 

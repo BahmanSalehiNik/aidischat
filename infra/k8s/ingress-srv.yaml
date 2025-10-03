@@ -38,6 +38,13 @@ spec:
                name: friendship-srv
                port: 
                  number: 3000
+         - path: /api/media/?(.*)
+           pathType: ImplementationSpecific
+           backend:
+             service:
+               name: media-srv
+               port: 
+                 number: 3000
          - path: /?(.*)
            pathType: ImplementationSpecific
            backend:

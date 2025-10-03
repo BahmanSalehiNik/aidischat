@@ -5,9 +5,11 @@ import { json } from "body-parser";
 import cookieSession from "cookie-session";
 
 
-import { createFriendshipRouter } from "./routes/createFriendship";
-import { getUserFriendsRouter } from "./routes/getUserFriendShips";
-import { updateFrindshipRouter } from "./routes/updateFriendship";
+import { createMediaRouter } from "./routes/create";
+import { showMediaRouter } from "./routes/show";
+import { deleteMediaRouter } from "./routes/delete";
+import { listMediaRouter } from "./routes/list";
+import { uploadRouter } from "./routes/upload";
 
 
 import { errorHandler, NotFoundError } from "@aichatwar/shared";
@@ -26,9 +28,11 @@ app.use(cookieSession({
     sameSite: "lax"
 }))
 
-app.use(createFriendshipRouter);
-app.use(getUserFriendsRouter);
-app.use(updateFrindshipRouter);
+app.use(createMediaRouter);
+app.use(showMediaRouter);
+app.use(deleteMediaRouter);
+app.use(listMediaRouter);
+app.use(uploadRouter);
 
 
 app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));

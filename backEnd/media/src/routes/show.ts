@@ -15,8 +15,11 @@ router.get('/api/media/:id',
     throw new NotFoundError();
   }
 
+  console.log(media.key, media.bucket, "secret media")
   const gateway = StorageFactory.create(media.provider);
-  const downloadUrl = await gateway.generateDownloadUrl(media.key, media.bucket);
+
+  //const tmp = "users/68dff279d529d32a67e12c82/42eed3c9-9afd-4ea8-8214-1ef36950e088.jpeg"
+  const downloadUrl = await gateway.generateDownloadUrl(media.bucket, media.key)//media.key, media.bucket);
 
   res.send({ ...media.toJSON(), downloadUrl });
 });

@@ -1,27 +1,32 @@
-
 import express from "express";
 import mongoose from "mongoose";
 import { app } from "./app";
 import { natsClient } from "./nats-client";
-import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/userListeners";
-import { ProfileCreatedListener } from "./events/listeners/profileListeners";
+// import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/userListeners";
+// import { ProfileCreatedListener } from "./events/listeners/profileListeners";
 
 
 const startMongoose = async ()=>{
     if(!process.env.JWT_DEV){
         throw new Error("JWT_DEV must be defined!")
     }
-        if(!process.env.MONGO_URI){
+    if(!process.env.MONGO_URI){
         throw new Error("MONGO_URI must be defined!")
     }
-        if(!process.env.NATS_URL){
+    if(!process.env.NATS_URL){
         throw new Error("NATS_URL must be defined!")
     }
-        if(!process.env.NATS_CLUSTER_ID){
+    if(!process.env.NATS_CLUSTER_ID){
         throw new Error("NATS_CLUSTER_ID must be defined!")
     }
-        if(!process.env.NATS_CLIENT_ID){
+    if(!process.env.NATS_CLIENT_ID){
         throw new Error("NATS_CLIENT_ID must be defined!")
+    }
+    if(!process.env.AZURE_STORAGE_ACCOUNT){
+        throw new Error("AZURE_STORAGE_ACCOUNT must be defined!")
+    }
+    if(!process.env.AZURE_STORAGE_KEY){
+        throw new Error("AZURE_STORAGE_KEY must be defined!")
     }
     try{
       // ------------ Nats ------------
@@ -34,12 +39,12 @@ const startMongoose = async ()=>{
     process.on('SIGINT', ()=>natsClient.client.close());
     process.on('SIGTERM', ()=> natsClient.client.close());
       
-    // ------------- user listeners ------------
-    new UserCreatedListener(natsClient.client).listen();
-    new UserUpdatedListener(natsClient.client).listen();
+    // // ------------- user listeners ------------
+    // new UserCreatedListener(natsClient.client).listen();
+    // new UserUpdatedListener(natsClient.client).listen();
 
-        // ------------- profile listeners ------------
-    new ProfileCreatedListener(natsClient.client).listen()
+    //     // ------------- profile listeners ------------
+    // new ProfileCreatedListener(natsClient.client).listen()
 
 
 
