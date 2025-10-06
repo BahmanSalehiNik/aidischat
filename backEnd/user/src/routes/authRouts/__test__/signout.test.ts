@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { app } from '../../app';
+import { app } from '../../../app';
 
 
 it('signout returns 200 on success and clears cookie', async()=>{

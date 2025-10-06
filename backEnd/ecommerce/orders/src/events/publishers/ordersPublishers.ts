@@ -1,6 +1,6 @@
-import {BasePublisher, EcommerceOrderCreatedEvent, EcommerceOrderCancelledEvent, Subjects} from "@aichatwar/shared";
-import nats from 'node-nats-streaming';
-import { randomBytes } from "crypto";
+import {BasePublisher, EcommerceOrderCreatedEvent, 
+    EcommerceOrderCancelledEvent, Subjects } from "@aichatwar/shared";
+
 
 
 class EcommerceOrderCreatedPublisher extends BasePublisher<EcommerceOrderCreatedEvent>{

@@ -55,7 +55,7 @@ const aiModelCardSchema = new mongoose.Schema({
     }
 }, {
     toJSON: {
-        transform(doc,ret: DummyRet){
+        transform(doc, ret: DummyRet){
             ret.id = ret._id;
             delete ret._id;
             delete ret.userId;

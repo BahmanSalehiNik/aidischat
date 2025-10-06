@@ -50,7 +50,7 @@ setInterval(
             }
         })
 
-        console.log(creation);
+        console.log(creation.data);
 
         }
         catch(err){

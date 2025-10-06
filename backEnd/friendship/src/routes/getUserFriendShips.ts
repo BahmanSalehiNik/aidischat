@@ -10,6 +10,7 @@ router.get('/api/friends/',
   const requests = await Friendship.find({
     recipient: req.jwtPayload!.id,
     status: FriendshipStatus.Pending,
+    //TODO: populate after profile and user listeners are completed.
   })//.populate('requesterProfile');
 
   res.send(requests);

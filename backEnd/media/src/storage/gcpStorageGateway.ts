@@ -36,4 +36,4 @@ class GcpStorageGateway implements StorageGateway {
   }
 }
 
-export {GcpStorageGateway}
+export { GcpStorageGateway }
