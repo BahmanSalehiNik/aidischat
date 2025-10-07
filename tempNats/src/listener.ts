@@ -4,7 +4,6 @@ import { randomBytes } from 'crypto';
 
 console.clear();
 
-
 const client = nats.connect('ecommerce-models', randomBytes(4).toString('hex'), {
     url: 'http://localhost:4222'
 });
@@ -38,5 +37,3 @@ client.on('connect', ()=>{
     
 });
 
-process.on('SIGINT', ()=>client.close());
-process.on('SIGTERM', ()=> client.close());

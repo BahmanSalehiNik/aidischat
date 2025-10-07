@@ -1,7 +1,7 @@
 // models/profile-.ts
 import mongoose, { Types } from 'mongoose';
 import { updateIfCurrentPlugin } from 'mongoose-update-if-current';
-// Todo: add visibility to shared module import {Visibility} from '@aichatwar/shared'
+import {Visability} from '@aichatwar/shared'
 
 
 
@@ -9,7 +9,11 @@ interface ProfileAttrs {
   id: string;
   userId: string;
   avatarUrl?: string;
-  visibility: 'public' | 'friends' | 'private';
+  privacy?: {
+    profileVisibility?: Visability;
+    postDefault?: Visability;
+  };
+  username: string;
   version: number;
 }
 
@@ -20,19 +24,40 @@ interface DummyRet {
 }
 
 interface ProfileDoc extends mongoose.Document<ProfileAttrs>{
+  id: string;
+  userId: string;
+  avatarUrl?: string;
+  privacy: {
+    profileVisibility: Visability;
+    postDefault: Visability;
+  };
+  username: string;
+  version: number;
 
 }
 
 interface ProfileModel extends mongoose.Model<ProfileDoc>{
-
+      build(attrs: ProfileAttrs): ProfileDoc;
 }
 
 const profileSchema = new mongoose.Schema({
   _id: String,
   userId: { type: String, required: true },
   avatarUrl: String,
-  visibility: { type: String, enum: ['public', 'friends', 'private'], default: 'public' },
-  version: Number
+  privacy: {
+      profileVisibility: {
+        type: String,
+        enum: Visability,
+        default: Visability.Public,
+      },
+      postDefault: {
+        type: String,
+        enum: Visability,
+        default: Visability.Friends,
+      },
+    },
+  version: Number,
+  username: {type: String, required: true}
 });
 
 profileSchema.set('versionKey', 'version');
@@ -49,6 +74,6 @@ profileSchema.statics.build= async (attrs: ProfileAttrs)=>{
 
 
 
-const Profile = mongoose.model('Profile', profileSchema);
+const Profile = mongoose.model<ProfileDoc, ProfileModel>('Profile', profileSchema);
 
 export { Profile };

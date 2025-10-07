@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: post-mongodb-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: post-mongodb
+  template:
+    metadata:
+      labels:
+         app:  post-mongodb
+    spec:
+      containers:
+        - name: post-mongodb
+          image: mongo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: post-mongo-srv
+spec:
+  selector:
+    app: post-mongodb
+  ports:
+    - name: post-mongodb
+      protocol: TCP
+      port: 27017
+      targetPort: 27017 

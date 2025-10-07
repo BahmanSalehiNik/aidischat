@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { updateIfCurrentPlugin } from "mongoose-update-if-current";
+import { Visability } from '@aichatwar/shared';
 //import { UserDoc } from './user'; // <-- Import your User model's interface
 
 //
@@ -29,8 +30,8 @@ export interface ProfileAttrs {
     publicId?: string;
   };
   privacy?: {
-    profileVisibility?: 'public' | 'friends' | 'private';
-    postDefault?: 'public' | 'friends' | 'private';
+    profileVisibility?: Visability;
+    postDefault?: Visability;
   };
 }
 
@@ -49,10 +50,9 @@ export interface ProfileDoc extends mongoose.Document {
   };
 
   privacy: {
-    profileVisibility: 'public' | 'friends' | 'private';
-    postDefault: 'public' | 'friends' | 'private';
+    profileVisibility: Visability;
+    postDefault: Visability;
   };
-  status: 'active' | 'inactive' | 'banned';
 }
 
 // Model interface (collection) with custom add method
@@ -101,19 +101,14 @@ const profileSchema = new mongoose.Schema(
     privacy: {
       profileVisibility: {
         type: String,
-        enum: ['public', 'friends', 'private'],
-        default: 'public',
+        enum: Visability,
+        default: Visability.Public,
       },
       postDefault: {
         type: String,
-        enum: ['public', 'friends', 'private'],
-        default: 'friends',
+        enum: Visability,
+        default: Visability.Friends,
       },
-    },
-    status: {
-      type: String,
-      enum: ['active', 'inactive', 'banned'],
-      default: 'active',
     },
   },
   {

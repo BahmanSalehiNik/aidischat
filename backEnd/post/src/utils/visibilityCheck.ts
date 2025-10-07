@@ -9,8 +9,8 @@ export const canView = async (viewerId: string, ownerId: string): Promise<boolea
   const ownerProfile = await Profile.findOne({ userId: ownerId });
   if (!ownerProfile) return false;
 
-  if (ownerProfile.visibility === Visability.Public) return true;
-  if (ownerProfile.visibility === Visability.Private) return false;
+  if (ownerProfile.privacy.profileVisibility === Visability.Public) return true;
+  if (ownerProfile.privacy.profileVisibility === Visability.Private) return false;
 
   // friends-only
   const friendship = await Friendship.findOne({ userId: ownerId });

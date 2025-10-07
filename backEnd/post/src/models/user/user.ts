@@ -1,19 +1,20 @@
 // models/user-projection.ts
 import mongoose from 'mongoose';
 import { updateIfCurrentPlugin } from 'mongoose-update-if-current';
+import { UserStatus } from '@aichatwar/shared';
 
-// todo add this to @shared
+
+
+
 interface UserAttrs {
   id: string;
   email?: string;
-  name: string;
-  status: 'active' | 'suspended' | 'deleted';
+  status: UserStatus;
 }
 
 interface UserDoc extends mongoose.Document {
   id: string;
   email?: string;
-  name: string;
   status: string;
 }
 
@@ -23,9 +24,8 @@ interface UserModel extends mongoose.Model<UserDoc> {
 
 const userSchema = new mongoose.Schema({
   _id: String,
-  name: { type: String, required: true },
   email: String,
-  status: { type: String, enum: ['active', 'suspended', 'deleted'], default: 'active' },
+  status: { type: String, enum: UserStatus, default: UserStatus.Active },
 });
 
 

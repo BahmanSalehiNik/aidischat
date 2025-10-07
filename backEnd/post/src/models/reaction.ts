@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 
+
+//TODO: add reaction type to shared module
 interface ReactionAttrs {
   userId: string;
   commentId?: string;

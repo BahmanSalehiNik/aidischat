@@ -3,8 +3,8 @@ import express from "express";
 import mongoose from "mongoose";
 import { app } from "./app";
 import { natsClient } from "./nats-client";
-import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/userListeners";
-import { ProfileCreatedListener } from "./events/listeners/profileListeners";
+import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/user/userListener";
+import { ProfileCreatedListener } from "./events/listeners/user/profileListener";
 
 
 const startMongoose = async ()=>{

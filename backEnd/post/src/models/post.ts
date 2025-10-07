@@ -54,7 +54,8 @@ const postSchema = new mongoose.Schema(
     visibility: { type: String, Visability, default: 'public' },
     reactions: [{ userId: String, type: String }],
     status: {
-      type: PostStatus,
+      type: String,
+      enum: PostStatus,
       default: PostStatus.Active
     }
   },
