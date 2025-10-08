@@ -1,5 +1,5 @@
 // utils/visibility.ts
-import { Friendship } from '../models/friendship/freindship';
+import { Friendship, FriendshipStatus } from '../models/friendship/freindship';
 import { Profile} from '../models/user/profile'
 import { Visability } from '@aichatwar/shared';
 
@@ -13,9 +13,16 @@ export const canView = async (viewerId: string, ownerId: string): Promise<boolea
   if (ownerProfile.privacy.profileVisibility === Visability.Private) return false;
 
   // friends-only
-  const friendship = await Friendship.findOne({ userId: ownerId });
-  if (!friendship){
+  const friendship = await Friendship.find({$and:[
+    {status:FriendshipStatus.Accepted},
+    {$or:[{requester: ownerId}, {recipient: ownerId}]},
+    {$or:[{requester: viewerId}, {recipient: viewerId}]},
+    
+  ] });
+  if (!friendship || friendship.length ===0){
     return false
   }
-  return friendship?.friends.includes(viewerId) ?? false;
-};
+  return true;
+
+  }
+  

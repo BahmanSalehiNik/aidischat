@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { app } from "./app";
 import { natsClient } from "./nats-client";
 import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/user/userListener";
+import { FreindshipAcceptedListener, FreindshipRequestedListener, FreindshipUpdatedListener} from "./events/listeners/friendship/friendshipListener";
 import { ProfileCreatedListener } from "./events/listeners/user/profileListener";
 
 
@@ -40,7 +41,11 @@ const startMongoose = async ()=>{
 
         // ------------- profile listeners ------------
     new ProfileCreatedListener(natsClient.client).listen()
-
+    
+    //---------- friendship listeners ---------
+    new FreindshipAcceptedListener(natsClient.client).listen();
+    new FreindshipRequestedListener(natsClient.client).listen();
+    new FreindshipUpdatedListener(natsClient.client).listen();
 
 
       // ------------ Mongoose ----------

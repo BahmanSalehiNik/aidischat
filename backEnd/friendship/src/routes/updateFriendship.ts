@@ -2,7 +2,8 @@ import express, { Request, Response } from 'express';
 import { body } from 'express-validator';
 import { extractJWTPayload,loginRequired, NotAuthorizedError, NotFoundError, validateRequest } from "@aichatwar/shared"
 import { Friendship, FriendshipStatus } from '../models/friendship';
-
+import { FrinedShipAcceptedPublisher, FriendshipUpdatedPublisher } from '../events/publishers/friendshipPublishers';
+import { natsClient } from '../nats-client';
 const router = express.Router();
 
 
@@ -24,6 +25,8 @@ router.patch(
   validateRequest,
   async (req: Request, res: Response) => {
     const { status } = req.body;
+
+    console.log(req.params.id, "secret id")
     const friendship = await Friendship.findById(req.params.id);
 
     if (!friendship) {
@@ -54,6 +57,21 @@ router.patch(
 
     friendship.status = status;
     await friendship.save();
+
+    const friendshipEventData = {
+        id:friendship.id,
+        recipient: friendship.recipient,
+        requester: friendship.requester,
+        version: friendship.version,
+        status: friendship.status
+      }
+
+    if (status === FriendshipStatus.Accepted){
+      await new FrinedShipAcceptedPublisher(natsClient.client).publish(friendshipEventData)
+    }else{
+      await new FriendshipUpdatedPublisher(natsClient.client).publish(friendshipEventData)
+    }
+    
 
     // TODO: Publish a FriendshipUpdated event if using NATS/Kafka
 

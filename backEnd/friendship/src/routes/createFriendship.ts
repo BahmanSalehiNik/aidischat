@@ -4,7 +4,8 @@ import mongoose, { Types } from 'mongoose';
 import { BadRequestError, extractJWTPayload,loginRequired, NotFoundError, validateRequest } from "@aichatwar/shared"
 import { Friendship, FriendshipStatus } from '../models/friendship';
 import { Profile } from '../models/profile'
-
+import { FriendshipRequestedPublisher } from '../events/publishers/friendshipPublishers';
+import { natsClient } from '../nats-client';
 
 const router = express.Router();
 
@@ -69,7 +70,13 @@ router.post(
     });
 
     await friendship.save();
-
+    await new FriendshipRequestedPublisher(natsClient.client).publish({
+        id:friendship.id,
+        recipient: friendship.recipient,
+        requester: friendship.requester,
+        version: friendship.version,
+        status: friendship.status
+    })
     // TODO: Publish FriendRequestCreated event here
 
     res.status(201).send(friendship);

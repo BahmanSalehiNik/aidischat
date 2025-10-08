@@ -5,11 +5,11 @@ import { Post } from '../../models/post';
 
 const router = express.Router();
 
-router.post('/api/posts', extractJWTPayload, loginRequired, 
+router.post('/api/post', extractJWTPayload, loginRequired, 
   async (req: Request, res: Response) => {
   const { id, content, mediaIds, visibility, version } = req.body;
 
-  const post = Post.build({
+  const post = await Post.build({
     id: id,
     userId: req.jwtPayload!.id,
     content,
