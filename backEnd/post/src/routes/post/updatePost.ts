@@ -1,54 +1,69 @@
 import express, { Request, Response } from 'express';
-import { loginRequired, extractJWTPayload, validateRequest, NotFoundError, NotAuthorizedError } from '@aichatwar/shared';
 import { body } from 'express-validator';
-import { Post, PostStatus } from '../../models/post';
-import { natsClient } from '../../nats-client';
-// import { PostUpdatedPublisher } from '../events/publishers/post-updated-publisher';
+import { loginRequired, extractJWTPayload, validateRequest, NotFoundError, NotAuthorizedError, Visability } from '@aichatwar/shared';
+import { Post } from '../../models/post';
+import { PostUpdatedPublisher } from "../../events/publishers/postPublisher";
+import { natsClient } from "../../nats-client";
 
 const router = express.Router();
 
 router.patch(
   '/api/posts/:id',
-  extractJWTPayload,
   loginRequired,
+  extractJWTPayload,
   [
-    body('text').optional().isString().isLength({ min: 1 }).withMessage('Text must be valid'),
-    body('mediaIds').optional().isArray().withMessage('MediaIds must be an array of strings'),
-    body('visibility').optional().isIn(['public', 'friends', 'private']),
+    body('content').optional().isString().trim().isLength({ max: 5000 }),
+    body('visibility')
+      .optional()
+      .isIn([Visability.Friends, Visability.Private, Visability.Public])
+      .withMessage('Invalid visibility'),
   ],
   validateRequest,
   async (req: Request, res: Response) => {
     const post = await Post.findById(req.params.id);
 
-    if (!post || post.status != PostStatus.Active ) {
+    if (!post) {
       throw new NotFoundError();
     }
 
     if (post.userId !== req.jwtPayload!.id) {
-      throw new NotAuthorizedError(['not authorized.']);
+      throw new NotAuthorizedError(['']);
     }
 
-    // ✅ Update only editable fields
-    const { content, mediaIds, visibility } = req.body;
+    const { content, visibility, mediaIds } = req.body;
 
-    if (content !== undefined) post.content = content;
-    if (mediaIds !== undefined) post.mediaIds = mediaIds;
-    if (visibility !== undefined) post.visibility = visibility;
+    if (content) post.content = content;
+    if (visibility) post.visibility = visibility;
+    if (mediaIds) post.mediaIds = mediaIds;
 
     await post.save();
 
-    // ✅ Publish event for other services
-    // await new PostUpdatedPublisher(natsWrapper.client).publish({
-    //   id: post.id,
-    //   version: post.version,
-    //   authorId: post.authorId,
-    //   text: post.text,
-    //   mediaIds: post.mediaIds,
-    //   visibility: post.visibility,
-    //   updatedAt: post.updatedAt.toISOString(),
-    // });
+    // 🔢 Aggregate reactions for event (type -> count)
+    const aggregatedReactions = post.reactions.reduce((acc: Record<string, number>, reaction) => {
+      acc[reaction.type] = (acc[reaction.type] || 0) + 1;
+      return acc;
+    }, {});
 
-    res.send(post);
+    const reactionsArray = Object.entries(aggregatedReactions).map(([type, count]) => ({
+      type,
+      count,
+    }));
+
+    // 📡 Publish the event
+    await new PostUpdatedPublisher(natsClient.client).publish({
+      id: post.id,
+      userId: post.userId,
+      content: post.content,
+      mediaIds: post.mediaIds,
+      visibility: Visability[post.visibility as keyof typeof Visability],
+      status: post.status,
+      reactions: reactionsArray,
+      version: post.version,
+      updatedAt: new Date().toISOString(),
+      createdAt: post.createdAt.toISOString()
+    });
+
+    res.status(200).send(post);
   }
 );
 

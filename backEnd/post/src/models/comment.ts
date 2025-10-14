@@ -1,8 +1,10 @@
 import mongoose, { Types } from 'mongoose';
 
 export interface CommentAttrs {
+  postId: string;
   userId: string;
   text: string;
+  parentCommentId?: string, // for threads/replies
 }
 
 interface DummyRet {
@@ -12,19 +14,27 @@ interface DummyRet {
 }
 
 export interface CommentDoc extends mongoose.Document {
+  postId: string;
   userId: string;
   text: string;
   deleted: boolean;
   createdAt: Date;
   updatedAt: Date;
   version: number;
+  parentCommentId?: string, // for threads/replies
+}
+
+interface CommentModel extends mongoose.Model<CommentDoc>{
+  build(attr: CommentAttrs): CommentDoc;
 }
 
 const commentSchema = new mongoose.Schema(
   {
+    ostId: { type: String, required: true }, 
     userId: { type: String, required: true },
     text: { type: String, required: true },
     deleted: { type: Boolean, default: false },
+    parentCommentId: {type:String,  required: false}// for threads/replies
   },
   {
     timestamps: true,

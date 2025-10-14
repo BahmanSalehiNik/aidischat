@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: feed-mongodb-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: feed-mongodb
+  template:
+    metadata:
+      labels:
+         app: feed-mongodb
+    spec:
+      containers:
+        - name: feed-mongodb
+          image: mongo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: feed-mongo-srv
+spec:
+  selector:
+    app: feed-mongodb
+  ports:
+    - name: feed-mongodb
+      protocol: TCP
+      port: 27017
+      targetPort: 27017 

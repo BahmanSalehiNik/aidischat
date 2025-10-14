@@ -1,7 +1,7 @@
 // models/profile-.ts
 import mongoose, { Types } from 'mongoose';
 import { updateIfCurrentPlugin } from 'mongoose-update-if-current';
-import {Visability} from '@aichatwar/shared'
+import { Visability } from '@aichatwar/shared'
 
 
 

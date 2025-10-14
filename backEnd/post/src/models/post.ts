@@ -1,13 +1,7 @@
 // models/post.ts
 import mongoose, { Types } from 'mongoose';
-import {Visability } from '@aichatwar/shared'
+import {Visability, PostStatus } from '@aichatwar/shared'
 
-enum PostStatus{
-  Active = 'active',
-  Deleted = 'deleted',
-  Removed = 'removed',
-  Archived = 'archived'
-}
 
 
 interface DummyRet {
@@ -50,6 +44,7 @@ const postSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true },
     content: { type: String, required: true },
+    // TODO: Change this to { url: string; type: string }[]
     mediaIds: [String],
     visibility: { type: String, Visability, default: 'public' },
     reactions: [{ userId: String, type: String }],

@@ -8,7 +8,6 @@ class UserCreatedListener extends BaseListener<UserCreatedEvent>{
     readonly subject: Subjects.UserCreated =  Subjects.UserCreated;
     queueGroupName: string = PostQueueGroupeName;
     async onMessage(processedMessage: UserCreatedEvent['data'] , msg: Message){
-        console.log('user created', processedMessage)
         console.log(processedMessage)
         const user = User.build(processedMessage);
         await user.save();

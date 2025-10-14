@@ -1,8 +1,9 @@
 import express, { Request, Response } from 'express';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
 import { Post, PostStatus } from '../../models/post';
+import { PostDeletedPublisher } from "../../events/publishers/postPublisher";
+import { natsClient } from '../../nats-client';
 
-// import { PostDeletedPublisher } from '../events/post-deleted-publisher';
 
 const router = express.Router();
 
@@ -18,12 +19,14 @@ router.delete('/api/posts/:id', extractJWTPayload, loginRequired, async (req: Re
   }
 
   post.status = PostStatus.Deleted;
+
   await post.save()
 
-  // await new PostDeletedPublisher(natsWrapper.client).publish({
-  //   id: post.id,
-  //   authorId: post.authorId,
-  // });
+  await new PostDeletedPublisher(natsClient.client).publish({
+    id: post.id,
+    userId: post.userId,
+    version: post.version
+  });
 
   res.status(204).send();
 });

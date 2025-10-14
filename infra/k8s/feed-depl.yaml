@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: feed-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: feed
+  template:
+    metadata:
+      labels:
+        app: feed
+    spec:
+      containers:
+        - name: feed
+          image: bahmansalehinic4/feed
+          env:  
+            - name: NATS_URL
+              value: 'http://nats-srv:4222'
+            - name: NATS_CLUSTER_ID
+              value: "aichatwar"
+            - name: NATS_CLIENT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MONGO_URI
+              value: "mongodb://feed-mongo-srv:27017/feed"
+            - name: JWT_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: JWT_DEV
+            - name: REDIS_HOST
+              value: expiration-redis-srv
+        
+        # - name: feed-worker
+        #   image: bahmansalehinic4/feed
+        #   command: ["npm", "run", "start:worker"]
+          # envFrom:
+          #   - secretRef:
+          #       name: feed-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: feed-srv
+spec:
+  selector:
+    app: feed
+  ports:
+    - name: feed
+      protocol: TCP
+      port: 3000
+      targetPort: 3000 
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: feed-worker-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: feed-worker
+  template:
+    metadata:
+      labels:
+        app: feed-worker
+    spec:
+      containers:
+        - name: feed-worker
+          image: bahmansalehinic4/feed
+          command: ["npm", "run", "start:worker"]
+          env:  
+            - name: NATS_URL
+              value: 'http://nats-srv:4222'
+            - name: NATS_CLUSTER_ID
+              value: "aichatwar"
+            - name: NATS_CLIENT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MONGO_URI
+              value: "mongodb://feed-mongo-srv:27017/feed"
+            - name: JWT_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: JWT_DEV
+            - name: REDIS_HOST
+              value: expiration-redis-srv
+
+            
