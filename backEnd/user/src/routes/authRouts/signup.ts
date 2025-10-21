@@ -5,7 +5,8 @@ import jwt from "jsonwebtoken";
 import { validateRequest, BadRequestError } from "@aichatwar/shared";
 import { User } from "../../models/user";
 import { natsClient } from "../../nats-client";
-import { UserCreatedPublisher } from "../../events/userPublishers";
+import {kafkaWrapper} from "../../kafka-client";
+import { UserCreatedPublisher, KafkaUserCreatedPublisher } from "../../events/userPublishers";
 
 
 const router = express.Router();
@@ -37,6 +38,13 @@ async (req: Request, res: Response)=>{
         version: user.version
     }
     )
+    
+    await new KafkaUserCreatedPublisher(kafkaWrapper.producer).publish({
+        id:user.id,
+        email:user.email,
+        status:user.status,
+        version: user.version
+    })
     
     // creating the jwt 
     const userJwt = jwt.

@@ -4,8 +4,10 @@ import mongoose from "mongoose";
 import { app } from "./app";
 import { natsClient } from "./nats-client";
 import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/user/userListener";
+import { KafkaUserCreatedListener } from "./events/listeners/user/userListener";
 import { FreindshipAcceptedListener, FreindshipRequestedListener, FreindshipUpdatedListener} from "./events/listeners/friendship/friendshipListener";
 import { ProfileCreatedListener } from "./events/listeners/user/profileListener";
+import { Kafka } from 'kafkajs';
 
 
 const startMongoose = async ()=>{
@@ -24,6 +26,12 @@ const startMongoose = async ()=>{
         if(!process.env.NATS_CLIENT_ID){
         throw new Error("NATS_CLIENT_ID must be defined!")
     }
+        if(!process.env.KAFKA_CLIENT_ID){
+        throw new Error("KAFKA_CLIENT_ID must be defined!")
+    }
+        if(!process.env.KAFKA_BROKER_URL){
+        throw new Error("KAFKA_BROKER_URL must be defined!")
+    }
     try{
       // ------------ Nats ------------
       await natsClient.connect(process.env.NATS_CLUSTER_ID,process.env.NATS_CLIENT_ID,process.env.NATS_URL);
@@ -31,6 +39,8 @@ const startMongoose = async ()=>{
         console.log('NATS connection closed!')
         process.exit()
     })
+
+  
     
     process.on('SIGINT', ()=>natsClient.client.close());
     process.on('SIGTERM', ()=> natsClient.client.close());
@@ -47,6 +57,31 @@ const startMongoose = async ()=>{
     new FreindshipRequestedListener(natsClient.client).listen();
     new FreindshipUpdatedListener(natsClient.client).listen();
 
+
+      // ------------- Kafka ------------
+
+//     const kafka = new Kafka({
+//     clientId: process.env.KAFKA_CLIENT_ID,
+//     brokers: (process.env.KAFKA_BROKER_URL || 'http://redpanda-srv:9092').split(','),
+//   });
+
+    console.log("Connecting to Kafka at:", process.env.KAFKA_BROKER_URL);
+    const brokers = process.env.KAFKA_BROKER_URL
+    ? process.env.KAFKA_BROKER_URL.split(',').map(host => host.trim())
+    : [];
+
+    if (!brokers.length) {
+    throw new Error('❌ KAFKA_BROKERS is not defined or is empty.');
+    }
+
+    console.log(process.env.KAFKA_BROKER_URL)
+
+    const kafka = new Kafka({
+    clientId: process.env.KAFKA_CLIENT_ID || 'post-service',
+    brokers,
+    });
+
+    new KafkaUserCreatedListener(kafka).listen();
 
       // ------------ Mongoose ----------
       await mongoose.connect(process.env.MONGO_URI);

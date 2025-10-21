@@ -1,6 +1,7 @@
-import { BaseListener,UserCreatedEvent, UserUpdatedEvent, Subjects } from "@aichatwar/shared";
+import { BaseListener,UserCreatedEvent, UserUpdatedEvent, Subjects, Listener } from "@aichatwar/shared";
 import { PostQueueGroupeName } from "./../../queGroupNames";
 import { Message } from "node-nats-streaming";
+import { EachMessagePayload } from "kafkajs";
 import { User } from "../../../models/user/user";
 
 
@@ -27,5 +28,17 @@ class UserUpdatedListener extends BaseListener<UserUpdatedEvent>{
 }
 }
 
+class KafkaUserCreatedListener extends Listener<UserCreatedEvent>{
+    readonly topic: Subjects.UserCreated =  Subjects.UserCreated;
+    groupId: string = PostQueueGroupeName;
+        async onMessage(processedMessage: UserCreatedEvent['data'] , msg: EachMessagePayload){
+        console.log('KAFKA user created event recieved!', processedMessage)
+        // console.log(processedMessage)
+        // const user = User.build(processedMessage);
+        // await user.save();
+        // msg.ack();
+}
+}
 
-export { UserCreatedListener, UserUpdatedListener }
+
+export { UserCreatedListener, UserUpdatedListener, KafkaUserCreatedListener }

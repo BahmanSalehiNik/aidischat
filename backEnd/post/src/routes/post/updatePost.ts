@@ -60,7 +60,9 @@ router.patch(
       reactions: reactionsArray,
       version: post.version,
       updatedAt: new Date().toISOString(),
-      createdAt: post.createdAt.toISOString()
+      createdAt: post.createdAt.toISOString(),
+      //TODO: Implement comment count
+      commentCount: 0
     });
 
     res.status(200).send(post);
