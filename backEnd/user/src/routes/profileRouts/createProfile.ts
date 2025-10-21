@@ -3,8 +3,9 @@ import { Profile } from '../../models/profile';
 import { body } from "express-validator";
 import { BadRequestError, extractJWTPayload,loginRequired, NotFoundError, validateRequest, Visability } from "@aichatwar/shared";
 import { User } from '../../models/user';
-import { ProfileCreatedPublisher } from '../../events/profilePublishers';
+import { ProfileCreatedPublisher, KafkaProfileCreatedPublisher } from '../../events/profilePublishers';
 import { natsClient } from '../../nats-client';
+import { kafkaWrapper } from '../../kafka-client';
 
 
 
@@ -64,6 +65,25 @@ router.post(
     await profile.save();
 
     await new ProfileCreatedPublisher(natsClient.client).publish({
+      id: profile.id,
+      user:user.id,
+      username:profile.username,
+      fullName: profile.fullName,
+      bio: profile.bio,
+      birthday: profile.bio,
+      gender: profile.gender,
+      location:{
+        country: profile.location?.country,
+        city: profile.location?.city,
+        coordinates: profile.location?.coordinates
+      }, 
+      coverPhoto: profile.coverPhoto,
+      privacy: profile.privacy,
+      profilePicture: profile.profilePicture,
+      version: profile.version
+    })
+
+    await new KafkaProfileCreatedPublisher(kafkaWrapper.producer).publish({
       id: profile.id,
       user:user.id,
       username:profile.username,

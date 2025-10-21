@@ -4,6 +4,7 @@ import { body } from "express-validator";
 import { extractJWTPayload,loginRequired, NotAuthorizedError, validateRequest } from "@aichatwar/shared";
 import { Types } from 'mongoose';
 
+// Todo: update this to soft delete
 
 const router = express.Router();
 

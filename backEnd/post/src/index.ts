@@ -4,10 +4,12 @@ import mongoose from "mongoose";
 import { app } from "./app";
 import { natsClient } from "./nats-client";
 import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/user/userListener";
-import { KafkaUserCreatedListener } from "./events/listeners/user/userListener";
+import { KafkaUserCreatedListener, KafkaUserUpdatedListener } from "./events/listeners/user/userListener";
+import { KafkaProfileCreatedListener } from "./events/listeners/user/profileListener";
 import { FreindshipAcceptedListener, FreindshipRequestedListener, FreindshipUpdatedListener} from "./events/listeners/friendship/friendshipListener";
 import { ProfileCreatedListener } from "./events/listeners/user/profileListener";
 import { Kafka } from 'kafkajs';
+import { PostQueueGroupeName, GroupIdProfileCreated, GroupIdUserCreated, GroupIdUserUpdated } from "./events/queGroupNames";
 
 
 const startMongoose = async ()=>{
@@ -80,8 +82,9 @@ const startMongoose = async ()=>{
     clientId: process.env.KAFKA_CLIENT_ID || 'post-service',
     brokers,
     });
-
-    new KafkaUserCreatedListener(kafka).listen();
+    new KafkaUserCreatedListener(kafka.consumer({groupId: GroupIdUserCreated})).listen();
+    new KafkaUserUpdatedListener(kafka.consumer({groupId: GroupIdUserUpdated})).listen();
+    new KafkaProfileCreatedListener(kafka.consumer({groupId: GroupIdProfileCreated})).listen();
 
       // ------------ Mongoose ----------
       await mongoose.connect(process.env.MONGO_URI);

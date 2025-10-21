@@ -1,4 +1,4 @@
-import {BasePublisher, Subjects, ProfileCreatedEvent, ProfileUpdatedEvent } from "@aichatwar/shared";
+import {BasePublisher, Subjects, ProfileCreatedEvent, ProfileUpdatedEvent, Listener, Publisher } from "@aichatwar/shared";
 
 
 
@@ -12,4 +12,17 @@ class ProfileUpdatedPublisher extends BasePublisher<ProfileUpdatedEvent>{
 
 }
 
-export {ProfileUpdatedPublisher, ProfileCreatedPublisher}
+
+class KafkaProfileCreatedPublisher extends Publisher<ProfileCreatedEvent>{
+    topic: Subjects.ProfileCreated = Subjects.ProfileCreated;
+
+}
+
+class KafkaProfileUpdatedPublisher extends Publisher<ProfileUpdatedEvent>{
+    topic: Subjects.ProfileUpdated = Subjects.ProfileUpdated;
+
+}
+export {ProfileUpdatedPublisher, 
+    ProfileCreatedPublisher, 
+    KafkaProfileCreatedPublisher, 
+    KafkaProfileUpdatedPublisher}

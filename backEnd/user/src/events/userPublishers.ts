@@ -12,13 +12,14 @@ class UserUpdatedPublisher extends BasePublisher<UserUpdatedEvent>{
 
 }
 
-class KafkaUserUpdatedPublisher extends Publisher<UserUpdatedEvent>{
-    topic: Subjects.UserUpdated = Subjects.UserUpdated;
-
-}
 
 class KafkaUserCreatedPublisher extends Publisher<UserCreatedEvent>{
     topic: Subjects.UserCreated = Subjects.UserCreated;
+
+}
+
+class KafkaUserUpdatedPublisher extends Publisher<UserUpdatedEvent>{
+    topic: Subjects.UserUpdated = Subjects.UserUpdated;
 
 }
 

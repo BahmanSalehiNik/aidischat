@@ -3,6 +3,9 @@ import { Profile } from '../../models/profile';
 import { body } from "express-validator";
 import { extractJWTPayload,loginRequired, validateRequest, NotAuthorizedError } from "@aichatwar/shared";
 import { Types } from 'mongoose';
+import { KafkaProfileUpdatedPublisher, ProfileUpdatedPublisher } from '../../events/profilePublishers';
+import { natsClient } from '../../nats-client';
+import { kafkaWrapper } from '../../kafka-client';
 
 const router = express.Router();
 
@@ -44,8 +47,46 @@ router.put(
         profile[field] = req.body[field];
       }
     });
+        await new ProfileUpdatedPublisher(natsClient.client).publish({
+      id: profile.id,
+      user:profile.user.toHexString(),
+      username:profile.username,
+      fullName: profile.fullName,
+      bio: profile.bio,
+      birthday: profile.bio,
+      gender: profile.gender,
+      location:{
+        country: profile.location?.country,
+        city: profile.location?.city,
+        coordinates: profile.location?.coordinates
+      }, 
+      coverPhoto: profile.coverPhoto,
+      privacy: profile.privacy,
+      profilePicture: profile.profilePicture,
+      version: profile.version
+    })
 
+    await new KafkaProfileUpdatedPublisher(kafkaWrapper.producer).publish({
+      id: profile.id,
+      user:profile.user.toHexString(),
+      username:profile.username,
+      fullName: profile.fullName,
+      bio: profile.bio,
+      birthday: profile.bio,
+      gender: profile.gender,
+      location:{
+        country: profile.location?.country,
+        city: profile.location?.city,
+        coordinates: profile.location?.coordinates
+      }, 
+      coverPhoto: profile.coverPhoto,
+      privacy: profile.privacy,
+      profilePicture: profile.profilePicture,
+      version: profile.version
+    })
     await profile.save();
+
+
     res.send(profile);
 
   }

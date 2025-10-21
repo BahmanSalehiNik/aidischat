@@ -19,7 +19,7 @@ export const canView = async (viewerId: string, ownerId: string): Promise<boolea
     {$or:[{requester: viewerId}, {recipient: viewerId}]},
     
   ] });
-  if (!friendship || friendship.length ===0){
+  if (!friendship || friendship.length === 0){
     return false
   }
   return true;

@@ -7,7 +7,8 @@ import { validateRequest, BadRequestError, loginRequired,
      NotAuthorizedError } from "@aichatwar/shared";
 import { User } from "../../models/user";
 import { natsClient } from "../../nats-client";
-import { UserUpdatedPublisher } from "../../events/userPublishers";
+import { UserUpdatedPublisher, KafkaUserUpdatedPublisher } from "../../events/userPublishers";
+import { kafkaWrapper } from "../../kafka-client";
 
 
 
@@ -67,6 +68,14 @@ router.patch(
         version: user.version
     }
     )
+
+    await new KafkaUserUpdatedPublisher(kafkaWrapper.producer).publish({
+        id:user.id,
+        email:user.email,
+        status:user.status,
+        version: user.version
+    })
+    
     // 🔔 Publish a UserStatusUpdated event to NATS/Kafka if using event-driven services
     // new UserStatusUpdatedPublisher(natsWrapper.client).publish({
     //   id: user.id,

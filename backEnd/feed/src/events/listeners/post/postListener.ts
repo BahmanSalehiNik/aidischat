@@ -39,7 +39,6 @@ export class PostCreatedListener extends BaseListener<PostCreatedEvent> {
 
     await post.save();
 
-    await post.save();
 
     // Enqueue fan-out job
     await fanoutQueue.add('fanout-job', { postId: id, authorId: userId, visibility });

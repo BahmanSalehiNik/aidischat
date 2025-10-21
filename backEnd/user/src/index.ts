@@ -3,7 +3,7 @@ import express from "express";
 import mongoose from "mongoose";
 import { natsClient } from "./nats-client";
 import { kafkaWrapper } from './kafka-client';
-import { KafkaUserCreatedPublisher } from "./events/userPublishers";
+
 
 
 const startMongoose = async ()=>{
@@ -58,8 +58,8 @@ const startMongoose = async ()=>{
         console.log(err,'error connecting to kafka restaring')
         startMongoose()
     }
-    
-    const userCreatedPublisher = new KafkaUserCreatedPublisher(kafkaWrapper.producer);
+
+    // const userCreatedPublisher = new KafkaUserCreatedPublisher(kafkaWrapper.producer);
 
     app.listen(3000, ()=>{
     console.log("app listening on port 3000!, it is.. or is it soab")
