@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { Password } from "../utils/password";
 import { Types } from "mongoose"
 import { updateIfCurrentPlugin } from "mongoose-update-if-current";
-import { UserStatus, Visability } from '@aichatwar/shared'
+import { UserStatus, Visibility } from '@aichatwar/shared'
 
 
 interface UserAttrs {

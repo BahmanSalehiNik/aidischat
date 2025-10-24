@@ -1,7 +1,6 @@
 import { app } from "./app";
 import express from "express";
 import mongoose from "mongoose";
-import { natsClient } from "./nats-client";
 import { kafkaWrapper } from './kafka-client';
 
 
@@ -13,62 +12,39 @@ const startMongoose = async ()=>{
     if(!process.env.MONGO_URI){
         throw new Error("MONGO_URI must be defined!")
     }
-    if(!process.env.NATS_URL){
-        throw new Error("NATS_URL must be defined!")
-    }
-    if(!process.env.NATS_CLUSTER_ID){
-        throw new Error("NATS_CLUSTER_ID must be defined!")
-    }
-    if(!process.env.NATS_CLIENT_ID){
-        throw new Error("NATS_CLIENT_ID must be defined!")
-    }
     if(!process.env.KAFKA_CLIENT_ID){
         throw new Error("KAFKA_CLIENT_ID must be defined!")
     }
     if(!process.env.KAFKA_BROKER_URL){
         throw new Error("KAFKA_BROKER_URL must be defined!")
     }
-    try{
-      // ------------ Nats ------------
-      await natsClient.connect(process.env.NATS_CLUSTER_ID,process.env.NATS_CLIENT_ID,process.env.NATS_URL);
-        natsClient.client.on('close',()=>{
-        console.log('NATS connection closed!')
-        process.exit()
-    })
     
-    process.on('SIGINT', ()=>natsClient.client.close());
-    process.on('SIGTERM', ()=> natsClient.client.close());
-
-    //  ------------ Kafka -----------
-    console.log("Connecting to Kafka at:", process.env.KAFKA_BROKER_URL);
-    const brokers = process.env.KAFKA_BROKER_URL
-    ? process.env.KAFKA_BROKER_URL.split(',').map(host => host.trim())
-    : [];
-
-    if (!brokers.length) {
-    throw new Error('❌ KAFKA_BROKERS is not defined or is empty.');
-    }
-
-    console.log(process.env.KAFKA_BROKER_URL)
     try{
+        // ------------ Mongoose ----------
+        await mongoose.connect(process.env.MONGO_URI);
+        console.log("Connected to MongoDB");
 
-    await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID)
-    }
-    catch(err){
-        console.log(err,'error connecting to kafka restaring')
-        startMongoose()
-    }
+        // ------------ Kafka ------------
+        console.log("Connecting to Kafka at:", process.env.KAFKA_BROKER_URL);
+        const brokers = process.env.KAFKA_BROKER_URL
+            ? process.env.KAFKA_BROKER_URL.split(',').map(host => host.trim())
+            : [];
 
-    // const userCreatedPublisher = new KafkaUserCreatedPublisher(kafkaWrapper.producer);
+        if (!brokers.length) {
+            throw new Error('❌ KAFKA_BROKERS is not defined or is empty.');
+        }
 
-    app.listen(3000, ()=>{
-    console.log("app listening on port 3000!, it is.. or is it soab")
-})
-    await mongoose.connect(process.env.MONGO_URI);
+        await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
+        console.log("Kafka connected successfully");
+
+        app.listen(3000, ()=>{
+            console.log("app listening on port 3000! user service")
+        });
+        
     } catch(err) {
-        console.error(err);
+        console.error("Error starting service:", err);
+        process.exit(1);
     }
-    
 }
 
 startMongoose()

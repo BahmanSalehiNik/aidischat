@@ -2,8 +2,9 @@ import express, { Request, Response } from 'express';
 import { body } from 'express-validator';
 import { extractJWTPayload,loginRequired, NotAuthorizedError, NotFoundError, validateRequest } from "@aichatwar/shared"
 import { Friendship, FriendshipStatus } from '../models/friendship';
-import { FrinedShipAcceptedPublisher, FriendshipUpdatedPublisher } from '../events/publishers/friendshipPublishers';
-import { natsClient } from '../nats-client';
+import { FriendshipAcceptedPublisher, FriendshipUpdatedPublisher } from '../events/publishers/friendshipPublishers';
+import {kafkaWrapper} from "../kafka-client";
+
 const router = express.Router();
 
 
@@ -67,13 +68,11 @@ router.patch(
       }
 
     if (status === FriendshipStatus.Accepted){
-      await new FrinedShipAcceptedPublisher(natsClient.client).publish(friendshipEventData)
+      await new FriendshipAcceptedPublisher(kafkaWrapper.producer).publish(friendshipEventData)
     }else{
-      await new FriendshipUpdatedPublisher(natsClient.client).publish(friendshipEventData)
+      await new FriendshipUpdatedPublisher(kafkaWrapper.producer).publish(friendshipEventData)
     }
     
-
-    // TODO: Publish a FriendshipUpdated event if using NATS/Kafka
 
     res.send(friendship);
   }

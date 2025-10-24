@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { updateIfCurrentPlugin } from "mongoose-update-if-current";
-import { Visability } from '@aichatwar/shared';
+import { Visibility } from '@aichatwar/shared';
 //import { UserDoc } from './user'; // <-- Import your User model's interface
 
 //
@@ -30,8 +30,8 @@ export interface ProfileAttrs {
     publicId?: string;
   };
   privacy?: {
-    profileVisibility?: Visability;
-    postDefault?: Visability;
+    profileVisibility?: Visibility;
+    postDefault?: Visibility;
   };
 }
 
@@ -48,10 +48,18 @@ export interface ProfileDoc extends mongoose.Document {
     country?: string;
     coordinates?: [number, number];
   };
+  profilePicture?: {
+    url: string;
+    publicId?: string;
+  };
+  coverPhoto?: {
+    url: string;
+    publicId?: string;
+  };
 
   privacy: {
-    profileVisibility: Visability;
-    postDefault: Visability;
+    profileVisibility: Visibility;
+    postDefault: Visibility;
   };
 }
 
@@ -101,13 +109,13 @@ const profileSchema = new mongoose.Schema(
     privacy: {
       profileVisibility: {
         type: String,
-        enum: Visability,
-        default: Visability.Public,
+        enum: Visibility,
+        default: Visibility.Public,
       },
       postDefault: {
         type: String,
-        enum: Visability,
-        default: Visability.Friends,
+        enum: Visibility,
+        default: Visibility.Friends,
       },
     },
   },

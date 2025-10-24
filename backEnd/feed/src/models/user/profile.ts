@@ -1,7 +1,7 @@
 // models/profile-.ts
 import mongoose, { Types } from 'mongoose';
 import { updateIfCurrentPlugin } from 'mongoose-update-if-current';
-import { Visability } from '@aichatwar/shared'
+import { Visibility } from '@aichatwar/shared'
 
 
 
@@ -10,8 +10,8 @@ interface ProfileAttrs {
   userId: string;
   avatarUrl?: string;
   privacy?: {
-    profileVisibility?: Visability;
-    postDefault?: Visability;
+    profileVisibility?: Visibility;
+    postDefault?: Visibility;
   };
   username: string;
   version: number;
@@ -28,8 +28,8 @@ interface ProfileDoc extends mongoose.Document<ProfileAttrs>{
   userId: string;
   avatarUrl?: string;
   privacy: {
-    profileVisibility: Visability;
-    postDefault: Visability;
+    profileVisibility: Visibility;
+    postDefault: Visibility;
   };
   username: string;
   version: number;
@@ -47,13 +47,13 @@ const profileSchema = new mongoose.Schema({
   privacy: {
       profileVisibility: {
         type: String,
-        enum: Visability,
-        default: Visability.Public,
+        enum: Visibility,
+        default: Visibility.Public,
       },
       postDefault: {
         type: String,
-        enum: Visability,
-        default: Visability.Friends,
+        enum: Visibility,
+        default: Visibility.Friends,
       },
     },
   version: Number,

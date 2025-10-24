@@ -1,6 +1,6 @@
 // models/post.ts
 import mongoose, { Types } from 'mongoose';
-import {Visability, PostStatus } from '@aichatwar/shared'
+import {Visibility, PostStatus } from '@aichatwar/shared'
 
 
 
@@ -15,7 +15,7 @@ interface PostAttrs {
   userId: string;
   content: string;
   mediaIds?: string[];
-  visibility:Visability;
+  visibility:Visibility;
   version: number;
   status?: PostStatus
 }
@@ -46,7 +46,7 @@ const postSchema = new mongoose.Schema(
     content: { type: String, required: true },
     // TODO: Change this to { url: string; type: string }[]
     mediaIds: [String],
-    visibility: { type: String, Visability, default: 'public' },
+    visibility: { type: String, Visibility, default: 'public' },
     reactions: [{ userId: String, type: String }],
     status: {
       type: String,

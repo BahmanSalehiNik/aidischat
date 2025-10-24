@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
 import { Post, PostStatus } from '../../models/post';
 import { PostDeletedPublisher } from "../../events/publishers/postPublisher";
-import { natsClient } from '../../nats-client';
+import { kafkaWrapper } from '../../kafka-client';
 
 
 const router = express.Router();
@@ -22,7 +22,7 @@ router.delete('/api/posts/:id', extractJWTPayload, loginRequired, async (req: Re
 
   await post.save()
 
-  await new PostDeletedPublisher(natsClient.client).publish({
+  await new PostDeletedPublisher(kafkaWrapper.producer).publish({
     id: post.id,
     userId: post.userId,
     version: post.version

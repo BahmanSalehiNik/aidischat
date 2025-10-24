@@ -1,26 +1,11 @@
-import {BasePublisher, Publisher, Subjects, UserCreatedEvent, UserUpdatedEvent } from "@aichatwar/shared";
+import { Publisher, Subjects, UserCreatedEvent, UserUpdatedEvent } from "@aichatwar/shared";
 
-
-
-class UserCreatedPublisher extends BasePublisher<UserCreatedEvent>{
-    subject: Subjects.UserCreated = Subjects.UserCreated;
-
-}
-
-class UserUpdatedPublisher extends BasePublisher<UserUpdatedEvent>{
-    subject: Subjects.UserUpdated = Subjects.UserUpdated;
-
-}
-
-
-class KafkaUserCreatedPublisher extends Publisher<UserCreatedEvent>{
+class UserCreatedPublisher extends Publisher<UserCreatedEvent>{
     topic: Subjects.UserCreated = Subjects.UserCreated;
-
 }
 
-class KafkaUserUpdatedPublisher extends Publisher<UserUpdatedEvent>{
+class UserUpdatedPublisher extends Publisher<UserUpdatedEvent>{
     topic: Subjects.UserUpdated = Subjects.UserUpdated;
-
 }
 
-export {UserCreatedPublisher, UserUpdatedPublisher, KafkaUserCreatedPublisher, KafkaUserUpdatedPublisher}
+export { UserCreatedPublisher, UserUpdatedPublisher }

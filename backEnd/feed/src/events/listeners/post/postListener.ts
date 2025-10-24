@@ -1,15 +1,15 @@
-// src/events/listeners/post-created-listener.ts
-import { Message } from 'node-nats-streaming';
-import { BaseListener, Subjects, PostCreatedEvent, Visability } from '@aichatwar/shared';
+import { Subjects, PostCreatedEvent, Visibility, Listener } from '@aichatwar/shared';
 import { fanoutQueue } from '../../../queues/fanout-queue';
 import { Post } from '../../../models/post/post';
-import { PostQueueGroupeName } from './../../queGroupNames';
+import { GroupIdPostCreated } from './../../queGroupNames';
+import { EachMessagePayload } from 'kafkajs';
 
-export class PostCreatedListener extends BaseListener<PostCreatedEvent> {
-  readonly subject: Subjects.PostCreated = Subjects.PostCreated;
-  queueGroupName = PostQueueGroupeName;
+export class PostCreatedListener extends Listener<PostCreatedEvent> {
+  readonly topic: Subjects.PostCreated = Subjects.PostCreated;
+  groupId: string = GroupIdPostCreated;
 
-  async onMessage(data: PostCreatedEvent['data'], msg: Message) {
+  async onMessage(data: PostCreatedEvent['data'], msg: EachMessagePayload) {
+    console.log('Post created event received:', data);
     const {
       id,
       userId,
@@ -17,12 +17,9 @@ export class PostCreatedListener extends BaseListener<PostCreatedEvent> {
       mediaIds,
       visibility,
       createdAt,
-    //   commentsCount,
-    //   reactions
     } = data;
 
     // Save projection
-    // Save to post projection (for caching post metadata)
     const media = mediaIds ? mediaIds : undefined;
 
     const post = Post.build({
@@ -30,21 +27,16 @@ export class PostCreatedListener extends BaseListener<PostCreatedEvent> {
       userId,
       content,
       media,
-      visibility: Visability[visibility as keyof typeof Visability],
-    //   commentsCount: commentsCount || 0,
-    //   reactionsSummary: reactions || [],
-      originalCreation:createdAt
-    //   updatedAt,
+      visibility: Visibility[visibility as keyof typeof Visibility],
+      originalCreation: createdAt
     });
 
     await post.save();
 
-
     // Enqueue fan-out job
     await fanoutQueue.add('fanout-job', { postId: id, authorId: userId, visibility });
-
-    msg.ack();
+    
+    // Manual acknowledgment - only after successful save and queue job
+    await this.ack();
   }
 }
-
-

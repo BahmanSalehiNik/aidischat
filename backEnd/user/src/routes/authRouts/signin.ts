@@ -5,6 +5,7 @@ import { User } from "../../models/user";
 import { BadRequestError, validateRequest } from "@aichatwar/shared"
 import jwt from "jsonwebtoken";
 
+// TODO: Add user signed in event
 
 const router = express.Router();
 

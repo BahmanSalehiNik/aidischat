@@ -1,10 +1,9 @@
 import express, { Request, Response } from 'express';
 import { Profile } from '../../models/profile';
 import { body } from "express-validator";
-import { BadRequestError, extractJWTPayload,loginRequired, NotFoundError, validateRequest, Visability } from "@aichatwar/shared";
+import { BadRequestError, extractJWTPayload,loginRequired, NotFoundError, validateRequest, Visibility } from "@aichatwar/shared";
 import { User } from '../../models/user';
-import { ProfileCreatedPublisher, KafkaProfileCreatedPublisher } from '../../events/profilePublishers';
-import { natsClient } from '../../nats-client';
+import { ProfileCreatedPublisher } from '../../events/profilePublishers';
 import { kafkaWrapper } from '../../kafka-client';
 
 
@@ -45,7 +44,7 @@ router.post(
       privacy,
     } = req.body;
 
-    if(privacy && !(privacy in Visability)){
+    if(privacy && !(privacy in Visibility)){
       throw new BadRequestError('privacy must be public, private or friends')
     }
 
@@ -64,41 +63,18 @@ router.post(
 
     await profile.save();
 
-    await new ProfileCreatedPublisher(natsClient.client).publish({
+    await new ProfileCreatedPublisher(kafkaWrapper.producer).publish({
       id: profile.id,
-      user:user.id,
-      username:profile.username,
+      user: user.id,
+      username: profile.username,
       fullName: profile.fullName,
       bio: profile.bio,
-      birthday: profile.bio,
+      birthday: profile.birthday?.toISOString(),
       gender: profile.gender,
-      location:{
-        country: profile.location?.country,
-        city: profile.location?.city,
-        coordinates: profile.location?.coordinates
-      }, 
+      location: profile.location,
+      profilePicture: profile.profilePicture,
       coverPhoto: profile.coverPhoto,
       privacy: profile.privacy,
-      profilePicture: profile.profilePicture,
-      version: profile.version
-    })
-
-    await new KafkaProfileCreatedPublisher(kafkaWrapper.producer).publish({
-      id: profile.id,
-      user:user.id,
-      username:profile.username,
-      fullName: profile.fullName,
-      bio: profile.bio,
-      birthday: profile.bio,
-      gender: profile.gender,
-      location:{
-        country: profile.location?.country,
-        city: profile.location?.city,
-        coordinates: profile.location?.coordinates
-      }, 
-      coverPhoto: profile.coverPhoto,
-      privacy: profile.privacy,
-      profilePicture: profile.profilePicture,
       version: profile.version
     })
     res.status(201).send(profile);

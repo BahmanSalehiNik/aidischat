@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { UserDoc } from './user'; // <-- Import your User model's interface
 import { updateIfCurrentPlugin } from "mongoose-update-if-current";
-import { Visability } from '@aichatwar/shared'
+import { Visibility } from '@aichatwar/shared'
 //
 // 1️⃣ Interfaces
 //
@@ -28,8 +28,8 @@ export interface ProfileAttrs {
     publicId?: string;
   };
   privacy?: {
-    profileVisibility?: Visability;
-    postDefault?: Visability;
+    profileVisibility?: Visibility;
+    postDefault?: Visibility;
   };
 }
 
@@ -55,8 +55,8 @@ export interface ProfileDoc extends mongoose.Document {
     publicId?: string;
   };
   privacy: {
-    profileVisibility: Visability;
-    postDefault: Visability;
+    profileVisibility: Visibility;
+    postDefault: Visibility;
   };
   createdAt: Date;
   updatedAt: Date;

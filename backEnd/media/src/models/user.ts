@@ -1,22 +1,18 @@
-// models/user-projection.ts
 import mongoose from 'mongoose';
 import { updateIfCurrentPlugin } from 'mongoose-update-if-current';
 import { UserStatus } from '@aichatwar/shared';
 
-
-
-
 interface UserAttrs {
   id: string;
-  email?: string;
+  email: string;
   status: UserStatus;
   version: number;
 }
 
 interface UserDoc extends mongoose.Document {
   id: string;
-  email?: string;
-  status: string;
+  email: string;
+  status: UserStatus;
   version: number;
 }
 
@@ -27,18 +23,21 @@ interface UserModel extends mongoose.Model<UserDoc> {
 
 const userSchema = new mongoose.Schema({
   _id: String,
-  email: String,
-  status: { type: String, enum: UserStatus, default: UserStatus.Active },
+  email: { type: String, required: true },
+  status: { type: String, enum: Object.values(UserStatus), default: UserStatus.Active },
   version: Number
 });
 
+userSchema.set('versionKey', 'version');
+userSchema.plugin(updateIfCurrentPlugin);
 
 userSchema.statics.build = (attrs: UserAttrs) => {
-  const {id, ...otherAttrs} = attrs;
   return new User({
-    _id: id,
-    ...otherAttrs,
-});
+    _id: attrs.id,
+    email: attrs.email,
+    status: attrs.status,
+    version: attrs.version
+  });
 };
 
 userSchema.statics.findByEvent = (event: { id: string; version: number }) => {
@@ -48,9 +47,6 @@ userSchema.statics.findByEvent = (event: { id: string; version: number }) => {
   });
 };
 
-userSchema.set('versionKey', 'version');
-userSchema.plugin(updateIfCurrentPlugin);
-
-const User= mongoose.model<UserDoc, UserModel>('User', userSchema);
+const User = mongoose.model<UserDoc, UserModel>('User', userSchema);
 
 export { User };

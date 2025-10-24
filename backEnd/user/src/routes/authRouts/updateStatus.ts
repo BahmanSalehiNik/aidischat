@@ -6,8 +6,7 @@ import { validateRequest, BadRequestError, loginRequired,
     extractJWTPayload, UserStatus, NotFoundError,
      NotAuthorizedError } from "@aichatwar/shared";
 import { User } from "../../models/user";
-import { natsClient } from "../../nats-client";
-import { UserUpdatedPublisher, KafkaUserUpdatedPublisher } from "../../events/userPublishers";
+import { UserUpdatedPublisher } from "../../events/userPublishers";
 import { kafkaWrapper } from "../../kafka-client";
 
 
@@ -61,18 +60,10 @@ router.patch(
     user.status = status;
     await user.save();
 
-    await  new UserUpdatedPublisher(natsClient.client).publish({
-        id:user.id,
-        email:user.email,
-        status:user.status,
-        version: user.version
-    }
-    )
-
-    await new KafkaUserUpdatedPublisher(kafkaWrapper.producer).publish({
-        id:user.id,
-        email:user.email,
-        status:user.status,
+    await new UserUpdatedPublisher(kafkaWrapper.producer).publish({
+        id: user.id,
+        email: user.email,
+        status: user.status,
         version: user.version
     })
     

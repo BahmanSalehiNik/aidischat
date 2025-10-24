@@ -1,7 +1,7 @@
-import { NotFoundError, ProfileCreatedEvent, ProfileUpdatedEvent, Listener, Subjects, Visibility } from "@aichatwar/shared";
-import { GroupIdProfileCreated, GroupIdProfileUpdated } from "../../queGroupNames";
-import { Profile } from "../../../models/user/profile";
-import { User } from "../../../models/user/user";
+import { ProfileCreatedEvent, ProfileUpdatedEvent, Subjects, Listener, NotFoundError, Visibility } from "@aichatwar/shared";
+import { GroupIdProfileCreated, GroupIdProfileUpdated } from "../queGroupNames";
+import { Profile } from "../../models/profile";
+import { User } from "../../models/user";
 import { EachMessagePayload } from "kafkajs";
 
 class ProfileCreatedListener extends Listener<ProfileCreatedEvent>{
@@ -10,6 +10,7 @@ class ProfileCreatedListener extends Listener<ProfileCreatedEvent>{
     
     async onMessage(processedMessage: ProfileCreatedEvent['data'], msg: EachMessagePayload){
         console.log('Profile created event received:', processedMessage);
+        
         const user = await User.findById(processedMessage.user);
         if(!user){
             throw new NotFoundError();
@@ -20,7 +21,10 @@ class ProfileCreatedListener extends Listener<ProfileCreatedEvent>{
             userId: user.id,
             username: processedMessage.username,
             avatarUrl: processedMessage.profilePicture?.url,
-            privacy: processedMessage.privacy,
+            privacy: {
+                profileVisibility: processedMessage.privacy?.profileVisibility || Visibility.Public,
+                postDefault: processedMessage.privacy?.postDefault || Visibility.Friends
+            },
             version: processedMessage.version
         });
         await profile.save();
@@ -36,6 +40,7 @@ class ProfileUpdatedListener extends Listener<ProfileUpdatedEvent>{
     
     async onMessage(processedMessage: ProfileUpdatedEvent['data'], msg: EachMessagePayload){
         console.log('Profile updated event received:', processedMessage);
+        
         const profile = await Profile.findById(processedMessage.id);
         if(!profile){
             throw new NotFoundError();

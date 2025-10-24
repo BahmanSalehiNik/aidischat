@@ -1,85 +1,64 @@
-import { PostQueueGroupeName } from "../../queGroupNames";
-import { Message } from "node-nats-streaming";
-import { Friendship } from "../../../models/friendship/freindship"
-import { BaseListener, 
-    Subjects,
-    FriendshipAcceptedEvent, 
-    FriendshipRequestedEvent, 
-    FriendshipUpdatedEvent, 
-    NotFoundError} from "@aichatwar/shared";
+import { NotFoundError, FriendshipAcceptedEvent, FriendshipRequestedEvent, FriendshipUpdatedEvent, Listener, Subjects } from "@aichatwar/shared";
+import { GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated } from "../../queGroupNames";
+import { Friendship } from "../../../models/friendship/freindship";
+import { EachMessagePayload } from "kafkajs";
 
-class FreindshipAcceptedListener extends BaseListener<FriendshipAcceptedEvent>{
-    readonly subject: Subjects.FriendshipAccepted =  Subjects.FriendshipAccepted;
-    queueGroupName: string = PostQueueGroupeName;
-    async onMessage(processedMessage: FriendshipAcceptedEvent['data'] , msg: Message){
-        console.log(processedMessage)
-        const freindship = await Friendship.findOne({
-            _id:processedMessage.id, version: processedMessage.version - 1
+class FriendshipAcceptedListener extends Listener<FriendshipAcceptedEvent>{
+    readonly topic: Subjects.FriendshipAccepted = Subjects.FriendshipAccepted;
+    groupId: string = GroupIdFreindshipAccepted;
+    
+    async onMessage(processedMessage: FriendshipAcceptedEvent['data'], msg: EachMessagePayload){
+        console.log('Friendship accepted event received:', processedMessage);
+        const friendship = await Friendship.findOne({
+            _id: processedMessage.id, version: processedMessage.version - 1
         });
-        if (!freindship){
+        if (!friendship){
             throw new NotFoundError();
         }
-        freindship.status = processedMessage.status
-        await freindship.save();
-        msg.ack();
-}
+        friendship.status = processedMessage.status;
+        await friendship.save();
+        
+        // Manual acknowledgment - only after successful save
+        await this.ack();
+    }
 }
 
-
-class FreindshipUpdatedListener extends BaseListener<FriendshipUpdatedEvent>{
-    readonly subject: Subjects.FriendshipUpdated =  Subjects.FriendshipUpdated;
-    queueGroupName: string = PostQueueGroupeName;
-    async onMessage(processedMessage: FriendshipUpdatedEvent['data'] , msg: Message){
-        console.log(processedMessage)
-        const freindship = await Friendship.findOne({
-            _id:processedMessage.id, version: processedMessage.version - 1
+class FriendshipUpdatedListener extends Listener<FriendshipUpdatedEvent>{
+    readonly topic: Subjects.FriendshipUpdated = Subjects.FriendshipUpdated;
+    groupId: string = GroupIdFreindshipUpdated;
+    
+    async onMessage(processedMessage: FriendshipUpdatedEvent['data'], msg: EachMessagePayload){
+        console.log('Friendship updated event received:', processedMessage);
+        const friendship = await Friendship.findOne({
+            _id: processedMessage.id, version: processedMessage.version - 1
         });
-        if (!freindship){
+        if (!friendship){
             throw new NotFoundError();
         }
-        freindship.status = processedMessage.status
-        await freindship.save();
-        msg.ack();
+        friendship.status = processedMessage.status;
+        await friendship.save();
+        
+        // Manual acknowledgment - only after successful save
+        await this.ack();
+    }
 }
+
+class FriendshipRequestedListener extends Listener<FriendshipRequestedEvent>{
+    readonly topic: Subjects.FriendshipRequested = Subjects.FriendshipRequested;
+    groupId: string = GroupIdFreindshipRequested;
+    
+    async onMessage(processedMessage: FriendshipRequestedEvent['data'], msg: EachMessagePayload){
+        console.log('Friendship requested event received:', processedMessage);
+        const friendship = await Friendship.build(processedMessage);
+        await friendship.save();
+        
+        // Manual acknowledgment - only after successful save
+        await this.ack();
+    }
 }
 
-class FreindshipRequestedListener extends BaseListener<FriendshipRequestedEvent>{
-    readonly subject: Subjects.FriendshipRequested =  Subjects.FriendshipRequested;
-    queueGroupName: string = PostQueueGroupeName;
-    async onMessage(processedMessage: FriendshipRequestedEvent['data'] , msg: Message){
-        console.log(processedMessage)
-        const freindship = await Friendship.build(processedMessage);
-        await freindship.save();
-        msg.ack();
+export { 
+    FriendshipAcceptedListener,
+    FriendshipRequestedListener,
+    FriendshipUpdatedListener
 }
-}
-//TODO: update friendship updated
-
-
-// class AiModelCardUpdatedListener extends BaseListener<EcommerceModelUpdatedEvent>{
-//     readonly subject: Subjects.EcommerceModelUpdated =  Subjects.EcommerceModelUpdated;
-//     queueGroupName: string = orderAiModelCardQueueGroupeName;
-//     async onMessage(processedMessage: EcommerceModelUpdatedEvent['data'] , msg: Message){
-//         const {id, rank, modelId, price, userId, version} = processedMessage;
-//         //const updatedCard  = await AiModelCard.find({cardRefId:id, version: version - 1})[0];
-//         const tempEvent = {id, version}
-//         const updatedCard  = await AiModelCard.findByEvent(tempEvent);
-//         if (!updatedCard){
-//             throw new Error('ai model card not found! or did it?')
-//         }
-//         updatedCard.set( 
-//         { 
-//             // modelRefId:modelId, 
-//             // userId:JSON.parse(userId).id, 
-//             price:price,
-//             rank: rank
-//         }
-//     )
-//         await updatedCard.save()
-
-//         msg.ack();
-//     }
-// }
-
-
-export { FreindshipAcceptedListener, FreindshipRequestedListener, FreindshipUpdatedListener }

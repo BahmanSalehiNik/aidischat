@@ -1,26 +1,24 @@
 import { 
-    BasePublisher, Subjects, 
+    Publisher, Subjects, 
     PostCreatedEvent, 
     PostUpdatedEvent,
-    PostDeletedEvent,
+    PostDeletedEvent
  } from "@aichatwar/shared";
 
-
-
-class PostCreatedPublisher extends BasePublisher<PostCreatedEvent>{
-    subject: Subjects.PostCreated= Subjects.PostCreated;
+class PostCreatedPublisher extends Publisher<PostCreatedEvent>{
+    topic: Subjects.PostCreated = Subjects.PostCreated;
 }
 
-class PostUpdatedPublisher extends BasePublisher<PostUpdatedEvent>{
-    subject: Subjects.PostUpdated = Subjects.PostUpdated;
+class PostUpdatedPublisher extends Publisher<PostUpdatedEvent>{
+    topic: Subjects.PostUpdated = Subjects.PostUpdated;
 }
 
-class PostDeletedPublisher extends BasePublisher<PostDeletedEvent>{
-    subject: Subjects.PostDeleted = Subjects.PostDeleted;
+class PostDeletedPublisher extends Publisher<PostDeletedEvent>{
+    topic: Subjects.PostDeleted = Subjects.PostDeleted;
 }
 
 export { 
     PostCreatedPublisher,
     PostDeletedPublisher,
     PostUpdatedPublisher 
-    }
+}

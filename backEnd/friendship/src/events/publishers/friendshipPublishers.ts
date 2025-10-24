@@ -1,26 +1,24 @@
 import { 
-    BasePublisher, Subjects, 
+    Publisher, Subjects, 
     FriendshipAcceptedEvent, 
     FriendshipRequestedEvent,
-    FriendshipUpdatedEvent,
+    FriendshipUpdatedEvent
  } from "@aichatwar/shared";
 
-
-
-class FrinedShipAcceptedPublisher extends BasePublisher<FriendshipAcceptedEvent>{
-    subject: Subjects.FriendshipAccepted= Subjects.FriendshipAccepted;
+class FriendshipAcceptedPublisher extends Publisher<FriendshipAcceptedEvent>{
+    topic: Subjects.FriendshipAccepted = Subjects.FriendshipAccepted;
 }
 
-class FriendshipUpdatedPublisher extends BasePublisher<FriendshipUpdatedEvent>{
-    subject: Subjects.FriendshipUpdated = Subjects.FriendshipUpdated;
+class FriendshipUpdatedPublisher extends Publisher<FriendshipUpdatedEvent>{
+    topic: Subjects.FriendshipUpdated = Subjects.FriendshipUpdated;
 }
 
-class FriendshipRequestedPublisher extends BasePublisher<FriendshipRequestedEvent>{
-    subject: Subjects.FriendshipRequested = Subjects.FriendshipRequested;
+class FriendshipRequestedPublisher extends Publisher<FriendshipRequestedEvent>{
+    topic: Subjects.FriendshipRequested = Subjects.FriendshipRequested;
 }
 
 export { 
-    FrinedShipAcceptedPublisher,
+    FriendshipAcceptedPublisher,
     FriendshipUpdatedPublisher,
-    FriendshipRequestedPublisher 
-    }
+    FriendshipRequestedPublisher
+}

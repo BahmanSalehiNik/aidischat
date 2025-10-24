@@ -1,4 +1,4 @@
-import { Visability } from '@aichatwar/shared';
+import { Visibility } from '@aichatwar/shared';
 import mongoose, { Types } from 'mongoose';
 import { updateIfCurrentPlugin } from 'mongoose-update-if-current';
 
@@ -9,7 +9,7 @@ interface PostAttrs {
   userId: string;
   content: string;
   media?: string[];//{ url: string; type: string }[];
-  visibility: Visability;
+  visibility: Visibility;
   commentsCount?: number;
   reactionsSummary?: { type: string; count: number }[];
   originalCreation: string;
@@ -23,7 +23,7 @@ export interface PostDoc extends mongoose.Document {
   userId: string;
   content: string;
   media?: { url: string; type: string }[];
-  visibility: Visability;
+  visibility: Visibility;
   commentsCount?: number;
   reactionsSummary?: { type: string; count: number }[];
   originalCreation: string;

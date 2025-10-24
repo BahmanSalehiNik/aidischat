@@ -1,9 +1,9 @@
 import express, { Request, Response } from 'express';
 import { body } from 'express-validator';
-import { loginRequired, extractJWTPayload, validateRequest, NotFoundError, NotAuthorizedError, Visability } from '@aichatwar/shared';
+import { loginRequired, extractJWTPayload, validateRequest, NotFoundError, NotAuthorizedError, Visibility } from '@aichatwar/shared';
 import { Post } from '../../models/post';
 import { PostUpdatedPublisher } from "../../events/publishers/postPublisher";
-import { natsClient } from "../../nats-client";
+import { kafkaWrapper } from "../../kafka-client";
 
 const router = express.Router();
 
@@ -15,7 +15,7 @@ router.patch(
     body('content').optional().isString().trim().isLength({ max: 5000 }),
     body('visibility')
       .optional()
-      .isIn([Visability.Friends, Visability.Private, Visability.Public])
+      .isIn([Visibility.Friends, Visibility.Private, Visibility.Public])
       .withMessage('Invalid visibility'),
   ],
   validateRequest,
@@ -50,18 +50,17 @@ router.patch(
     }));
 
     // 📡 Publish the event
-    await new PostUpdatedPublisher(natsClient.client).publish({
+    await new PostUpdatedPublisher(kafkaWrapper.producer).publish({
       id: post.id,
       userId: post.userId,
       content: post.content,
       mediaIds: post.mediaIds,
-      visibility: Visability[post.visibility as keyof typeof Visability],
+      visibility: post.visibility as Visibility,
       status: post.status,
       reactions: reactionsArray,
       version: post.version,
       updatedAt: new Date().toISOString(),
       createdAt: post.createdAt.toISOString(),
-      //TODO: Implement comment count
       commentCount: 0
     });
 
