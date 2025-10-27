@@ -18,6 +18,8 @@ export interface CommentDoc extends mongoose.Document {
   userId: string;
   text: string;
   deleted: boolean;
+  deletedAt?: Date;
+  isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
   version: number;
@@ -30,10 +32,12 @@ interface CommentModel extends mongoose.Model<CommentDoc>{
 
 const commentSchema = new mongoose.Schema(
   {
-    ostId: { type: String, required: true }, 
+    postId: { type: String, required: true }, 
     userId: { type: String, required: true },
     text: { type: String, required: true },
     deleted: { type: Boolean, default: false },
+    deletedAt: { type: Date, default: null },
+    isDeleted: { type: Boolean, default: false, index: true },
     parentCommentId: {type:String,  required: false}// for threads/replies
   },
   {
@@ -50,6 +54,8 @@ const commentSchema = new mongoose.Schema(
   }
 );
 
-const Comment = mongoose.model<CommentDoc>('Comment', commentSchema);
+commentSchema.statics.build = (attrs: CommentAttrs) => new Comment(attrs);
+
+const Comment = mongoose.model<CommentDoc, CommentModel>('Comment', commentSchema);
 
 export { commentSchema, Comment };

@@ -1,40 +1,55 @@
-// import express, { Request, Response } from 'express';
-// import { extractJWTPayload, loginRequired, NotFoundError, NotAuthorizedError } from '@aichatwar/shared';
-// import { Post } from '../../models/post';
-// import { natsClient } from '../../nats-client';
-// // import { CommentDeletedPublisher } from '../events/publishers/comment-deleted-publisher';
+import express, { Request, Response } from 'express';
+import { extractJWTPayload, loginRequired, NotFoundError, NotAuthorizedError } from '@aichatwar/shared';
+import { Post } from '../../models/post';
+import { Comment } from '../../models/comment';
+import { CommentDeletedPublisher } from '../../events/commentPublishers';
+import { kafkaWrapper } from '../../kafka-client';
 
-// const router = express.Router();
+const router = express.Router();
 
-// router.delete(
-//   '/api/posts/:postId/comments/:commentId',
-//   extractJWTPayload,
-//   loginRequired,
-//   async (req: Request, res: Response) => {
-//     const post = await Post.findById(req.params.postId);
-//     if (!post) throw new NotFoundError();
+router.delete(
+  '/api/posts/:postId/comments/:commentId',
+  extractJWTPayload,
+  loginRequired,
+  async (req: Request, res: Response) => {
+    // Check if post exists
+    const post = await Post.findOne({ _id: req.params.postId, isDeleted: false });
+    if (!post) throw new NotFoundError();
 
-//     const comment = post.comments.id(req.params.commentId);
-//     if (!comment) throw new NotFoundError();
+    // Find comment
+    const comment = await Comment.findOne({ 
+      _id: req.params.commentId, 
+      postId: req.params.postId,
+      isDeleted: false 
+    });
+    if (!comment) throw new NotFoundError();
 
-//     if (comment.userId !== req.jwtPayload!.id) {
-//       throw new NotAuthorizedError(['']);
-//     }
+    // Check if user owns the comment
+    if (comment.userId !== req.jwtPayload!.id) {
+      throw new NotAuthorizedError(['not authorized']);
+    }
 
-//     comment.deleted = true;
-//     comment.text = '[deleted]';
-//     await post.save();
+    // Check if comment is already soft deleted
+    if (comment.isDeleted) {
+      throw new NotFoundError();
+    }
 
-//     // await new CommentDeletedPublisher(natsWrapper.client).publish({
-//     //   id: comment.id,
-//     //   postId: post.id,
-//     //   userId: comment.userId,
-//     //   version: post.version,
-//     //   deletedAt: new Date().toISOString(),
-//     // });
+    // Soft delete comment
+    comment.isDeleted = true;
+    comment.deletedAt = new Date();
+    comment.text = '[deleted]'; // Replace text with deleted indicator
+    await comment.save();
 
-//     res.status(204).send();
-//   }
-// );
+    // Publish comment deleted event
+    await new CommentDeletedPublisher(kafkaWrapper.producer).publish({
+      id: comment.id,
+      postId: comment.postId,
+      userId: comment.userId,
+      deletedAt: comment.deletedAt.toISOString()
+    });
 
-// export { router as deleteCommentRouter };
+    res.status(204).send();
+  }
+);
+
+export { router as deleteCommentRouter };

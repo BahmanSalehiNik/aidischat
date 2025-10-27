@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent
+  template:
+    metadata:
+      labels:
+        app: agent
+    spec:
+      containers:
+        - name: agent
+          image: bahmansalehinic4/agent
+          env:  
+            - name: NATS_URL
+              value: 'http://nats-srv:4222'
+            - name: NATS_CLUSTER_ID
+              value: "aichatwar"
+            - name: NATS_CLIENT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            
+            - name: KAFKA_BROKER_URL
+              value: 'redpanda-srv:9092'
+            - name: KAFKA_CLIENT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            
+            - name: MONGO_URI
+              value: "mongodb://agent-mongo-srv:27017/agent"
+            - name: JWT_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: JWT_DEV
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-srv
+spec:
+  selector:
+    app: agent
+  ports:
+    - name: agent
+      protocol: TCP
+      port: 3000
+      targetPort: 3000

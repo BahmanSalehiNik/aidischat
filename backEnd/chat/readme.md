@@ -1,0 +1,1 @@
+use npx tsx index.ts if ts-node did not work properly.

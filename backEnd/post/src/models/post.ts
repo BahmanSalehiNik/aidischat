@@ -30,7 +30,9 @@ interface PostDoc extends mongoose.Document {
   updatedAt: Date;
   reactions: { userId: string; type: string }[];
   version: number;
-  status: PostStatus
+  status: PostStatus;
+  deletedAt?: Date;
+  isDeleted: boolean;
 }
 
 interface PostModel extends mongoose.Model<PostDoc>{
@@ -52,7 +54,9 @@ const postSchema = new mongoose.Schema(
       type: String,
       enum: PostStatus,
       default: PostStatus.Active
-    }
+    },
+    deletedAt: { type: Date, default: null },
+    isDeleted: { type: Boolean, default: false, index: true }
   },
   { timestamps: true, 
     toJSON:{

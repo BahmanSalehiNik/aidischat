@@ -18,7 +18,7 @@ app.use(cookieSession({
     signed: false,
     secure: false,//process.env.NODE_ENV !== 'test'
     sameSite: "lax"
-}))
+}) as any);
 app.use(getEcommerceOrderByIdRouter);
 app.use(createEcommerceOrderRouter);
 app.use(getEcommerceOrderRouter);

@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-mongodb-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-mongodb
+  template:
+    metadata:
+      labels:
+         app:  agent-mongodb
+    spec:
+      containers:
+        - name: agent-mongodb
+          image: mongo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-mongo-srv
+spec:
+  selector:
+    app: agent-mongodb
+  ports:
+    - name: agent-mongodb
+      protocol: TCP
+      port: 27017
+      targetPort: 27017

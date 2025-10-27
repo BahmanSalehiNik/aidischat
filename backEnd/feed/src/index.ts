@@ -5,11 +5,12 @@ import { app } from "./app";
 import { kafkaWrapper } from './kafka-client';
 import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/user/userListener";
 import { ProfileCreatedListener, ProfileUpdatedListener } from "./events/listeners/user/profileListener";
-import { PostCreatedListener } from "./events/listeners/post/postListener";
+import { PostCreatedListener, PostUpdatedListener, PostDeletedListener } from "./events/listeners/post/postListener";
+import { CommentCreatedListener, CommentDeletedListener } from "./events/listeners/comment/commentListener";
 import { FriendshipAcceptedListener, 
     FriendshipUpdatedListener, 
     FriendshipRequestedListener } from "./events/listeners/friendship/friendshipListener";
-import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdPostCreated, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated } from "./events/queGroupNames";
+import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdPostCreated, GroupIdPostUpdated, GroupIdPostDeleted, GroupIdCommentCreated, GroupIdCommentDeleted, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated } from "./events/queGroupNames";
 
 
 const startMongoose = async ()=>{
@@ -54,6 +55,12 @@ const startMongoose = async ()=>{
 
         // ------------- post listeners ---------------
         new PostCreatedListener(kafkaWrapper.consumer(GroupIdPostCreated)).listen();
+        new PostUpdatedListener(kafkaWrapper.consumer(GroupIdPostUpdated)).listen();
+        new PostDeletedListener(kafkaWrapper.consumer(GroupIdPostDeleted)).listen();
+
+        // ------------- comment listeners ---------------
+        new CommentCreatedListener(kafkaWrapper.consumer(GroupIdCommentCreated)).listen();
+        new CommentDeletedListener(kafkaWrapper.consumer(GroupIdCommentDeleted)).listen();
 
         // --------------- friendship listeners ------------
         new FriendshipRequestedListener(kafkaWrapper.consumer(GroupIdFreindshipRequested)).listen();

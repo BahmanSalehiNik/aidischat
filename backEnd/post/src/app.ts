@@ -9,6 +9,12 @@ import { createPostRouter } from "./routes/post/createPost";
 import { getPostRouter } from "./routes/post/getPost";
 import { updatePostRouter } from "./routes/post/updatePost";
 
+import { addCommentRouter } from "./routes/comment/addComment";
+import { getCommentsRouter } from "./routes/comment/getComments";
+import { getCommentByIdRouter } from "./routes/comment/getCommentById";
+import { updateCommentRouter } from "./routes/comment/updateComment";
+import { deleteCommentRouter } from "./routes/comment/deleteComment";
+
 
 import { errorHandler, NotFoundError } from "@aichatwar/shared";
 
@@ -29,6 +35,12 @@ app.use(cookieSession({
 app.use(createPostRouter);
 app.use(getPostRouter);
 app.use(updatePostRouter);
+
+app.use(addCommentRouter);
+app.use(getCommentsRouter);
+app.use(getCommentByIdRouter);
+app.use(updateCommentRouter);
+app.use(deleteCommentRouter);
 
 
 app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));

@@ -1,40 +1,71 @@
-// import express, { Request, Response } from 'express';
-// import { body } from 'express-validator';
-// import { extractJWTPayload, loginRequired, validateRequest } from '@aichatwar/shared'
-// import { Post } from '../../models/post';
-// import { Comment } from '../../models/comment';
-// // import { CommentAddedPublisher } from '../events/comment-added-publisher';
-// // Todo: check if user is authorized to see the post(maybe in the api Gateway?)
-// const router = express.Router();
+import express, { Request, Response } from 'express';
+import { body } from 'express-validator';
+import { extractJWTPayload, loginRequired, validateRequest, NotFoundError } from '@aichatwar/shared';
+import { Post } from '../../models/post';
+import { Comment } from '../../models/comment';
+import { CommentCreatedPublisher } from '../../events/commentPublishers';
+import { kafkaWrapper } from '../../kafka-client';
 
-// router.post(
-//   '/api/posts/:id/comments',
-//   extractJWTPayload,
-//   loginRequired,
-//   [body('text').trim().notEmpty().withMessage('Comment text is required')],
-//   validateRequest,
-//   async (req: Request, res: Response) => {
-//     const post = await Post.findById(req.params.id);
-//     if (!post) {
-//       return res.status(404).send({ error: 'Post not found' });
-//     }
+const router = express.Router();
 
-//     post.comments.push({
-//       userId: req.jwtPayload!.id,
-//       text: req.body.text,
-//       createdAt: new Date(),
-//     });
+router.post(
+  '/api/posts/:postId/comments',
+  extractJWTPayload,
+  loginRequired,
+  [
+    body('text')
+      .trim()
+      .notEmpty()
+      .withMessage('Comment text is required')
+      .isLength({ min: 1, max: 1000 })
+      .withMessage('Comment must be between 1 and 1000 characters'),
+    body('parentCommentId')
+      .optional()
+      .isString()
+      .withMessage('Parent comment ID must be a string')
+  ],
+  validateRequest,
+  async (req: Request, res: Response) => {
+    // Check if post exists
+    const post = await Post.findOne({ _id: req.params.postId, isDeleted: false });
+    if (!post) {
+      throw new NotFoundError();
+    }
 
-//     await post.save();
+    // If parentCommentId is provided, check if parent comment exists
+    if (req.body.parentCommentId) {
+      const parentComment = await Comment.findOne({ 
+        _id: req.body.parentCommentId, 
+        postId: req.params.postId,
+        isDeleted: false 
+      });
+      if (!parentComment) {
+        throw new NotFoundError();
+      }
+    }
 
-//     // await new CommentAddedPublisher(natsWrapper.client).publish({
-//     //   postId: post.id,
-//     //   userId: req.currentUser!.id,
-//     //   text: req.body.text,
-//     // });
+    // Create comment
+    const comment = Comment.build({
+      postId: req.params.postId,
+      userId: req.jwtPayload!.id,
+      text: req.body.text,
+      parentCommentId: req.body.parentCommentId
+    });
 
-//     res.status(201).send(post);
-//   }
-// );
+    await comment.save();
 
-// export { router as addCommentRouter };
+    // Publish comment created event
+    await new CommentCreatedPublisher(kafkaWrapper.producer).publish({
+      id: comment.id,
+      postId: comment.postId,
+      userId: comment.userId,
+      text: comment.text,
+      parentCommentId: comment.parentCommentId,
+      version: comment.version
+    });
+
+    res.status(201).send(comment);
+  }
+);
+
+export { router as addCommentRouter };
