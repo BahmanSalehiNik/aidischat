@@ -70,6 +70,22 @@ spec:
                port: 
                  number: 3000
                  
+         - path: /api/rooms/?(.*)
+           pathType: ImplementationSpecific
+           backend:
+             service:
+               name: room-srv
+               port: 
+                 number: 3000
+                 
+         - path: /api/messages/?(.*)
+           pathType: ImplementationSpecific
+           backend:
+             service:
+               name: chat-srv
+               port: 
+                 number: 3000
+                 
          - path: /?(.*)
            pathType: ImplementationSpecific
            backend:

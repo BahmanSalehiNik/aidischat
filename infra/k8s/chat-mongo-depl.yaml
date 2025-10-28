@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-mongodb-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chat-mongodb
+  template:
+    metadata:
+      labels:
+         app:  chat-mongodb
+    spec:
+      containers:
+        - name: chat-mongodb
+          image: mongo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-mongo-srv
+spec:
+  selector:
+    app: chat-mongodb
+  ports:
+    - name: chat-mongodb
+      protocol: TCP
+      port: 27017
+      targetPort: 27017

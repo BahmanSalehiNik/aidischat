@@ -4,21 +4,13 @@ import { json } from "body-parser";
 
 import cookieSession from "cookie-session";
 
-import { currentUserRouter } from "./routes/authRouts/currentuser";
-import { signinRouter } from "./routes/authRouts/signin";
-import { signUpRouter } from "./routes/authRouts/signup";
-import { signOutRouter } from "./routes/authRouts/signout";
+import { createRoomRouter } from "./routes/createRoom.js";
+import { addParticipantRouter } from "./routes/add-participant.js";
+import { removeParticipantRouter } from "./routes/remove-participant.js";
+import { deleteRoomRouter } from "./routes/deleteRoom.js";
+import { getRoomRouter } from "./routes/getRoom.js";
 
-import { createProfileRouter } from "./routes/profileRouts/createProfile";
-import { getProfileByIdRouter } from "./routes/profileRouts/getProfileById";
-import { deleteProfileRouter } from "./routes/profileRouts/deleteProfile";
-import { updateProfileRouter } from "./routes/profileRouts/updateProfile";
-
-
-import { errorHandler, NotFoundError } from "@aichatwar/shared";
-
-
-
+import { errorHandler, NotFoundError, extractJWTPayload, loginRequired } from "@aichatwar/shared";
 
 import cors from "cors";
 
@@ -31,17 +23,16 @@ app.use(cookieSession({
     sameSite: "lax"
 }))
 
-app.use(currentUserRouter);
-app.use(signUpRouter);
-app.use(signinRouter);
-app.use(signOutRouter);
-
-app.use(createProfileRouter);
-app.use(getProfileByIdRouter);
-app.use(updateProfileRouter);
-app.use(deleteProfileRouter);
+app.use(extractJWTPayload);
 
 app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));
+
+// Room routes
+app.use(createRoomRouter);
+app.use(addParticipantRouter);
+app.use(removeParticipantRouter);
+app.use(deleteRoomRouter);
+app.use(getRoomRouter);
 
 
 app.all('*', async ()=>{

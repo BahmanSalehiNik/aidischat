@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: room-mongodb-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: room-mongodb
+  template:
+    metadata:
+      labels:
+         app:  room-mongodb
+    spec:
+      containers:
+        - name: room-mongodb
+          image: mongo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: room-mongo-srv
+spec:
+  selector:
+    app: room-mongodb
+  ports:
+    - name: room-mongodb
+      protocol: TCP
+      port: 27017
+      targetPort: 27017
