@@ -38,7 +38,11 @@ router.post("/api/users/signin", [
                 jwt: userJwt
             };
 
-            return res.status(200).send(user)
+            // Return user with token for mobile clients
+            return res.status(200).send({
+                ...user.toJSON(),
+                token: userJwt
+            })
         }else{
             console.log("invalid username password!")
             throw new BadRequestError("invalid username or password!");

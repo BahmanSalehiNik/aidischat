@@ -30,6 +30,6 @@ export class AgentUpdatedListener extends Listener<AgentUpdatedEvent> {
     }
 
     console.log(`Agent updated in chat service: ${id}`);
-    payload.ack();
+    await this.ack();
   }
 }

@@ -19,6 +19,13 @@ class KafkaWrapper {
     return this._producer;
   }
 
+  consumer(groupId: string) {
+    if (!this._client) {
+      throw new Error("Cannot access Kafka client before connecting");
+    }
+    return this._client.consumer({ groupId });
+  }
+
   async connect(brokers: string[], clientId = "app") {
     this._client = new Kafka({ clientId, brokers });
 

@@ -2,6 +2,7 @@ import { app } from "./app";
 import express from "express";
 import mongoose from "mongoose";
 import { kafkaWrapper } from './kafka-client';
+import { startDisconnectListener } from './disconnect-listener';
 
 
 
@@ -37,8 +38,12 @@ const startMongoose = async ()=>{
         await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
         console.log("Kafka connected successfully");
 
+        // Start disconnect listener to handle user disconnection cleanup
+        await startDisconnectListener();
+        console.log("Disconnect listener started");
+
         app.listen(3000, ()=>{
-            console.log("app listening on port 3000! user service")
+            console.log("app listening on port 3000! room service")
         });
         
     } catch(err) {

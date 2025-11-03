@@ -2,8 +2,10 @@ apiVersion: skaffold/v4beta13
 kind: Config
 build:
   local:
-    push: false
+    push: true
     concurrency: 1
+    useDockerCLI: true
+    useBuildkit: false
   artifacts:
     - image: bahmansalehinic4/user
       context: backEnd/user
@@ -101,6 +103,15 @@ build:
     
     - image: bahmansalehinic4/chat
       context: backEnd/chat
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
+            src: 'src/**/*.ts' 
+    
+    - image: bahmansalehinic4/realtime-gateway
+      context: backEnd/realtime-gateway
       docker:
         dockerfile: Dockerfile
       sync:

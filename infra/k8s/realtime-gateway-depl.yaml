@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realtime-gateway-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: realtime-gateway
+  template:
+    metadata:
+      labels:
+        app: realtime-gateway
+    spec:
+      containers:
+        - name: realtime-gateway
+          image: bahmansalehinic4/realtime-gateway
+          env:
+            - name: KAFKA_BROKER
+              value: 'redpanda-srv:9092'
+            - name: REDIS_URL
+              value: 'redis://realtime-redis-srv:6379'
+            - name: REDIS_ROOM_URL
+              value: 'redis://redis-room-srv:6379'
+            - name: JWT_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: JWT_DEV
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: realtime-gateway-srv
+spec:
+  selector:
+    app: realtime-gateway
+  ports:
+    - name: realtime-gateway
+      protocol: TCP
+      port: 3000
+      targetPort: 3000
+

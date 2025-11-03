@@ -15,6 +15,7 @@ spec:
       containers:
         - name: feed
           image: bahmansalehinic4/feed
+          imagePullPolicy: Always
           env:  
             - name: NATS_URL
               value: 'http://nats-srv:4222'
@@ -80,6 +81,7 @@ spec:
       containers:
         - name: feed-worker
           image: bahmansalehinic4/feed
+          imagePullPolicy: Always
           command: ["npm", "run", "start:worker"]
           env:  
             - name: NATS_URL

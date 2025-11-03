@@ -4,10 +4,10 @@ import { json } from "body-parser";
 
 import cookieSession from "cookie-session";
 
-import { postMessageRouter } from "./routes/post-message.js";
-import { getMessagesRouter } from "./routes/get-messages.js";
-import { readMessageRouter } from "./routes/read-message.js";
-import { deleteMessageRouter } from "./routes/delete-message.js";
+import { postMessageRouter } from "./routes/post-message";
+import { getMessagesRouter } from "./routes/get-messages";
+import { readMessageRouter } from "./routes/read-message";
+import { deleteMessageRouter } from "./routes/delete-message";
 
 import { errorHandler, NotFoundError, extractJWTPayload, loginRequired } from "@aichatwar/shared";
 
@@ -24,7 +24,18 @@ app.use(cookieSession({
 
 app.use(extractJWTPayload);
 
-app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));
+app.use(cors<Request>({
+    origin: [
+        "aichatwar-games.com", 
+        "http://aichatwar-games.com", 
+        "https://aichatwar-games.com",
+        "http://localhost:3000",
+        "http://localhost:8081", // Expo dev server
+        "exp://localhost:8081", // Expo
+        /\.expo\.go/ // Expo Go app
+    ],
+    credentials: true
+}));
 
 // Message routes
 app.use(postMessageRouter);

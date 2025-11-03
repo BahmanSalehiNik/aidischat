@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realtime-redis-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: realtime-redis
+  template:
+    metadata:
+      labels:
+        app: realtime-redis
+    spec:
+      containers:
+        - name: realtime-redis
+          image: redis
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: realtime-redis-srv
+spec:
+  selector:
+    app: realtime-redis
+  ports:
+    - name: realtime-redis
+      protocol: TCP
+      port: 6379
+      targetPort: 6379
+

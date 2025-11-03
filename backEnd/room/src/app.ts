@@ -4,11 +4,12 @@ import { json } from "body-parser";
 
 import cookieSession from "cookie-session";
 
-import { createRoomRouter } from "./routes/createRoom.js";
-import { addParticipantRouter } from "./routes/add-participant.js";
-import { removeParticipantRouter } from "./routes/remove-participant.js";
-import { deleteRoomRouter } from "./routes/deleteRoom.js";
-import { getRoomRouter } from "./routes/getRoom.js";
+import { createRoomRouter } from "./routes/createRoom";
+import { addParticipantRouter } from "./routes/add-participant";
+import { removeParticipantRouter } from "./routes/remove-participant";
+import { deleteRoomRouter } from "./routes/deleteRoom";
+import { getRoomRouter } from "./routes/getRoom";
+import { getUserRoomsRouter } from "./routes/getUserRooms";
 
 import { errorHandler, NotFoundError, extractJWTPayload, loginRequired } from "@aichatwar/shared";
 
@@ -25,7 +26,18 @@ app.use(cookieSession({
 
 app.use(extractJWTPayload);
 
-app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));
+app.use(cors<Request>({
+    origin: [
+        "aichatwar-games.com", 
+        "http://aichatwar-games.com", 
+        "https://aichatwar-games.com",
+        "http://localhost:3000",
+        "http://localhost:8081", // Expo dev server
+        "exp://localhost:8081", // Expo
+        /\.expo\.go/ // Expo Go app
+    ],
+    credentials: true
+}));
 
 // Room routes
 app.use(createRoomRouter);
@@ -33,6 +45,7 @@ app.use(addParticipantRouter);
 app.use(removeParticipantRouter);
 app.use(deleteRoomRouter);
 app.use(getRoomRouter);
+app.use(getUserRoomsRouter);
 
 
 app.all('*', async ()=>{

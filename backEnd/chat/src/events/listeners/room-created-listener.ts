@@ -22,6 +22,6 @@ export class RoomCreatedListener extends Listener<RoomCreatedEvent> {
     await room.save();
 
     console.log(`Room created in chat service: ${id}`);
-    payload.ack();
+    await this.ack();
   }
 }

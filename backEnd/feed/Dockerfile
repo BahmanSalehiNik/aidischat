@@ -7,8 +7,10 @@ WORKDIR /app
 # Copy package.json and package-lock.json first for better caching
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install --omit=dev
+# Disable npm audit globally and install dependencies
+RUN npm config set audit false && \
+    npm install --omit=dev --no-audit && \
+    npm config set audit true
 
 # Copy all files and subdirectories to the working directory
 COPY . .

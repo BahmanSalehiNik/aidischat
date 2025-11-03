@@ -25,9 +25,18 @@ spec:
             - --node-id 0
             - --kafka-addr PLAINTEXT://0.0.0.0:9092
             - --advertise-kafka-addr PLAINTEXT://redpanda-srv:9092
+            - --memory 512M
+            - --reserve-memory 0M
           ports:
             - containerPort: 9092   # Kafka API
             - containerPort: 9644   # Admin API
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
 ---
 apiVersion: v1
 kind: Service

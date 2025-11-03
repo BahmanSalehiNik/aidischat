@@ -41,7 +41,18 @@ app.use(getProfileByIdRouter);
 app.use(updateProfileRouter);
 app.use(deleteProfileRouter);
 
-app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));
+app.use(cors<Request>({
+    origin: [
+        "aichatwar-games.com", 
+        "http://aichatwar-games.com", 
+        "https://aichatwar-games.com",
+        "http://localhost:3000",
+        "http://localhost:8081", // Expo dev server
+        "exp://localhost:8081", // Expo
+        /\.expo\.go/ // Expo Go app
+    ],
+    credentials: true
+}));
 
 
 app.all('*', async ()=>{

@@ -21,6 +21,6 @@ export class RoomDeletedListener extends Listener<RoomDeletedEvent> {
       console.log(`Room deleted in chat service: ${id}`);
     }
 
-    payload.ack();
+    await this.ack();
   }
 }

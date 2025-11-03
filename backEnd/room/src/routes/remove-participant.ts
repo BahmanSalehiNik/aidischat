@@ -4,6 +4,7 @@ import { Participant } from '../models/room-participant';
 import { kafkaWrapper } from '../kafka-client';
 import { RoomParticipantRemovedPublisher } from '../events/publishers/room-participant-removed-publisher';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
+import { redisRoom, redisRoomPublisher, RedisKeys, RedisChannels } from '../redis-room';
 
 const router = express.Router();
 
@@ -20,6 +21,25 @@ router.delete('/api/rooms/:roomId/participants/:participantId', extractJWTPayloa
     return res.status(404).send({ error: 'Participant not found' });
   }
 
+  // Update Redis: Remove user from room members set
+  await redisRoom.srem(RedisKeys.roomMembers(roomId), participantId);
+  
+  // Update Redis: Remove room from user's room list
+  await redisRoom.hdel(RedisKeys.userRooms(participantId), roomId);
+
+  // Get current room members for event
+  const members = await redisRoom.smembers(RedisKeys.roomMembers(roomId));
+
+  // Publish room membership change to Redis pub/sub
+  await redisRoomPublisher.publish(RedisChannels.roomEvents, JSON.stringify({
+    type: 'room.member.removed',
+    roomId,
+    participantId,
+    members,
+    timestamp: new Date().toISOString(),
+  }));
+
+  // Publish to Kafka for persistent events
   await new RoomParticipantRemovedPublisher(kafkaWrapper.producer).publish({
     roomId,
     participantId,

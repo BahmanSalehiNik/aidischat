@@ -17,5 +17,5 @@ COPY . .
 # Expose port (change if your app uses a different port)
 # EXPOSE 3000
 
-# Start the app with nodemon
-CMD ["npm", "start"]
+# Start the app with increased file descriptor limit (fixes "too many open files" error)
+CMD ["sh", "-c", "ulimit -n 65536 && npm start"]

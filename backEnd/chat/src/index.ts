@@ -2,6 +2,12 @@ import { app } from "./app";
 import express from "express";
 import mongoose from "mongoose";
 import { kafkaWrapper } from './kafka-client';
+import { MessageIngestListener } from './events/listeners/message-ingest-listener';
+import { RoomCreatedListener } from './events/listeners/room-created-listener';
+import { RoomDeletedListener } from './events/listeners/room-deleted-listener';
+import { RoomParticipantAddedListener } from './events/listeners/room-participant-added-listener';
+import { AgentUpdatedListener } from './events/listeners/agent-updated-listener';
+import { UserUpdatedListener } from './events/listeners/user-updated-listener';
 
 
 
@@ -37,8 +43,23 @@ const startMongoose = async ()=>{
         await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
         console.log("Kafka connected successfully");
 
+        // ------------- Event Listeners ------------
+        // Message ingest listener (uses dedicated consumer group)
+        new MessageIngestListener(kafkaWrapper.consumer('chat-service-message-ingest')).listen();
+
+        // Room event listeners
+        new RoomCreatedListener(kafkaWrapper.consumer('chat-service')).listen();
+        new RoomDeletedListener(kafkaWrapper.consumer('chat-service')).listen();
+        new RoomParticipantAddedListener(kafkaWrapper.consumer('chat-service')).listen();
+
+        // Agent and user update listeners
+        new AgentUpdatedListener(kafkaWrapper.consumer('chat-service')).listen();
+        new UserUpdatedListener(kafkaWrapper.consumer('chat-service')).listen();
+
+        console.log("All Kafka listeners started successfully");
+
         app.listen(3000, ()=>{
-            console.log("app listening on port 3000! user service")
+            console.log("app listening on port 3000! chat service")
         });
         
     } catch(err) {

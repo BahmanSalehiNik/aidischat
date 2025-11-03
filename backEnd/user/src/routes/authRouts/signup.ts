@@ -49,10 +49,11 @@ async (req: Request, res: Response)=>{
         jwt: userJwt
     };
 
-
-
-
-    res.status(201).send(user);
+    // Return user with token for mobile clients
+    res.status(201).send({
+        ...user.toJSON(),
+        token: userJwt
+    });
     
 })
 

@@ -4,6 +4,10 @@ metadata:
   name: ingress-srv
   annotations:
     nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: "realtime-gateway-srv"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
 spec:
   ingressClassName: nginx
   rules:
@@ -83,6 +87,14 @@ spec:
            backend:
              service:
                name: chat-srv
+               port: 
+                 number: 3000
+                 
+         - path: /api/realtime/?(.*)
+           pathType: ImplementationSpecific
+           backend:
+             service:
+               name: realtime-gateway-srv
                port: 
                  number: 3000
                  

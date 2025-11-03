@@ -21,6 +21,6 @@ export class RoomParticipantAddedListener extends Listener<RoomParticipantAddedE
     await participant.save();
 
     console.log(`Participant added to room in chat service: ${participantId} -> ${roomId}`);
-    payload.ack();
+    await this.ack();
   }
 }
