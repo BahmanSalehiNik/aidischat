@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, TextInput, TouchableOpacity, Text, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, TextInput, TouchableOpacity, Text, StyleSheet } from 'react-native';
 
 interface MessageInputProps {
   onSend: (message: string) => void;
@@ -18,30 +18,25 @@ export const MessageInput: React.FC<MessageInputProps> = ({ onSend, disabled = f
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      <View style={styles.container}>
-        <TextInput
-          style={styles.input}
-          placeholder="Type a message..."
-          placeholderTextColor="#999"
-          value={text}
-          onChangeText={setText}
-          multiline
-          maxLength={1000}
-          editable={!disabled}
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, (!text.trim() || disabled) && styles.sendButtonDisabled]}
-          onPress={handleSend}
-          disabled={!text.trim() || disabled}
-        >
-          <Text style={styles.sendButtonText}>Send</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+    <View style={styles.container}>
+      <TextInput
+        style={styles.input}
+        placeholder="Type a message..."
+        placeholderTextColor="#999"
+        value={text}
+        onChangeText={setText}
+        multiline
+        maxLength={1000}
+        editable={!disabled}
+      />
+      <TouchableOpacity
+        style={[styles.sendButton, (!text.trim() || disabled) && styles.sendButtonDisabled]}
+        onPress={handleSend}
+        disabled={!text.trim() || disabled}
+      >
+        <Text style={styles.sendButtonText}>Send</Text>
+      </TouchableOpacity>
+    </View>
   );
 };
 
@@ -49,9 +44,6 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     padding: 12,
-    backgroundColor: '#F5F5F5',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
     alignItems: 'flex-end',
   },
   input: {

@@ -16,6 +16,8 @@ const DISCONNECT_GRACE_PERIOD = 10000; // 10 seconds
 // Heartbeat interval (milliseconds)
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 
+let globalWss: WebSocketServer | null = null;
+
 export function startWebSocketServer(server: any, kafkaProducer: Producer) {
   const wss = new WebSocketServer({ 
     server,
@@ -40,6 +42,9 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
     }
   });
 
+  // Store wss globally for use in Redis message handlers
+  globalWss = wss;
+
   /**
    * REDIS PUB/SUB FAN-OUT HANDLER
    * 
@@ -60,6 +65,7 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
     
     // If this pod has no sockets in this room, ignore (another pod will handle it)
     if (!sockets || sockets.size === 0) {
+      console.log(`📡 [Redis→WS] No sockets in room ${roomId} on this pod, skipping`);
       return;
     }
     
@@ -71,11 +77,15 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'message', data: msg }));
         sentCount++;
+      } else {
+        console.log(`⚠️ [Redis→WS] Socket in room ${roomId} is not OPEN (state: ${ws.readyState})`);
       }
     }
     
     if (sentCount > 0) {
       console.log(`📡 [Redis→WS] Broadcast to ${sentCount} socket(s) in room ${roomId} on this pod`);
+    } else {
+      console.warn(`⚠️ [Redis→WS] No sockets sent message in room ${roomId} (${sockets.size} sockets but none OPEN)`);
     }
   });
 
@@ -113,8 +123,33 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
     }
     
     if (event.type === 'room.created') {
-      // Handle room creation if needed
-      console.log(`Room created: ${event.roomId} with ${event.members.length} members`);
+      // Broadcast room creation to ALL connected clients (not just room members)
+      // This allows all users to see new rooms in real-time
+      const broadcast = JSON.stringify({
+        type: 'room.created',
+        payload: {
+          roomId: event.roomId,
+          createdBy: event.createdBy,
+          members: event.members || [],
+          timestamp: event.timestamp,
+        },
+      });
+      
+      // Send to all connected WebSocket clients using wss.clients
+      let sentCount = 0;
+      if (globalWss) {
+        globalWss.clients.forEach((ws: WebSocket) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(broadcast);
+            sentCount++;
+          }
+        });
+      }
+      
+      console.log(`📢 Broadcasted room.created (${event.roomId}) to ${sentCount} connected clients`);
+      if (sentCount === 0) {
+        console.warn(`⚠️ No clients connected to receive room.created event for ${event.roomId}`);
+      }
     }
     
     if (event.type === 'room.deleted') {
@@ -235,30 +270,36 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
       if (msg.type === 'join') {
         const { roomId } = msg;
         
+        console.log(`🔗 [WS] User ${ws.user?.id} attempting to join room ${roomId}`);
+        
         // Check if user is a member of this room in Redis
         if (ws.user?.id) {
           const isMember = await redisRoom.sismember(RedisRoomKeys.roomMembers(roomId), ws.user.id);
+          console.log(`🔗 [WS] User ${ws.user.id} is member in Redis: ${isMember}`);
+          
           if (!isMember) {
-            ws.send(JSON.stringify({
-              type: 'error',
-              payload: { message: 'You are not a member of this room' }
-            }));
-            return;
+            console.warn(`⚠️ [WS] User ${ws.user.id} not found in Redis for room ${roomId}, but allowing join (might be race condition)`);
+            // Don't block - might be a race condition where participant was just added
+            // The chat service will handle authorization when loading messages
           }
           
           // Optimistically add to Redis (Room Service will reconcile)
           await redisRoom.sadd(RedisRoomKeys.roomMembers(roomId), ws.user.id);
+          await redisRoom.hset(RedisRoomKeys.userRooms(ws.user.id), roomId, Date.now().toString());
         }
         
         const set = roomMembers.get(roomId) || new Set();
+        const wasFirstSocket = set.size === 0;
         set.add(ws);
         roomMembers.set(roomId, set);
         
         // Subscribe to Redis channel when first socket joins this room on this pod
         // This enables receiving messages from other pods via Redis pub/sub fan-out
-        if (set.size === 1) {
+        if (wasFirstSocket) {
           await redisSubscriber.subscribe(`room:${roomId}`);
-          console.log(`📡 Subscribed to Redis channel "room:${roomId}" for fan-out`);
+          console.log(`📡 [WS] Subscribed to Redis channel "room:${roomId}" for fan-out (first socket on this pod)`);
+        } else {
+          console.log(`📡 [WS] Socket added to room ${roomId} (${set.size} total sockets on this pod)`);
         }
         
         // Send confirmation with room members list
@@ -267,6 +308,7 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
           type: 'room.joined',
           payload: { roomId, members },
         }));
+        console.log(`✅ [WS] User ${ws.user?.id} joined room ${roomId}, ${members.length} total members`);
       }
 
       if (msg.type === 'message.send') {

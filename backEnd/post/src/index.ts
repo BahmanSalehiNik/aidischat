@@ -41,15 +41,17 @@ const startMongoose = async ()=>{
         await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
         console.log("Kafka connected successfully");
 
-        // ------------- user listeners ------------
+        // ------------- Event Listeners ------------
+        // Each listener uses its own consumer group to avoid partition assignment conflicts
+        // User listeners - each with separate consumer group
         new UserCreatedListener(kafkaWrapper.consumer(GroupIdUserCreated)).listen();
         new UserUpdatedListener(kafkaWrapper.consumer(GroupIdUserUpdated)).listen();
 
-        // ------------- profile listeners ------------
+        // Profile listeners - each with separate consumer group
         new ProfileCreatedListener(kafkaWrapper.consumer(GroupIdProfileCreated)).listen();
         new ProfileUpdatedListener(kafkaWrapper.consumer(GroupIdProfileUpdated)).listen();
         
-        //---------- friendship listeners ---------
+        // Friendship listeners - each with separate consumer group
         new FriendshipAcceptedListener(kafkaWrapper.consumer(GroupIdFreindshipAccepted)).listen();
         new FriendshipRequestedListener(kafkaWrapper.consumer(GroupIdFreindshipRequested)).listen();
         new FriendshipUpdatedListener(kafkaWrapper.consumer(GroupIdFreindshipUpdated)).listen();

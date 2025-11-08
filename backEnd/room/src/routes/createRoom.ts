@@ -23,6 +23,7 @@ router.post('/api/rooms', extractJWTPayload, loginRequired, async (req: Request,
     visibility
   });
   await room.save();
+  console.log(`[createRoom] Room saved successfully: ${room.id}, deletedAt: ${room.deletedAt}`);
 
   // Add creator as owner participant
   const participant = Participant.build({
@@ -79,6 +80,8 @@ router.post('/api/rooms', extractJWTPayload, loginRequired, async (req: Request,
     role: 'owner',
     addedAt: participant.joinedAt.toISOString(),
   });
+
+  console.log(`[createRoom] Participant ${userId} added to room ${room.id}, Kafka event published`);
 
   res.status(201).send(room);
 });

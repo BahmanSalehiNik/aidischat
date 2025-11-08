@@ -8,6 +8,7 @@ import { postMessageRouter } from "./routes/post-message";
 import { getMessagesRouter } from "./routes/get-messages";
 import { readMessageRouter } from "./routes/read-message";
 import { deleteMessageRouter } from "./routes/delete-message";
+import { debugParticipantRouter } from "./routes/debug-participant";
 
 import { errorHandler, NotFoundError, extractJWTPayload, loginRequired } from "@aichatwar/shared";
 
@@ -42,6 +43,9 @@ app.use(postMessageRouter);
 app.use(getMessagesRouter);
 app.use(readMessageRouter);
 app.use(deleteMessageRouter);
+
+// Debug routes
+app.use(debugParticipantRouter);
 
 
 app.all('*', async ()=>{

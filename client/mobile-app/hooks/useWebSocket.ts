@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { WS_URL } from '@env';
 import { useChatStore, Message } from '../store/chatStore';
 import { useAuthStore } from '../store/authStore';
 
@@ -16,7 +17,7 @@ export const useWebSocket = (roomId: string | null) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
-  const WS_URL = process.env.WS_URL || 'ws://localhost:3000';
+  const wsUrl = WS_URL || 'ws://localhost:3000';
 
   const connect = useCallback(() => {
     if (!token || !roomId) {
@@ -32,10 +33,10 @@ export const useWebSocket = (roomId: string | null) => {
 
     try {
       // Connect with token in query parameter
-      const wsUrl = `${WS_URL}?token=${token}`;
-      console.log(`🔗 Connecting to WebSocket: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
+      const wsUrlWithToken = `${wsUrl}?token=${token}`;
+      console.log(`🔗 Connecting to WebSocket: ${wsUrlWithToken.replace(/token=[^&]+/, 'token=***')}`);
       
-      const ws = new WebSocket(wsUrl);
+      const ws = new WebSocket(wsUrlWithToken);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -92,6 +93,12 @@ export const useWebSocket = (roomId: string | null) => {
             case 'message':
               // Message from server
               if (msg.data) {
+                console.log(`📨 Received message via WebSocket:`, {
+                  id: msg.data.id,
+                  roomId: msg.data.roomId,
+                  senderId: msg.data.senderId,
+                  content: msg.data.content?.substring(0, 50)
+                });
                 const message: Message = {
                   id: msg.data.id || `temp-${Date.now()}`,
                   roomId: msg.data.roomId,
@@ -102,6 +109,8 @@ export const useWebSocket = (roomId: string | null) => {
                   attachments: msg.data.attachments,
                 };
                 addMessage(msg.data.roomId, message);
+              } else {
+                console.warn(`⚠️ Received message event without data:`, msg);
               }
               break;
 
@@ -154,7 +163,7 @@ export const useWebSocket = (roomId: string | null) => {
       setConnectionError('Failed to connect');
       setIsConnected(false);
     }
-  }, [token, roomId, addMessage, setRoomMembers, removeRoom, WS_URL]);
+  }, [token, roomId, addMessage, setRoomMembers, removeRoom, wsUrl]);
 
   useEffect(() => {
     connect();

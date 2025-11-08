@@ -10,6 +10,7 @@ import { removeParticipantRouter } from "./routes/remove-participant";
 import { deleteRoomRouter } from "./routes/deleteRoom";
 import { getRoomRouter } from "./routes/getRoom";
 import { getUserRoomsRouter } from "./routes/getUserRooms";
+import { joinRoomRouter } from "./routes/join-room";
 
 import { errorHandler, NotFoundError, extractJWTPayload, loginRequired } from "@aichatwar/shared";
 
@@ -46,6 +47,7 @@ app.use(removeParticipantRouter);
 app.use(deleteRoomRouter);
 app.use(getRoomRouter);
 app.use(getUserRoomsRouter);
+app.use(joinRoomRouter);
 
 
 app.all('*', async ()=>{

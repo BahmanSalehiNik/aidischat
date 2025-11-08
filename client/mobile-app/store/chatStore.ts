@@ -54,15 +54,46 @@ export const useChatStore = create<ChatState>((set) => ({
   addMessage: (roomId: string, message: Message) => {
     set((state) => {
       const existingMessages = state.messages[roomId] || [];
-      // Avoid duplicates by checking tempId or id
-      const isDuplicate = existingMessages.some(
-        (m) => m.id === message.id || m.tempId === message.tempId
+      
+      // Check for exact duplicate by id or tempId
+      const exactDuplicate = existingMessages.some(
+        (m) => m.id === message.id || (message.tempId && m.tempId === message.tempId)
       );
       
-      if (isDuplicate) {
+      if (exactDuplicate) {
         return state;
       }
       
+      // If this is a real message (has real id, no tempId), check if it should replace an optimistic message
+      // Match by: same content, same sender, within 5 seconds, and existing message has tempId
+      if (!message.tempId && message.id && !message.id.startsWith('temp-')) {
+        const messageTime = new Date(message.createdAt).getTime();
+        const optimisticIndex = existingMessages.findIndex((m) => {
+          if (!m.tempId) return false; // Only replace optimistic messages
+          const timeDiff = Math.abs(new Date(m.createdAt).getTime() - messageTime);
+          return (
+            m.content === message.content &&
+            m.senderId === message.senderId &&
+            timeDiff < 5000 // Within 5 seconds
+          );
+        });
+        
+        if (optimisticIndex !== -1) {
+          // Replace the optimistic message with the real one
+          const updated = [...existingMessages];
+          updated[optimisticIndex] = message;
+          return {
+            messages: {
+              ...state.messages,
+              [roomId]: updated.sort(
+                (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              ),
+            },
+          };
+        }
+      }
+      
+      // Add new message
       return {
         messages: {
           ...state.messages,

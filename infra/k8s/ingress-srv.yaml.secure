@@ -8,45 +8,24 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/websocket-services: "realtime-gateway-srv"
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
-    # SECURITY NOTE: Default rule below accepts requests from any host/IP
-    # This is for development only. For production:
-    # 1. Remove the default rule (no host specified)
-    # 2. Keep only the host-specific rule (aichatwar-games.com)
-    # 3. See SECURITY_NOTES.md for details
+    # SECURITY: Restrict default rule to local network only (for development)
+    # Remove this annotation in production or use proper authentication
+    nginx.ingress.kubernetes.io/whitelist-source-range: "192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,127.0.0.0/8"
 spec:
   ingressClassName: nginx
   rules:
-    # ⚠️ DEVELOPMENT ONLY: Default rule (no host specified) - accepts requests from any host
-    # This allows mobile apps and local development
-    # SECURITY: Remove this rule in production! See SECURITY_NOTES.md
+    # SECURITY WARNING: Default rule (no host) accepts requests from any host
+    # This is for development only. In production, remove this rule and only use
+    # the host-specific rule below, or add proper authentication/authorization.
+    # 
+    # For production, consider:
+    # 1. Remove this default rule entirely
+    # 2. Use only the host-specific rule (aichatwar-games.com)
+    # 3. Add authentication at ingress level (e.g., OAuth proxy)
+    # 4. Use IP whitelisting (see annotation above)
+    # 5. Enable rate limiting
     - http:
         paths:
-         # Specific routes first (more specific paths must come before general ones)
-         # Route /api/users/rooms to room service (not user service)
-         - path: /api/users/rooms
-           pathType: Exact
-           backend:
-             service:
-               name: room-srv
-               port: 
-                 number: 3000
-         # Route /api/rooms/*/messages to chat service (not room service)
-         - path: /api/rooms/.*/messages
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-         # Route /api/debug/* to chat service (for debug endpoints)
-         - path: /api/debug/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-         # General user routes
          - path: /api/users/?(.*)
            pathType: ImplementationSpecific
            backend:
@@ -103,15 +82,6 @@ spec:
                name: agent-srv
                port: 
                  number: 3000
-         # Route /api/rooms/*/messages to chat service (must come before general /api/rooms route)
-         - path: /api/rooms/.*/messages
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-         # General room routes (must come after specific routes)
          - path: /api/rooms/?(.*)
            pathType: ImplementationSpecific
            backend:
@@ -133,36 +103,10 @@ spec:
                name: realtime-gateway-srv
                port: 
                  number: 3000
-    # Specific host rule (for production)
+    # Production rule - only accepts requests with proper Host header
     - host: aichatwar-games.com
       http:
-        paths:
-         # Specific routes first (more specific paths must come before general ones)
-         # Route /api/users/rooms to room service (not user service)
-         - path: /api/users/rooms
-           pathType: Exact
-           backend:
-             service:
-               name: room-srv
-               port: 
-                 number: 3000
-         # Route /api/rooms/*/messages to chat service (not room service)
-         - path: /api/rooms/.*/messages
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-         # Route /api/debug/* to chat service (for debug endpoints)
-         - path: /api/debug/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-         # General user routes
+        paths: 
          - path: /api/users/?(.*)
            pathType: ImplementationSpecific
            backend:

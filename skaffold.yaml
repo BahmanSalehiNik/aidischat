@@ -16,15 +16,6 @@ build:
           - dest: .
             src: 'src/**/*.ts'
     
-    - image: bahmansalehinic4/frontend
-      context: frontEnd
-      docker:
-        dockerfile: Dockerfile
-      sync:
-        manual:
-          - dest: .
-            src: '**/*.js'
-
     - image: bahmansalehinic4/ecommerce-models
       context: backEnd/ecommerce/aiModelCards
       docker:

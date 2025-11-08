@@ -44,17 +44,18 @@ const startMongoose = async ()=>{
         console.log("Kafka connected successfully");
 
         // ------------- Event Listeners ------------
+        // Each listener uses its own consumer group to avoid partition assignment conflicts
         // Message ingest listener (uses dedicated consumer group)
         new MessageIngestListener(kafkaWrapper.consumer('chat-service-message-ingest')).listen();
 
-        // Room event listeners
-        new RoomCreatedListener(kafkaWrapper.consumer('chat-service')).listen();
-        new RoomDeletedListener(kafkaWrapper.consumer('chat-service')).listen();
-        new RoomParticipantAddedListener(kafkaWrapper.consumer('chat-service')).listen();
+        // Room event listeners - each with separate consumer group
+        new RoomCreatedListener(kafkaWrapper.consumer('chat-service-room-created')).listen();
+        new RoomDeletedListener(kafkaWrapper.consumer('chat-service-room-deleted')).listen();
+        new RoomParticipantAddedListener(kafkaWrapper.consumer('chat-service-room-participant-added')).listen();
 
-        // Agent and user update listeners
-        new AgentUpdatedListener(kafkaWrapper.consumer('chat-service')).listen();
-        new UserUpdatedListener(kafkaWrapper.consumer('chat-service')).listen();
+        // Agent and user update listeners - each with separate consumer group
+        new AgentUpdatedListener(kafkaWrapper.consumer('chat-service-agent-updated')).listen();
+        new UserUpdatedListener(kafkaWrapper.consumer('chat-service-user-updated')).listen();
 
         console.log("All Kafka listeners started successfully");
 

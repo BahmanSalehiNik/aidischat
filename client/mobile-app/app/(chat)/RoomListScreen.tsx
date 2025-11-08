@@ -11,8 +11,9 @@ import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
 import { useChatStore } from '../../store/chatStore';
-import { roomApi } from '../../utils/api';
+import { roomApi, debugApi } from '../../utils/api';
 import { Room } from '../../store/chatStore';
+import { useGlobalWebSocket } from '../../hooks/useGlobalWebSocket';
 
 export default function RoomListScreen() {
   const { user, logout } = useAuthStore();
@@ -25,13 +26,46 @@ export default function RoomListScreen() {
     loadRooms();
   }, []);
 
+  // Listen for room.created events to refresh the list
+  useGlobalWebSocket(() => {
+    console.log('🔄 Refreshing room list due to room.created event');
+    loadRooms();
+  });
+
   const loadRooms = async () => {
     try {
       setLoading(true);
-      const roomsData = await roomApi.getUserRooms();
-      setRooms(roomsData as Room[]);
+      const response = await roomApi.getUserRooms();
+      console.log('📋 getUserRooms response type:', typeof response);
+      console.log('📋 getUserRooms response:', JSON.stringify(response, null, 2));
+      
+      // Handle new response format: { rooms: Room[], pagination: {...} }
+      let roomsArray: Room[] = [];
+      
+      if (response && typeof response === 'object') {
+        if (Array.isArray(response)) {
+          // Response is directly an array
+          roomsArray = response;
+        } else if ((response as any).rooms && Array.isArray((response as any).rooms)) {
+          // Response has rooms property
+          roomsArray = (response as any).rooms;
+        } else {
+          console.warn('⚠️ Unexpected response format:', response);
+        }
+      }
+      
+      console.log(`✅ Loaded ${roomsArray.length} rooms`);
+      if (roomsArray.length > 0) {
+        console.log('Rooms:', roomsArray.map((r: any) => ({ id: r.id, name: r.name, isParticipant: r.isParticipant })));
+      } else {
+        console.warn('⚠️ No rooms found in response');
+      }
+      
+      setRooms(roomsArray);
     } catch (error) {
-      console.error('Error loading rooms:', error);
+      console.error('❌ Error loading rooms:', error);
+      // Set empty array on error to show empty state
+      setRooms([]);
     } finally {
       setLoading(false);
     }
@@ -52,6 +86,8 @@ export default function RoomListScreen() {
       });
       
       setRooms([...rooms, newRoom as Room]);
+      
+      // Navigate immediately - the retry mechanism in ChatScreen will handle the race condition
       router.push({
         pathname: '/(chat)/ChatScreen',
         params: { roomId: (newRoom as any).id },
@@ -61,12 +97,72 @@ export default function RoomListScreen() {
     }
   };
 
-  const handleRoomPress = (room: Room) => {
-    setCurrentRoom(room.id);
-    router.push({
-      pathname: '/(chat)/ChatScreen',
-      params: { roomId: room.id },
-    });
+  const handleRoomPress = async (room: Room) => {
+    try {
+      // Check if user is already a participant
+      const isParticipant = (room as any).isParticipant === true;
+      
+      console.log(`[handleRoomPress] Room ${room.id}, isParticipant: ${isParticipant}, role: ${(room as any).role}`);
+      
+      // If not a participant, join the room first
+      if (!isParticipant) {
+        console.log(`[handleRoomPress] User is not a participant, calling joinRoom...`);
+        try {
+          await roomApi.joinRoom(room.id);
+          console.log(`✅ Joined room: ${room.id}`);
+          
+          // Poll to check if participant exists in chat service before navigating
+          // This ensures the Kafka event has been processed
+          const maxAttempts = 15; // Increased attempts
+          const pollInterval = 500; // 500ms
+          let participantExists = false;
+          
+          console.log(`🔄 Polling for participant sync: ${user?.id} in room ${room.id}`);
+          
+          for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+              if (user?.id) {
+                const result: any = await debugApi.checkParticipant(room.id, user.id);
+                console.log(`[Poll ${attempt + 1}] Participant check result:`, {
+                  exists: result?.exists,
+                  hasParticipant: !!result?.participant
+                });
+                
+                if (result?.exists || result?.participant) {
+                  participantExists = true;
+                  console.log(`✅ Participant confirmed in chat service after ${attempt + 1} attempts`);
+                  break;
+                }
+              }
+            } catch (err: any) {
+              // Debug endpoint might not exist or participant not found yet, continue polling
+              const errorMsg = err?.message || 'Unknown error';
+              console.log(`⏳ Waiting for participant sync... (attempt ${attempt + 1}/${maxAttempts}) - ${errorMsg}`);
+            }
+            
+            if (attempt < maxAttempts - 1) {
+              await new Promise(resolve => setTimeout(resolve, pollInterval));
+            }
+          }
+          
+          if (!participantExists) {
+            console.warn(`⚠️ Participant not confirmed in chat service after ${maxAttempts} attempts, proceeding anyway`);
+            console.warn(`⚠️ Chat screen will retry loading messages`);
+          }
+        } catch (error) {
+          console.error('❌ Error joining room:', error);
+          // Continue anyway - the chat screen will handle the 403 error with retries
+        }
+      }
+      
+      setCurrentRoom(room.id);
+      router.push({
+        pathname: '/(chat)/ChatScreen',
+        params: { roomId: room.id },
+      });
+    } catch (error) {
+      console.error('Error handling room press:', error);
+    }
   };
 
 
@@ -87,7 +183,6 @@ export default function RoomListScreen() {
 
       <FlashList
         data={rooms}
-        estimatedItemSize={80}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.roomItem}

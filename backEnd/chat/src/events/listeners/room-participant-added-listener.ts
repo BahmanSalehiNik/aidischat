@@ -6,21 +6,48 @@ import { RoomParticipant } from '../../models/room-participant';
 
 export class RoomParticipantAddedListener extends Listener<RoomParticipantAddedEvent> {
   readonly topic = Subjects.RoomParticipantAdded;
-  readonly groupId = 'chat-service';
+  readonly groupId = 'chat-service-room-participant-added';
 
   async onMessage(data: RoomParticipantAddedEvent['data'], payload: any) {
     const { roomId, participantId, participantType, role, addedAt } = data;
 
-    const participant = RoomParticipant.build({
-      roomId,
-      participantId,
-      participantType,
-      role: role as any
-    });
+    try {
+      console.log(`[RoomParticipantAdded] Received event: roomId=${roomId}, participantId=${participantId}, role=${role}`);
 
-    await participant.save();
+      // Check if participant already exists (idempotency)
+      // Only check for active participants (not left)
+      const existing = await RoomParticipant.findOne({ 
+        roomId, 
+        participantId,
+        leftAt: { $exists: false }
+      });
 
-    console.log(`Participant added to room in chat service: ${participantId} -> ${roomId}`);
-    await this.ack();
+      if (existing) {
+        console.log(`[RoomParticipantAdded] Participant already exists, skipping: ${participantId} -> ${roomId}`);
+        await this.ack();
+        return;
+      }
+
+      const participant = RoomParticipant.build({
+        roomId,
+        participantId,
+        participantType,
+        role: role as any
+      });
+
+      await participant.save();
+
+      console.log(`[RoomParticipantAdded] ✅ Participant added to room in chat service: ${participantId} -> ${roomId}`);
+      await this.ack();
+    } catch (error: any) {
+      console.error(`[RoomParticipantAdded] ❌ Error processing event:`, {
+        roomId,
+        participantId,
+        error: error.message,
+        stack: error.stack
+      });
+      // Don't ack on error - let Kafka retry
+      throw error;
+    }
   }
 }

@@ -45,24 +45,26 @@ const startMongoose = async ()=>{
         await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
         console.log("Kafka connected successfully");
 
-        // ------------- user listeners ------------
+        // ------------- Event Listeners ------------
+        // Each listener uses its own consumer group to avoid partition assignment conflicts
+        // User listeners - each with separate consumer group
         new UserCreatedListener(kafkaWrapper.consumer(GroupIdUserCreated)).listen();
         new UserUpdatedListener(kafkaWrapper.consumer(GroupIdUserUpdated)).listen();
 
-        // ------------- profile listeners ------------
+        // Profile listeners - each with separate consumer group
         new ProfileCreatedListener(kafkaWrapper.consumer(GroupIdProfileCreated)).listen();
         new ProfileUpdatedListener(kafkaWrapper.consumer(GroupIdProfileUpdated)).listen();
 
-        // ------------- post listeners ---------------
+        // Post listeners - each with separate consumer group
         new PostCreatedListener(kafkaWrapper.consumer(GroupIdPostCreated)).listen();
         new PostUpdatedListener(kafkaWrapper.consumer(GroupIdPostUpdated)).listen();
         new PostDeletedListener(kafkaWrapper.consumer(GroupIdPostDeleted)).listen();
 
-        // ------------- comment listeners ---------------
+        // Comment listeners - each with separate consumer group
         new CommentCreatedListener(kafkaWrapper.consumer(GroupIdCommentCreated)).listen();
         new CommentDeletedListener(kafkaWrapper.consumer(GroupIdCommentDeleted)).listen();
 
-        // --------------- friendship listeners ------------
+        // Friendship listeners - each with separate consumer group
         new FriendshipRequestedListener(kafkaWrapper.consumer(GroupIdFreindshipRequested)).listen();
         new FriendshipAcceptedListener(kafkaWrapper.consumer(GroupIdFreindshipAccepted)).listen();
         new FriendshipUpdatedListener(kafkaWrapper.consumer(GroupIdFreindshipUpdated)).listen();

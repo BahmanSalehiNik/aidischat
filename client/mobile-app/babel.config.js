@@ -1,5 +1,6 @@
 module.exports = function(api) {
-  api.cache(true);
+  // Disable cache to ensure .env changes are picked up
+  api.cache(false);
   return {
     presets: ['babel-preset-expo'],
     plugins: [
@@ -9,7 +10,6 @@ module.exports = function(api) {
         safe: false,
         allowUndefined: true,
       }],
-      'expo-router/babel',
     ],
   };
 };
