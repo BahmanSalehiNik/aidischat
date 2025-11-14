@@ -133,6 +133,20 @@ spec:
                name: realtime-gateway-srv
                port: 
                  number: 3000
+         - path: /api/ai-gateway/?(.*)
+           pathType: ImplementationSpecific
+           backend:
+             service:
+               name: ai-gateway-srv
+               port: 
+                 number: 3000
+         - path: /api/ai-gateway/?(.*)
+           pathType: ImplementationSpecific
+           backend:
+             service:
+               name: ai-gateway-srv
+               port: 
+                 number: 3000
     # Specific host rule (for production)
     - host: aichatwar-games.com
       http:
@@ -244,6 +258,13 @@ spec:
            backend:
              service:
                name: realtime-gateway-srv
+               port: 
+                 number: 3000
+         - path: /api/ai-gateway/?(.*)
+           pathType: ImplementationSpecific
+           backend:
+             service:
+               name: ai-gateway-srv
                port: 
                  number: 3000
 

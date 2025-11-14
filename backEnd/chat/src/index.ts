@@ -3,6 +3,7 @@ import express from "express";
 import mongoose from "mongoose";
 import { kafkaWrapper } from './kafka-client';
 import { MessageIngestListener } from './events/listeners/message-ingest-listener';
+import { AiMessageReplyListener } from './events/listeners/ai-message-reply-listener';
 import { RoomCreatedListener } from './events/listeners/room-created-listener';
 import { RoomDeletedListener } from './events/listeners/room-deleted-listener';
 import { RoomParticipantAddedListener } from './events/listeners/room-participant-added-listener';
@@ -47,6 +48,9 @@ const startMongoose = async ()=>{
         // Each listener uses its own consumer group to avoid partition assignment conflicts
         // Message ingest listener (uses dedicated consumer group)
         new MessageIngestListener(kafkaWrapper.consumer('chat-service-message-ingest')).listen();
+
+        // AI message reply listener (uses dedicated consumer group)
+        new AiMessageReplyListener(kafkaWrapper.consumer('chat-service-ai-message-reply')).listen();
 
         // Room event listeners - each with separate consumer group
         new RoomCreatedListener(kafkaWrapper.consumer('chat-service-room-created')).listen();

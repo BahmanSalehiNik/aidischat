@@ -6,7 +6,7 @@ import { EachMessagePayload } from 'kafkajs';
 
 export class PostCreatedListener extends Listener<PostCreatedEvent> {
   readonly topic: Subjects.PostCreated = Subjects.PostCreated;
-  groupId: string = GroupIdPostCreated;
+  readonly groupId = GroupIdPostCreated;
 
   async onMessage(data: PostCreatedEvent['data'], msg: EachMessagePayload) {
     console.log('Post created event received:', data);
@@ -43,7 +43,7 @@ export class PostCreatedListener extends Listener<PostCreatedEvent> {
 
 export class PostUpdatedListener extends Listener<PostUpdatedEvent> {
   readonly topic: Subjects.PostUpdated = Subjects.PostUpdated;
-  groupId: string = GroupIdPostUpdated;
+  readonly groupId = GroupIdPostUpdated;
 
   async onMessage(data: PostUpdatedEvent['data'], msg: EachMessagePayload) {
     console.log('Post updated event received:', data);
@@ -80,7 +80,7 @@ export class PostUpdatedListener extends Listener<PostUpdatedEvent> {
 
 export class PostDeletedListener extends Listener<PostDeletedEvent> {
   readonly topic: Subjects.PostDeleted = Subjects.PostDeleted;
-  groupId: string = GroupIdPostDeleted;
+  readonly groupId = GroupIdPostDeleted;
 
   async onMessage(data: PostDeletedEvent['data'], msg: EachMessagePayload) {
     console.log('Post deleted event received:', data);

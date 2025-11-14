@@ -1,10 +1,11 @@
 import { NotFoundError, UserCreatedEvent, UserUpdatedEvent, UserDeletedEvent, Listener, Subjects } from "@aichatwar/shared";
 import { User } from "../../models/user";
 import { EachMessagePayload } from "kafkajs";
+import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdUserDeleted } from "./queGroupNames";
 
 class UserCreatedListener extends Listener<UserCreatedEvent>{
     readonly topic: Subjects.UserCreated = Subjects.UserCreated;
-    groupId: string = 'agents-user-created-service';
+    readonly groupId = GroupIdUserCreated;
     
     async onMessage(processedMessage: UserCreatedEvent['data'], msg: EachMessagePayload){
         console.log('User created event received:', processedMessage);
@@ -24,7 +25,7 @@ class UserCreatedListener extends Listener<UserCreatedEvent>{
 
 class UserUpdatedListener extends Listener<UserUpdatedEvent>{
     readonly topic: Subjects.UserUpdated = Subjects.UserUpdated;
-    groupId: string = 'agents-user-updated-service';
+    readonly groupId = GroupIdUserUpdated;
     
     async onMessage(processedMessage: UserUpdatedEvent['data'], msg: EachMessagePayload){
         console.log('User updated event received:', processedMessage);
@@ -44,7 +45,7 @@ class UserUpdatedListener extends Listener<UserUpdatedEvent>{
 
 class UserDeletedListener extends Listener<UserDeletedEvent>{
     readonly topic: Subjects.UserDeleted = Subjects.UserDeleted;
-    groupId: string = 'agents-user-deleted-service';
+    readonly groupId = GroupIdUserDeleted;
     
     async onMessage(processedMessage: UserDeletedEvent['data'], msg: EachMessagePayload){
         console.log('User deleted event received:', processedMessage);

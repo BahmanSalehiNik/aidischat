@@ -5,7 +5,7 @@ import { EachMessagePayload } from 'kafkajs';
 
 export class CommentCreatedListener extends Listener<CommentCreatedEvent> {
   readonly topic: Subjects.CommentCreated = Subjects.CommentCreated;
-  groupId: string = GroupIdCommentCreated;
+  readonly groupId = GroupIdCommentCreated;
 
   async onMessage(data: CommentCreatedEvent['data'], msg: EachMessagePayload) {
     console.log('Comment created event received:', data);
@@ -32,7 +32,7 @@ export class CommentCreatedListener extends Listener<CommentCreatedEvent> {
 
 export class CommentDeletedListener extends Listener<CommentDeletedEvent> {
   readonly topic: Subjects.CommentDeleted = Subjects.CommentDeleted;
-  groupId: string = GroupIdCommentDeleted;
+  readonly groupId = GroupIdCommentDeleted;
 
   async onMessage(data: CommentDeletedEvent['data'], msg: EachMessagePayload) {
     console.log('Comment deleted event received:', data);

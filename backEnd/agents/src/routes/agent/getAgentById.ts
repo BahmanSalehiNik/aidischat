@@ -1,8 +1,8 @@
 import express, { Request, Response } from 'express';
-import { Agent } from '../models/agent';
-import { AgentProfile } from '../models/agentProfile';
+import { Agent } from '../../models/agent';
+import { AgentProfile } from '../../models/agentProfile';
 import { extractJWTPayload, loginRequired, NotFoundError } from "@aichatwar/shared";
-import { User } from '../models/user';
+import { User } from '../../models/user';
 
 const router = express.Router();
 
@@ -27,10 +27,9 @@ router.get(
         throw new NotFoundError();
     }
 
-    const agentProfile = await AgentProfile.findOne({ agentId: agent.id, isDeleted: false });
-    if(!agentProfile){
-        throw new NotFoundError();
-    }
+    const agentProfile = agent.agentProfileId 
+      ? await AgentProfile.findOne({ _id: agent.agentProfileId, isDeleted: false })
+      : null;
 
     res.send({ agent, agentProfile });
   }

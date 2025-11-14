@@ -1,10 +1,10 @@
 import express, { Request, Response } from 'express';
-import { Agent } from '../models/agent';
-import { AgentProfile } from '../models/agentProfile';
+import { Agent } from '../../models/agent';
+import { AgentProfile } from '../../models/agentProfile';
 import { extractJWTPayload, loginRequired, NotFoundError } from "@aichatwar/shared";
-import { User } from '../models/user';
-import { AgentDeletedPublisher } from '../events/agentPublishers';
-import { kafkaWrapper } from '../kafka-client';
+import { User } from '../../models/user';
+import { AgentDeletedPublisher } from '../../events/agentPublishers';
+import { kafkaWrapper } from '../../kafka-client';
 
 const router = express.Router();
 
@@ -34,12 +34,14 @@ router.delete(
         throw new NotFoundError();
     }
 
-    // Soft delete agent profile first
-    const agentProfile = await AgentProfile.findOne({ agentId: agent.id, isDeleted: false });
-    if(agentProfile){
-        agentProfile.isDeleted = true;
-        agentProfile.deletedAt = new Date();
-        await agentProfile.save();
+    // Soft delete agent profile if linked
+    if (agent.agentProfileId) {
+      const agentProfile = await AgentProfile.findOne({ _id: agent.agentProfileId, isDeleted: false });
+      if(agentProfile){
+          agentProfile.isDeleted = true;
+          agentProfile.deletedAt = new Date();
+          await agentProfile.save();
+      }
     }
 
     // Soft delete agent

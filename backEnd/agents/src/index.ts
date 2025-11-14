@@ -3,7 +3,14 @@ import express from "express";
 import mongoose from "mongoose";
 import { kafkaWrapper } from './kafka-client';
 import { UserCreatedListener, UserUpdatedListener, UserDeletedListener } from './events/listeners/userListeners';
-import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdUserDeleted } from './events/listeners/queGroupNames';
+import {
+    GroupIdUserCreated,
+    GroupIdUserUpdated,
+    GroupIdUserDeleted,
+    GroupIdAgentCreationReplySuccess,
+    GroupIdAgentCreationReplyFailed
+} from './events/listeners/queGroupNames';
+import { AgentCreationReplySuccessListener, AgentCreationReplyFailedListener } from './events/listeners/agentProvisionListeners';
 
 
 
@@ -43,6 +50,8 @@ const startMongoose = async ()=>{
         new UserCreatedListener(kafkaWrapper.consumer(GroupIdUserCreated)).listen();
         new UserUpdatedListener(kafkaWrapper.consumer(GroupIdUserUpdated)).listen();
         new UserDeletedListener(kafkaWrapper.consumer(GroupIdUserDeleted)).listen();
+        new AgentCreationReplySuccessListener(kafkaWrapper.consumer(GroupIdAgentCreationReplySuccess)).listen();
+        new AgentCreationReplyFailedListener(kafkaWrapper.consumer(GroupIdAgentCreationReplyFailed)).listen();
 
         app.listen(3000, ()=>{
             console.log("app listening on port 3000! agents service")
