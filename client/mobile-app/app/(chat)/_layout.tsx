@@ -17,7 +17,7 @@ export default function ChatLayout() {
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/LoginScreen');
     } else if (isAuthenticated && inAuthGroup) {
-      router.replace('/(chat)/RoomListScreen');
+      // Don't auto-redirect from chat - let user navigate back
     }
   }, [isAuthenticated, isLoading, segments]);
 

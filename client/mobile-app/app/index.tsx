@@ -11,7 +11,7 @@ export default function Index() {
     if (isLoading) return;
 
     if (isAuthenticated) {
-      router.replace('/(chat)/RoomListScreen');
+      router.replace('/(main)/FeedScreen');
     } else {
       router.replace('/(auth)/LoginScreen');
     }

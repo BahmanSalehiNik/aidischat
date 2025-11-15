@@ -22,17 +22,39 @@ echo "Press Ctrl+C to stop"
 # Otherwise, kubectl port-forward to localhost and use a workaround
 if command -v socat &> /dev/null; then
     echo "Using socat to forward to network interface..."
-    kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 127.0.0.1:8080:80 &
+    echo "Starting kubectl port-forward in background..."
+    kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8080:80 > /tmp/kubectl-port-forward.log 2>&1 &
     KUBECTL_PID=$!
     sleep 2
+    
+    # Check if port-forward started successfully
+    if ! kill -0 $KUBECTL_PID 2>/dev/null; then
+        echo "Error: kubectl port-forward failed to start"
+        cat /tmp/kubectl-port-forward.log
+        exit 1
+    fi
+    
+    echo "kubectl port-forward running (PID: $KUBECTL_PID)"
+    echo "Starting socat proxy on $LOCAL_IP:8080..."
+    echo ""
+    echo "Access backend at: http://$LOCAL_IP:8080/api"
+    echo "WebSocket at: ws://$LOCAL_IP:8080/api/realtime"
+    echo ""
+    
+    # Trap Ctrl+C to cleanup
+    trap "kill $KUBECTL_PID 2>/dev/null; exit" INT TERM
+    
     socat TCP-LISTEN:8080,bind=$LOCAL_IP,reuseaddr,fork TCP:127.0.0.1:8080
     kill $KUBECTL_PID 2>/dev/null
 else
     echo "Note: kubectl port-forward only binds to localhost."
-    echo "For mobile access, you may need to:"
+    echo "For mobile access, you need to:"
     echo "1. Install socat: sudo apt-get install socat"
-    echo "2. Or use SSH port forwarding"
-    echo "3. Or use a tunnel service like ngrok"
+    echo "2. Then run this script again"
+    echo ""
+    echo "Or use the NodePort directly (if your device can reach minikube IP):"
+    echo "  API_BASE_URL=http://192.168.49.2:31945/api"
+    echo "  WS_URL=ws://192.168.49.2:31945/api/realtime"
     echo ""
     echo "Starting port-forward on localhost:8080..."
     kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8080:80

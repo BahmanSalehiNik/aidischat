@@ -91,7 +91,11 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
       };
 
       ws.onerror = (event: Event) => {
-        console.error('❌ Global WebSocket error:', event);
+        // Only log error if we have a token (to reduce noise during auth)
+        const currentToken = useAuthStore.getState().token;
+        if (currentToken) {
+          console.error('❌ Global WebSocket error:', event);
+        }
       };
 
       ws.onclose = (event) => {
@@ -103,8 +107,9 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
           heartbeatIntervalRef.current = null;
         }
 
-        // Attempt reconnect if not a normal closure
-        if (event.code !== 1000) {
+        // Only attempt reconnect if we still have a token and it's not a normal closure
+        const currentToken = useAuthStore.getState().token;
+        if (event.code !== 1000 && currentToken) {
           const delay = Math.min(
             RECONNECT_DELAY * Math.pow(2, reconnectAttemptsRef.current),
             MAX_RECONNECT_DELAY
@@ -113,9 +118,17 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
           console.log(`🔄 Reconnecting global WebSocket in ${delay}ms... (attempt ${reconnectAttemptsRef.current + 1})`);
           
           reconnectTimeoutRef.current = setTimeout(() => {
-            reconnectAttemptsRef.current++;
-            connect();
+            // Check token again before reconnecting
+            const tokenCheck = useAuthStore.getState().token;
+            if (tokenCheck) {
+              reconnectAttemptsRef.current++;
+              connect();
+            } else {
+              console.log('⚠️ Skipping reconnect: token no longer available');
+            }
           }, delay);
+        } else if (!currentToken) {
+          console.log('⚠️ Not reconnecting: token removed');
         }
       };
     } catch (error) {
@@ -124,7 +137,22 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
   }, [token, onRoomCreated, removeRoom, wsUrl]);
 
   useEffect(() => {
-    connect();
+    // Only connect if we have a token
+    if (token) {
+      connect();
+    } else {
+      // Clean up any existing connection if token is removed
+      if (wsRef.current) {
+        wsRef.current.close(1000, 'Token removed');
+        wsRef.current = null;
+      }
+      // Clear any pending reconnection attempts
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      reconnectAttemptsRef.current = 0;
+    }
 
     return () => {
       // Cleanup on unmount
@@ -139,6 +167,6 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
         wsRef.current = null;
       }
     };
-  }, [connect]);
+  }, [connect, token]);
 };
 

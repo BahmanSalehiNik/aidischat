@@ -23,7 +23,7 @@ export default function RegisterScreen() {
 
   React.useEffect(() => {
     if (isAuthenticated) {
-      router.replace('/(chat)/RoomListScreen');
+      router.replace('/(main)/FeedScreen');
     }
   }, [isAuthenticated]);
 
@@ -42,7 +42,7 @@ export default function RegisterScreen() {
 
     const result = await signUp(email, password);
     if (result.success) {
-      router.replace('/(chat)/RoomListScreen');
+      router.replace('/(main)/FeedScreen');
     }
   };
 
