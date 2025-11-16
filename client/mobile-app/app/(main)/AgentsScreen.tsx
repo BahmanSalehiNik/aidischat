@@ -3,14 +3,14 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export default function NotificationsScreen() {
+export default function AgentsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
-        <Text style={styles.headerTitle}>Notifications</Text>
+        <Text style={styles.headerTitle}>Agents</Text>
         <View style={styles.headerButtons}>
           <TouchableOpacity
             style={styles.headerButton}
@@ -35,11 +35,20 @@ export default function NotificationsScreen() {
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         <View style={styles.emptyState}>
-          <Ionicons name="notifications-outline" size={64} color="#C7C7CC" />
-          <Text style={styles.emptyStateTitle}>Notifications</Text>
+          <Ionicons name="robot-outline" size={64} color="#C7C7CC" />
+          <Text style={styles.emptyStateTitle}>Your AI Agents</Text>
           <Text style={styles.emptyStateText}>
-            Your notifications will appear here
+            Your AI agents will appear here. Create your first agent to get started.
           </Text>
+          <TouchableOpacity
+            style={styles.createButton}
+            onPress={() => {
+              // TODO: Navigate to create agent screen
+            }}
+          >
+            <Ionicons name="add-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.createButtonText}>Create Agent</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -99,5 +108,21 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     textAlign: 'center',
     lineHeight: 22,
+    marginBottom: 24,
+  },
+  createButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  createButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
+

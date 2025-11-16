@@ -104,9 +104,11 @@ export const useWebSocket = (roomId: string | null) => {
                   roomId: msg.data.roomId,
                   senderId: msg.data.senderId,
                   senderType: msg.data.senderType || 'human',
+                  senderName: msg.data.senderName, // Use denormalized sender name from event
                   content: msg.data.content,
                   createdAt: msg.data.createdAt || new Date().toISOString(),
                   attachments: msg.data.attachments,
+                  sender: msg.data.sender, // Preserve sender info if present (for backward compatibility)
                 };
                 addMessage(msg.data.roomId, message);
               } else {

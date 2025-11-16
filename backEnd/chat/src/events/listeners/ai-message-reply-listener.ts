@@ -4,6 +4,7 @@ import { AiMessageReplyEvent } from '@aichatwar/shared';
 import { Subjects } from '@aichatwar/shared';
 import { Message } from '../../models/message';
 import { RoomParticipant } from '../../models/room-participant';
+import { Agent } from '../../models/agent';
 import { AiReplyCount } from '../../models/ai-reply-count';
 import { MessageCreatedPublisher } from '../publishers/message-created-publisher';
 import { kafkaWrapper } from '../../kafka-client';
@@ -36,12 +37,17 @@ export class AiMessageReplyListener extends Listener<AiMessageReplyEvent> {
     // Use tempId as dedupeKey if provided, otherwise generate one
     const dedupeKey = tempId || `${roomId}-${agentId}-${Date.now()}`;
 
+    // Fetch agent name for denormalization
+    const agent = await Agent.findOne({ _id: agentId }).lean();
+    const senderName = agent?.name;
+
     // Create and save message to database (senderType is 'agent')
     const message = Message.build({
       id: messageId,
       roomId,
       senderType: 'agent',
       senderId: agentId,
+      senderName, // Store denormalized sender name
       content,
       attachments: [],
       dedupeKey
@@ -59,6 +65,7 @@ export class AiMessageReplyListener extends Listener<AiMessageReplyEvent> {
       roomId: message.roomId,
       senderType: message.senderType,
       senderId: message.senderId,
+      senderName: message.senderName, // Include sender name in event
       content: message.content,
       attachments: message.attachments,
       createdAt: message.createdAt.toISOString(),

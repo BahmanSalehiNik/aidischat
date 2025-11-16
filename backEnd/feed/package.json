@@ -19,7 +19,7 @@
   "author": "Bahman",
   "license": "ISC",
   "dependencies": {
-    "@aichatwar/shared": "^1.0.110",
+    "@aichatwar/shared": "^1.0.111",
     "@types/cookie-session": "^2.0.49",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.23",

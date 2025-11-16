@@ -43,7 +43,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({ onSend, disabled = f
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    padding: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     alignItems: 'flex-end',
   },
   input: {

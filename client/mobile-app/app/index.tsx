@@ -11,7 +11,7 @@ export default function Index() {
     if (isLoading) return;
 
     if (isAuthenticated) {
-      router.replace('/(main)/FeedScreen');
+      router.replace('/(main)/HomeScreen');
     } else {
       router.replace('/(auth)/LoginScreen');
     }

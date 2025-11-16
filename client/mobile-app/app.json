@@ -24,7 +24,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.aichatwar.mobile",
-      "softwareKeyboardLayoutMode": "pan"
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png"

@@ -7,6 +7,7 @@ import cookieSession from "cookie-session";
 
 import { createPostRouter } from "./routes/post/createPost";
 import { getPostRouter } from "./routes/post/getPost";
+import { getPostsRouter } from "./routes/post/getPosts";
 import { updatePostRouter } from "./routes/post/updatePost";
 
 import { addCommentRouter } from "./routes/comment/addComment";
@@ -16,7 +17,7 @@ import { updateCommentRouter } from "./routes/comment/updateComment";
 import { deleteCommentRouter } from "./routes/comment/deleteComment";
 
 
-import { errorHandler, NotFoundError } from "@aichatwar/shared";
+import { errorHandler, NotFoundError, extractJWTPayload } from "@aichatwar/shared";
 
 
 
@@ -32,8 +33,11 @@ app.use(cookieSession({
     sameSite: "lax"
 }))
 
+app.use(extractJWTPayload);
+
 app.use(createPostRouter);
 app.use(getPostRouter);
+app.use(getPostsRouter);
 app.use(updatePostRouter);
 
 app.use(addCommentRouter);

@@ -3,6 +3,7 @@ import { loginRequired, extractJWTPayload, validateRequest } from '@aichatwar/sh
 import { Feed } from '../models/feed/feed';
 import { Post } from '../models/post/post';
 import { Profile } from '../models/user/profile';
+import { User } from '../models/user/user';
 
 const router = express.Router();
 
@@ -26,13 +27,13 @@ router.get('/api/feeds',
   if (cursor) {
     const cursorFeed = await Feed.findById(cursor);
     if (cursorFeed) {
-      query.timestamp = { $lt: cursorFeed.createdAt };
+      query.createdAt = { $lt: cursorFeed.createdAt };
     }
   }
 
-  // Fetch feed entries
+  // Fetch feed entries - sort by createdAt (newest first)
   const feeds = await Feed.find(query)
-    .sort({ timestamp: -1 })
+    .sort({ createdAt: -1 })
     .limit(limit)
     .lean();
 
@@ -43,34 +44,70 @@ router.get('/api/feeds',
   // Extract postIds for this batch
   const postIds = feeds.map(f => f.postId);
 
-  // Fetch projected post data
+  // Fetch projected post data - sort by createdAt (newest first) using database index
   const posts = await Post.find({ _id: { $in: postIds } })
+    .sort({ createdAt: -1 })
     .lean()
     .exec();
 
-  // Optional: fetch profile info of authors
+  // Fetch profile info of authors
   const authorIds = Array.from(new Set(posts.map(p => p.userId)));
-  const authors = await Profile.find({ userId: { $in: authorIds } })
-    .select('userId name avatarUrl')
+  const profiles = await Profile.find({ userId: { $in: authorIds } })
+    .select('userId username avatarUrl')
+    .lean();
+
+  // Fetch user information for fallback (email)
+  const users = await User.find({ _id: { $in: authorIds } })
+    .select('_id email')
     .lean();
 
   // Map posts by id for easy lookup
   const postMap = new Map(posts.map(p => [p._id, p]));
-  const authorMap = new Map(authors.map(a => [a.userId, a]));
+  
+  // Create maps for profile and user lookup
+  const profileMap = new Map(profiles.map((p: any) => [p.userId, p]));
+  const userMap = new Map(users.map((u: any) => {
+    const userId = typeof u._id === 'string' ? u._id : u._id.toString();
+    return [userId, u];
+  }));
 
-  const items = feeds.map(feed => {
-    const post = postMap.get(feed.postId);
-    if (!post) return null;
+  // Create a map of feedId to feed for lookup
+  const feedMap = new Map(feeds.map(f => [f.postId, f]));
+
+  // Build items array using the sorted posts order (newest first)
+  // This maintains the database sort order without JavaScript sorting
+  const items = posts.map(post => {
+    const postId = post._id?.toString();
+    const feed = feedMap.get(postId);
+    if (!feed) return null;
+    
+    const postUserId = post.userId?.toString();
+    const profile = profileMap.get(postUserId);
+    const user = userMap.get(postUserId);
+    
+    // Determine the display name: prefer username, fallback to email prefix
+    let displayName: string | undefined;
+    if (profile?.username) {
+      displayName = profile.username;
+    } else if (user?.email) {
+      // Extract name from email (e.g., "john@example.com" -> "john")
+      displayName = user.email.split('@')[0];
+    }
+    
     return {
       feedId: feed._id,
       postId: post._id,
-      author: authorMap.get(post.userId) || null,
+      author: {
+        userId: post.userId,
+        name: displayName,
+        avatarUrl: profile?.avatarUrl,
+      },
       content: post.content,
       media: post.media,
       visibility: post.visibility,
       reactionsSummary: post.reactionsSummary,
       commentsCount: post.commentsCount,
-      createdAt: post.createdAt,
+      createdAt: post.createdAt || post.originalCreation,
     };
   }).filter(Boolean);
 

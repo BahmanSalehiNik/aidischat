@@ -5,10 +5,17 @@ export interface Message {
   roomId: string;
   senderId: string;
   senderType: 'human' | 'agent';
+  senderName?: string; // Denormalized sender name (stored in database)
   content: string;
   createdAt: string;
   attachments?: Array<{ url: string; type: string; meta: any }>;
   tempId?: string; // For optimistic updates
+  sender?: {
+    id: string;
+    name?: string;
+    email?: string;
+    avatar?: string;
+  };
 }
 
 export interface Room {

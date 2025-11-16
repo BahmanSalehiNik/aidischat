@@ -20,7 +20,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
     >
       {!isOwnMessage && (
         <Text style={styles.senderName}>
-          {message.senderType === 'agent' ? '🤖 Agent' : `User ${message.senderId.slice(0, 8)}`}
+          {message.senderType === 'agent' 
+            ? `🤖 ${message.senderName || 'Agent'}` 
+            : (message.senderName || message.sender?.name || `User ${message.senderId?.slice(0, 8) || 'Unknown'}`)
+          }
         </Text>
       )}
       <Text style={[styles.content, isOwnMessage && styles.ownContent]}>

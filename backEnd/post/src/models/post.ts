@@ -70,6 +70,10 @@ const postSchema = new mongoose.Schema(
 
 );
 
+// Index for efficient sorting by createdAt
+postSchema.index({ createdAt: -1 });
+postSchema.index({ userId: 1, createdAt: -1 }); // Compound index for user posts queries
+
 postSchema.statics.build = async(attrs: PostAttrs)=>{
   const {id, ...rest} = attrs;
   return new Post({

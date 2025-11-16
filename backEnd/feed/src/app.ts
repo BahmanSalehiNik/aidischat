@@ -7,7 +7,7 @@ import cookieSession from "cookie-session";
 
 import { getFeedRouter } from "./routes/getFeed";
 
-import { errorHandler, NotFoundError } from "@aichatwar/shared";
+import { errorHandler, NotFoundError, extractJWTPayload } from "@aichatwar/shared";
 
 
 
@@ -22,6 +22,8 @@ app.use(cookieSession({
     secure: false,//process.env.NODE_ENV !== 'test'
     sameSite: "lax"
 }))
+
+app.use(extractJWTPayload);
 
 app.use(getFeedRouter);
 

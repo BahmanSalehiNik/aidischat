@@ -27,10 +27,31 @@ router.get('/api/rooms/:roomId/messages', extractJWTPayload, loginRequired, asyn
   const messages = await Message.find({ roomId })
     .sort({ createdAt: -1 })
     .skip(skip)
-    .limit(Number(limit));
+    .limit(Number(limit))
+    .lean();
+
+  // Enrich messages with sender information (using stored senderName)
+  const enrichedMessages = messages.map((msg: any) => {
+    const messageObj: any = {
+      ...msg,
+      id: msg._id || msg.id,
+      senderName: msg.senderName, // Include senderName directly in message
+    };
+
+    // Add sender info using stored senderName (denormalized) for backward compatibility
+    if (msg.senderType === 'human' || msg.senderType === 'agent') {
+      const senderId = msg.senderId?.toString();
+      messageObj.sender = {
+        id: senderId,
+        name: msg.senderName || senderId?.slice(0, 8) || 'Unknown',
+      };
+    }
+
+    return messageObj;
+  });
 
   res.status(200).send({
-    messages: messages.reverse(), // Return in chronological order
+    messages: enrichedMessages.reverse(), // Return in chronological order
     pagination: {
       page: Number(page),
       limit: Number(limit),

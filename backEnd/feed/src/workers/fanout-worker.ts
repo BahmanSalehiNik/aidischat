@@ -25,6 +25,9 @@ const fanoutWorker = new Worker(
 
     let recipients: string[] = [];
 
+    // Always include the author in their own feed
+    const authorIncluded = new Set<string>([authorId]);
+
     if (visibility === 'public') {
       console.log('vis')
       // everyone or friends — simplified here
@@ -35,22 +38,26 @@ const fanoutWorker = new Worker(
       });
       console.log(friendships, "freinds")
       // map both requester/recipient pairs correctly
-      recipients = friendships.map(f =>
+      const friendIds = friendships.map(f =>
         f.requester === authorId ? f.recipient : f.requester
       );
-
-      console.log(recipients, "rec")
+      
+      // Add friends to recipients
+      friendIds.forEach(id => authorIncluded.add(id));
+      console.log(Array.from(authorIncluded), "rec")
     } else if (visibility === 'friends') {
       const friendships = await Friendship.find({
         status: 'accepted',
         $or: [{ requester: authorId }, { recipient: authorId }],
       });
-      recipients = friendships.map(f =>
+      const friendIds = friendships.map(f =>
         f.requester === authorId ? f.recipient : f.requester
       );
-    } else {
-      recipients = [authorId]; // only self
+      friendIds.forEach(id => authorIncluded.add(id));
     }
+    // else: private - only author (already in set)
+
+    recipients = Array.from(authorIncluded);
 
     if (!recipients.length) return;
     console.log(recipients,"rec")

@@ -11,10 +11,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@aichatwar/shared": "^1.0.110",
+    "@aichatwar/shared": "^1.0.111",
     "@anthropic-ai/sdk": "^0.24.0",
-    "cohere-ai": "^7.19.0",
     "axios": "^1.6.0",
+    "cohere-ai": "^7.19.0",
     "kafkajs": "^2.2.4",
     "mongoose": "^8.17.0",
     "openai": "^4.28.0",

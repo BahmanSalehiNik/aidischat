@@ -1,7 +1,20 @@
-import { Tabs } from 'expo-router';
+import { Tabs, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useMemo } from 'react';
 
 export default function MainLayout() {
+  const pathname = usePathname();
+  
+  // Hide tab bar when inside ChatScreen (but not RoomListScreen) or SettingsScreen
+  const shouldHideTabBar = useMemo(() => {
+    if (!pathname) return false;
+    // Hide in ChatScreen (but not RoomListScreen)
+    const isInChatScreen = pathname.includes('ChatScreen') && !pathname.includes('RoomListScreen');
+    // Hide in SettingsScreen
+    const isInSettingsScreen = pathname.includes('SettingsScreen');
+    return isInChatScreen || isInSettingsScreen;
+  }, [pathname]);
+
   return (
     <Tabs
       screenOptions={{
@@ -12,34 +25,32 @@ export default function MainLayout() {
           backgroundColor: '#FFFFFF',
           borderTopWidth: 1,
           borderTopColor: '#E5E5EA',
+          display: shouldHideTabBar ? 'none' : 'flex',
         },
       }}
     >
       <Tabs.Screen
-        name="FeedScreen"
+        name="HomeScreen"
         options={{
-          title: 'Feed',
+          title: 'Home',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="SearchScreen"
+        name="AgentsScreen"
         options={{
-          title: 'Search',
+          title: 'Agents',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="search" size={size} color={color} />
+            <Ionicons name="sparkles" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="CreatePostScreen"
+        name="ChatScreen"
         options={{
-          title: 'Create',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle" size={size} color={color} />
-          ),
+          href: null, // Hide from tab bar - we'll use chat folder instead
         }}
       />
       <Tabs.Screen
@@ -54,9 +65,33 @@ export default function MainLayout() {
       <Tabs.Screen
         name="ProfileScreen"
         options={{
-          title: 'Profile',
+          href: null, // Hide from tab bar, accessible via header button
+        }}
+      />
+      <Tabs.Screen
+        name="SearchScreen"
+        options={{
+          href: null, // Hide from tab bar, accessible via header button
+        }}
+      />
+      <Tabs.Screen
+        name="CreatePostScreen"
+        options={{
+          href: null, // Hide from tab bar, accessible via header button
+        }}
+      />
+      <Tabs.Screen
+        name="SettingsScreen"
+        options={{
+          href: null, // Hide from tab bar, accessible via profile settings button
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Chat',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
+            <Ionicons name="chatbubbles" size={size} color={color} />
           ),
         }}
       />

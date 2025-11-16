@@ -6,6 +6,7 @@ interface MessageAttrs {
   roomId: string;
   senderType: 'human' | 'agent';
   senderId: string;
+  senderName?: string; // Denormalized sender name for quick access
   content: string;
   attachments?: Array<{ url: string; type: string; meta: any }>;
   dedupeKey: string;
@@ -15,6 +16,7 @@ interface MessageDoc extends mongoose.Document {
   roomId: string;
   senderType: 'human' | 'agent';
   senderId: string;
+  senderName?: string; // Denormalized sender name for quick access
   content: string;
   attachments: Array<{ url: string; type: string; meta: any }>;
   createdAt: Date;
@@ -33,6 +35,7 @@ const messageSchema = new mongoose.Schema({
   roomId: { type: String, index: true, required: true },
   senderType: { type: String, enum: ['human','agent'], required: true },
   senderId: { type: String, required: true },
+  senderName: { type: String }, // Denormalized sender name for quick access
   content: { type: String, default: '' },
   attachments: [{ url: String, type: String, meta: {} }],
   createdAt: { type: Date, default: Date.now, index: true },

@@ -60,6 +60,18 @@ export class ApiClient {
 
       if (!response.ok) {
         console.error(`❌ API Error:`, data);
+        
+        // Handle 401 Unauthorized - might indicate token issue
+        if (response.status === 401) {
+          const { token } = useAuthStore.getState();
+          console.error(`🔐 Auth Error Details:`, {
+            hasToken: !!token,
+            tokenLength: token?.length,
+            tokenPreview: token ? `${token.substring(0, 20)}...` : 'none',
+            endpoint,
+          });
+        }
+        
         // Backend may return error in 'error' field or 'message' field
         const errorMessage = data.error || data.message || `HTTP error! status: ${response.status}`;
         const error: ApiError = {
@@ -203,6 +215,75 @@ export const messageApi = {
   getMessages: async (roomId: string, page: number = 1, limit: number = 50) => {
     const api = getApiClient();
     return api.get(`/rooms/${roomId}/messages?page=${page}&limit=${limit}`);
+  },
+};
+
+// Post API
+export const postApi = {
+  createPost: async (data: { content: string; mediaIds?: string[]; visibility?: 'public' | 'friends' | 'private' }) => {
+    const api = getApiClient();
+    return api.post('/post', data);
+  },
+
+  getPost: async (postId: string) => {
+    const api = getApiClient();
+    return api.get(`/posts/${postId}`);
+  },
+
+  getUserPosts: async (userId?: string) => {
+    const api = getApiClient();
+    try {
+      // Use the new posts endpoint with userId filter
+      const endpoint = userId ? `/posts?userId=${userId}` : '/posts';
+      const posts = await api.get<any[]>(endpoint);
+      
+      // Transform to Post format
+      return (Array.isArray(posts) ? posts : []).map((post: any) => ({
+        id: post.id || post._id,
+        userId: post.userId || '',
+        content: post.content || '',
+        mediaIds: post.mediaIds || [],
+        visibility: post.visibility || 'public',
+        createdAt: post.createdAt || new Date().toISOString(),
+        reactions: post.reactions || [],
+        commentsCount: 0, // Will be populated if available
+        author: post.author || {
+          userId: post.userId || '',
+          name: undefined,
+          avatarUrl: undefined,
+        },
+      }));
+    } catch (error: any) {
+      console.warn('Failed to fetch user posts:', error?.message);
+      return [];
+    }
+  },
+
+  getFeed: async () => {
+    const api = getApiClient();
+    const response = await api.get<{ items: any[]; nextCursor: string | null }>('/feeds');
+    // Transform feed items to Post format
+    return (response.items || []).map((item: any) => ({
+      id: item.postId || item.feedId,
+      userId: item.author?.userId || '',
+      content: item.content || '',
+      mediaIds: item.media?.map((m: any) => (typeof m === 'string' ? m : m.url)) || [],
+      visibility: item.visibility || 'public',
+      createdAt: item.createdAt || new Date().toISOString(),
+      reactions: item.reactionsSummary?.map((r: any) => ({ type: r.type, count: r.count })) || [],
+      commentsCount: item.commentsCount || 0,
+      author: item.author || null,
+    }));
+  },
+
+  updatePost: async (postId: string, data: { content?: string; visibility?: 'public' | 'friends' | 'private'; mediaIds?: string[] }) => {
+    const api = getApiClient();
+    return api.put(`/posts/${postId}`, data);
+  },
+
+  deletePost: async (postId: string) => {
+    const api = getApiClient();
+    return api.delete(`/posts/${postId}`);
   },
 };
 

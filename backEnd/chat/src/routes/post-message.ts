@@ -2,9 +2,11 @@
 import express, { Request, Response } from 'express';
 import { Message } from '../models/message';
 import { RoomParticipant } from '../models/room-participant';
+import { User } from '../models/user';
 import { kafkaWrapper } from '../kafka-client';
 import { MessageCreatedPublisher } from '../events/publishers/message-created-publisher';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
+import crypto from 'crypto';
 
 const router = express.Router();
 
@@ -27,11 +29,16 @@ router.post('/api/rooms/:roomId/messages', extractJWTPayload, loginRequired, asy
   const messageId = crypto.randomUUID();
   const dedupeKey = `${roomId}-${userId}-${Date.now()}`;
 
+  // Fetch user name for denormalization
+  const user = await User.findOne({ _id: userId }).lean();
+  const senderName = user ? (user.displayName || user.username || user.email?.split('@')[0]) : undefined;
+
   const message = Message.build({
     id: messageId,
     roomId,
     senderType: 'human',
     senderId: userId,
+    senderName, // Store denormalized sender name
     content,
     attachments: attachments || [],
     dedupeKey
@@ -45,6 +52,7 @@ router.post('/api/rooms/:roomId/messages', extractJWTPayload, loginRequired, asy
     roomId: message.roomId,
     senderType: message.senderType,
     senderId: message.senderId,
+    senderName: message.senderName, // Include sender name in event
     content: message.content,
     attachments: message.attachments,
     createdAt: message.createdAt.toISOString(),

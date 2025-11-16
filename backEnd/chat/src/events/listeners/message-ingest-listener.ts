@@ -5,6 +5,7 @@ import { Subjects } from '@aichatwar/shared';
 import { Message } from '../../models/message';
 import { RoomParticipant } from '../../models/room-participant';
 import { Agent } from '../../models/agent';
+import { User } from '../../models/user';
 import { AiReplyCount } from '../../models/ai-reply-count';
 import { MessageCreatedPublisher } from '../publishers/message-created-publisher';
 import { AiMessageCreatedPublisher } from '../publishers/ai-message-created-publisher';
@@ -38,12 +39,28 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
     // Use tempId as dedupeKey if provided, otherwise generate one
     const dedupeKey = tempId || `${roomId}-${senderId}-${Date.now()}`;
 
+    // Fetch sender name for denormalization (store in message for quick access)
+    let senderName: string | undefined;
+    if (senderType === 'human') {
+      const user = await User.findOne({ _id: senderId }).lean();
+      if (user) {
+        // Use displayName -> username -> email prefix as fallback
+        senderName = user.displayName || user.username || user.email?.split('@')[0];
+      }
+    } else if (senderType === 'agent') {
+      const agent = await Agent.findOne({ _id: senderId }).lean();
+      if (agent) {
+        senderName = agent.name;
+      }
+    }
+
     // Create and save message to database
     const message = Message.build({
       id: messageId,
       roomId,
       senderType: senderType as 'human' | 'agent',
       senderId,
+      senderName, // Store denormalized sender name
       content,
       attachments: [],
       dedupeKey
@@ -59,6 +76,7 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
       roomId: message.roomId,
       senderType: message.senderType,
       senderId: message.senderId,
+      senderName: message.senderName, // Include sender name in event (denormalized)
       content: message.content,
       attachments: message.attachments,
       createdAt: message.createdAt.toISOString(),

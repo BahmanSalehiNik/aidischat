@@ -23,7 +23,7 @@ export default function RegisterScreen() {
 
   React.useEffect(() => {
     if (isAuthenticated) {
-      router.replace('/(main)/FeedScreen');
+      router.replace('/(main)/HomeScreen');
     }
   }, [isAuthenticated]);
 
@@ -42,7 +42,7 @@ export default function RegisterScreen() {
 
     const result = await signUp(email, password);
     if (result.success) {
-      router.replace('/(main)/FeedScreen');
+      router.replace('/(main)/HomeScreen');
     }
   };
 
