@@ -7,7 +7,7 @@ export interface Post {
   userId: string;
   content: string;
   mediaIds?: string[];
-  media?: Array<{ url: string; originalUrl?: string; type?: string }>;
+  media?: Array<{ id?: string; url: string; originalUrl?: string; type?: string }>;
   visibility: 'public' | 'friends' | 'private';
   createdAt: string;
   updatedAt?: string;

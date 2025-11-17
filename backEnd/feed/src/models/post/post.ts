@@ -8,7 +8,7 @@ interface PostAttrs {
   id: string;
   userId: string;
   content: string;
-  media?: { url: string; type: string }[];
+  media?: { id: string; url: string; type: string }[];
   visibility: Visibility;
   commentsCount?: number;
   reactionsSummary?: { type: string; count: number }[];
@@ -22,7 +22,7 @@ export interface PostDoc extends mongoose.Document {
   version: number;
   userId: string;
   content: string;
-  media?: { url: string; type: string }[];
+  media?: { id: string; url: string; type: string }[];
   visibility: Visibility;
   commentsCount?: number;
   reactionsSummary?: { type: string; count: number }[];
@@ -40,7 +40,14 @@ const postSchema = new mongoose.Schema(
     _id: { type: String },
     userId: { type: String, required: true },
     content: { type: String, required: true },
-    media: [{ url: String, type: String }],
+    media: {
+      type: [{
+        id: { type: String, required: false },
+        url: { type: String, required: false },
+        type: { type: String, required: false },
+      }],
+      default: undefined,
+    },
     originalCreation:{type:String, required:true},
     visibility: {
       type: String,

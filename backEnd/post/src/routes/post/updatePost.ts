@@ -4,7 +4,7 @@ import { loginRequired, extractJWTPayload, validateRequest, NotFoundError, NotAu
 import { Post } from '../../models/post';
 import { PostUpdatedPublisher } from "../../events/publishers/postPublisher";
 import { kafkaWrapper } from "../../kafka-client";
-import { getMediaUrlsByIds } from '../../utils/mediaUtils';
+import { getPostMedia } from '../../utils/mediaLookup';
 
 const router = express.Router();
 
@@ -37,12 +37,21 @@ router.patch(
     if (visibility) post.visibility = visibility;
     if (mediaIds) post.mediaIds = mediaIds;
 
-    await post.save();
+    // Get media from cache, document, or retry cache
+    const validMedia = await getPostMedia(post, {
+      checkDocument: false, // Document check is built into the function
+      updateDocument: false,
+    });
 
-    // Fetch media URLs from media collection if mediaIds exist
-    const media = post.mediaIds && post.mediaIds.length > 0 
-      ? await getMediaUrlsByIds(post.mediaIds)
-      : undefined;
+    // Store media in post document if found, or clear if mediaIds is empty
+    if (validMedia && validMedia.length > 0) {
+      post.media = validMedia;
+    } else if (mediaIds && (!mediaIds.length || !validMedia || validMedia.length === 0)) {
+      // Clear media if mediaIds is empty or no valid media found
+      post.media = undefined;
+    }
+
+    await post.save();
 
     // 🔢 Aggregate reactions for event (type -> count)
     const aggregatedReactions = post.reactions.reduce((acc: Record<string, number>, reaction) => {
@@ -61,7 +70,7 @@ router.patch(
       userId: post.userId,
       content: post.content,
       mediaIds: post.mediaIds,
-      media,
+      media: validMedia,
       visibility: post.visibility as Visibility,
       status: post.status,
       reactions: reactionsArray,

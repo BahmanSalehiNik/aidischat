@@ -2,6 +2,8 @@ import express, { Request, Response } from 'express';
 import { body } from 'express-validator';
 import { validateRequest, loginRequired, extractJWTPayload } from '@aichatwar/shared';
 import { Media, MediaType, StorageProvider } from '../models/media';
+import { MediaCreatedPublisher } from '../events/publishers/mediaPublisher';
+import { kafkaWrapper } from '../kafka-client';
 
 const router = express.Router();
 
@@ -35,6 +37,21 @@ router.post(
     });
 
     await media.save();
+
+    // Publish MediaCreated event with id and url (unsigned)
+    // Ensure id is a string for consistent event handling
+    await new MediaCreatedPublisher(kafkaWrapper.producer).publish({
+      id: String(media.id),
+      userId: media.userId,
+      provider: media.provider,
+      bucket: media.bucket,
+      key: media.key,
+      url: media.url, // unsigned URL
+      type: media.type,
+      size: media.size,
+      createdAt: media.createdAt.toISOString(),
+    });
+
     res.status(201).send(media);
   }
 );

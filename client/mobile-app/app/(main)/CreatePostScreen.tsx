@@ -41,11 +41,19 @@ export default function CreatePostScreen() {
     });
 
     if (!result.canceled && result.assets) {
-      const newImages = result.assets.map((asset: any) => ({
-        uri: asset.uri,
-        type: asset.mimeType || 'image/jpeg',
-        name: asset.fileName || `image_${Date.now()}.jpg`,
-      }));
+      const newImages = result.assets.map((asset: any) => {
+        // Ensure we have a valid MIME type
+        let mimeType = asset.mimeType;
+        if (!mimeType || mimeType === 'unknown') {
+          // Default to jpeg if mimeType is missing or unknown
+          mimeType = 'image/jpeg';
+        }
+        return {
+          uri: asset.uri,
+          type: mimeType,
+          name: asset.fileName || `image_${Date.now()}.jpg`,
+        };
+      });
       setSelectedImages([...selectedImages, ...newImages]);
     }
   };
@@ -62,12 +70,23 @@ export default function CreatePostScreen() {
 
     try {
       for (const image of selectedImages) {
+        // Validate image type before proceeding
+        if (!image.type || image.type === 'unknown') {
+          throw new Error(`Invalid image type for ${image.name || 'image'}. Please try selecting the image again.`);
+        }
+
         // Step 1: Get upload URL
+        console.log('📤 Requesting upload URL:', {
+          container: StorageContainers.Posts,
+          contentType: image.type,
+          filename: image.name,
+        });
         const uploadUrlResponse = await mediaApi.getUploadUrl(
           StorageContainers.Posts, // container name
           image.type,
           image.name
         );
+        console.log('✅ Upload URL received:', uploadUrlResponse);
 
         const { uploadUrl, provider, container, key } = uploadUrlResponse;
 
@@ -96,7 +115,16 @@ export default function CreatePostScreen() {
       }
     } catch (error: any) {
       console.error('Error uploading images:', error);
-      throw new Error(error?.message || 'Failed to upload images. Please try again.');
+      // Extract more detailed error message if available
+      let errorMessage = 'Failed to upload images. Please try again.';
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (error?.errors && Array.isArray(error.errors) && error.errors.length > 0) {
+        // Handle validation errors from backend
+        const validationErrors = error.errors.map((e: any) => e.message || e.field).join(', ');
+        errorMessage = `Validation error: ${validationErrors}`;
+      }
+      throw new Error(errorMessage);
     } finally {
       setUploadingImages(false);
     }

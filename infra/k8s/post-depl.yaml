@@ -39,6 +39,16 @@ spec:
                 secretKeyRef:
                   name: jwt-secret
                   key: JWT_DEV
+            - name: AZURE_STORAGE_ACCOUNT
+              valueFrom:
+                secretKeyRef:
+                  name: azure-storage
+                  key: AZURE_STORAGE_ACCOUNT
+            - name: AZURE_STORAGE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: azure-storage
+                  key: AZURE_STORAGE_KEY
 ---
 apiVersion: v1
 kind: Service

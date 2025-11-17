@@ -6,7 +6,8 @@ import { kafkaWrapper } from './kafka-client';
 import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/user/userListener";
 import { ProfileCreatedListener, ProfileUpdatedListener } from "./events/listeners/user/profileListener";
 import { FriendshipAcceptedListener, FriendshipRequestedListener, FriendshipUpdatedListener} from "./events/listeners/friendship/friendshipListener";
-import { GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdUserCreated, GroupIdUserUpdated, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated } from "./events/queGroupNames";
+import { MediaCreatedListener } from "./events/listeners/media/mediaListener";
+import { GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdUserCreated, GroupIdUserUpdated, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated, GroupIdMediaCreated } from "./events/queGroupNames";
 
 
 const startMongoose = async ()=>{
@@ -21,6 +22,14 @@ const startMongoose = async ()=>{
     }
     if(!process.env.KAFKA_BROKER_URL){
         throw new Error("KAFKA_BROKER_URL must be defined!")
+    }
+    
+    // Azure Storage credentials are optional - post service can work without them
+    // but signed URL generation for media will be disabled if not provided
+    if (process.env.AZURE_STORAGE_ACCOUNT && process.env.AZURE_STORAGE_KEY) {
+        console.log("Azure Storage credentials found - signed URL generation enabled");
+    } else {
+        console.log("Azure Storage credentials not found - signed URL generation disabled");
     }
     
     try{
@@ -55,6 +64,9 @@ const startMongoose = async ()=>{
         new FriendshipAcceptedListener(kafkaWrapper.consumer(GroupIdFreindshipAccepted)).listen();
         new FriendshipRequestedListener(kafkaWrapper.consumer(GroupIdFreindshipRequested)).listen();
         new FriendshipUpdatedListener(kafkaWrapper.consumer(GroupIdFreindshipUpdated)).listen();
+
+        // Media listeners - each with separate consumer group
+        new MediaCreatedListener(kafkaWrapper.consumer(GroupIdMediaCreated)).listen();
 
         console.log("All Kafka listeners started successfully");
 

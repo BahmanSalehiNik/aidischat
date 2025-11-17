@@ -93,6 +93,18 @@ export class ApiClient {
           });
         }
         
+        // Handle validation errors (400 status with errors array)
+        if (response.status === 400 && data.errors && Array.isArray(data.errors)) {
+          const validationMessages = data.errors
+            .map((e: any) => e.field ? `${e.field}: ${e.message}` : e.message)
+            .join('; ');
+          const error: ApiError = {
+            message: `Validation error: ${validationMessages}`,
+            errors: data.errors,
+          };
+          throw error;
+        }
+        
         // Backend may return error in 'error' field or 'message' field
         const errorMessage = data.error || data.message || `HTTP error! status: ${response.status}`;
         const error: ApiError = {

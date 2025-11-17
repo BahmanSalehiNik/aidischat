@@ -4,7 +4,17 @@ import { Post, PostStatus } from '../../models/post';
 import { Profile } from '../../models/user/profile';
 import { User } from '../../models/user/user';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
-import { getMediaUrlsByIds } from '../../utils/mediaUtils';
+import { mediaCache } from '../../utils/mediaCache';
+import { ReadOnlyAzureStorageGateway } from '../../storage/azureStorageGateway';
+
+// Initialize read-only Azure Storage Gateway if credentials are available
+let azureGateway: ReadOnlyAzureStorageGateway | null = null;
+if (process.env.AZURE_STORAGE_ACCOUNT && process.env.AZURE_STORAGE_KEY) {
+  azureGateway = new ReadOnlyAzureStorageGateway(
+    process.env.AZURE_STORAGE_ACCOUNT,
+    process.env.AZURE_STORAGE_KEY
+  );
+}
 
 const router = express.Router();
 
@@ -113,14 +123,111 @@ router.get(
       }
       // If still no name, we'll let the frontend handle the fallback
 
-      // Fetch media URLs if mediaIds exist
-      const media = post.mediaIds && post.mediaIds.length > 0 
-        ? await getMediaUrlsByIds(post.mediaIds)
-        : undefined;
+      // Get media from post document (stored when post was created/updated)
+      // Fallback to cache if not in document (for backward compatibility)
+      let media: Array<{ id: string; url: string; type: string }> | undefined = undefined;
+      
+      if (post.media && Array.isArray(post.media) && post.media.length > 0) {
+        // Use media stored in post document (preferred)
+        media = post.media;
+        console.log(`Using media from post document for post ${post.id}:`, post.media.length, 'items');
+      }
+      
+      // Always check cache as well - if document has media but cache has more recent data, use cache
+      // Or if document doesn't have media, use cache
+      if (post.mediaIds && post.mediaIds.length > 0) {
+        const mediaIdStrings = post.mediaIds.map((id: any) => String(id));
+        const cachedMedia = mediaCache.getMany(mediaIdStrings);
+        
+        // Filter out fallback media (where url === id, meaning not in cache)
+        const validCachedMedia = cachedMedia.filter(m => m.url !== m.id);
+        
+        if (validCachedMedia.length > 0) {
+          // If we have valid cached media, use it (cache is more up-to-date)
+          // Or if document doesn't have media, use cache
+          if (!media || media.length === 0 || validCachedMedia.length > media.length) {
+            media = validCachedMedia;
+            console.log(`Using media from cache for post ${post.id}:`, validCachedMedia.length, 'items');
+            
+            // Optionally update document with cache data for future queries
+            // (async, don't wait)
+            Post.findByIdAndUpdate(post.id, { media: validCachedMedia }).catch(err => {
+              console.error(`Failed to update post ${post.id} with cached media:`, err);
+            });
+          }
+        } else if (!media && cachedMedia.length > 0) {
+          console.log(`Warning: Post ${post.id} has mediaIds but no valid media in cache or document`);
+        }
+      }
+
+      // Generate signed URLs for media if Azure gateway is available (same as feed service)
+      let mediaWithSignedUrls = media;
+      if (azureGateway && media && Array.isArray(media) && media.length > 0) {
+        console.log('Processing media for post:', post.id, 'Media count:', media.length);
+        
+        // Filter out invalid media items (where url === id, meaning it's just a mediaId, not a real URL)
+        const validMediaItems = media.filter((mediaItem: any) => {
+          if (!mediaItem?.url) return false;
+          // If url is the same as id, it's likely just a mediaId placeholder, not a real URL
+          if (mediaItem.url === mediaItem.id) {
+            console.log('Skipping invalid media item (url === id):', mediaItem);
+            return false;
+          }
+          return true;
+        });
+        
+        if (validMediaItems.length > 0) {
+          mediaWithSignedUrls = await Promise.all(
+            validMediaItems.map(async (mediaItem: any) => {
+              console.log('Processing media URL:', mediaItem.url);
+              
+              // Try to parse blob URL to extract container and blob name
+              const parsed = azureGateway!.parseBlobUrl(mediaItem.url);
+              if (parsed) {
+                console.log('Parsed blob URL:', parsed);
+                try {
+                  // Generate signed download URL (15 minutes expiry)
+                  const signedUrl = await azureGateway!.generateDownloadUrl(
+                    parsed.container,
+                    parsed.blobName,
+                    900
+                  );
+                  console.log('Generated signed URL for media');
+                  return {
+                    ...mediaItem,
+                    url: signedUrl,
+                    originalUrl: mediaItem.url, // Keep original for reference
+                  };
+                } catch (error) {
+                  console.error('Error generating signed URL for media:', error, 'URL:', mediaItem.url);
+                  // Return original URL if signing fails
+                  return mediaItem;
+                }
+              } else {
+                console.log('Could not parse blob URL:', mediaItem.url);
+              }
+              
+              // If not a blob URL, return as-is (might be a public URL or different format)
+              return mediaItem;
+            })
+          );
+        } else {
+          // No valid media items after filtering
+          mediaWithSignedUrls = undefined;
+          console.log('No valid media items after filtering for post:', post.id);
+        }
+      } else {
+        console.log('Media processing skipped:', {
+          hasGateway: !!azureGateway,
+          hasMedia: !!media,
+          isArray: Array.isArray(media),
+          mediaLength: media?.length || 0
+        });
+      }
 
       return {
         ...post,
-        media,
+        media: mediaWithSignedUrls,
         author: {
           userId: post.userId,
           name: displayName,

@@ -5,7 +5,7 @@ import { PostCreatedPublisher } from '../../events/publishers/postPublisher';
 import { Post } from '../../models/post';
 import { kafkaWrapper } from '../../kafka-client';
 import { body } from 'express-validator';
-import { getMediaUrlsByIds } from '../../utils/mediaUtils';
+import { getPostMedia } from '../../utils/mediaLookup';
 
 const router = express.Router();
 
@@ -30,25 +30,59 @@ router.post('/api/post',
     version
   });
 
+  // Get media from cache and store in document
+  let validMedia = await getPostMedia(post, {
+    checkDocument: false, // Will check after save
+    updateDocument: false,
+  });
+
+  // Store media in post document if found
+  if (validMedia && validMedia.length > 0) {
+    post.media = validMedia;
+  }
+
   await post.save();
 
-  // Fetch media URLs from media collection if mediaIds exist
-  const media = post.mediaIds && post.mediaIds.length > 0 
-    ? await getMediaUrlsByIds(post.mediaIds)
-    : undefined;
+  // If we have mediaIds but no valid media, check document after save and retry cache
+  if (post.mediaIds && post.mediaIds.length > 0 && (!validMedia || validMedia.length === 0)) {
+    validMedia = await getPostMedia(post, {
+      checkDocument: true, // Check document after save
+      updateDocument: true, // Update document if found on retry
+    });
+    
+    // If we found media on retry, update the post document and save again
+    if (validMedia && validMedia.length > 0) {
+      const savedPost = await Post.findById(post.id);
+      if (savedPost) {
+        savedPost.media = validMedia;
+        await savedPost.save();
+        // Update the local post object for response
+        post.media = validMedia;
+      }
+    }
+  }
+
+  console.log('Post media to publish:', validMedia);
+  console.log('Post mediaIds:', post.mediaIds);
 
   await new PostCreatedPublisher(kafkaWrapper.producer).publish({
     id: post.id,
     userId: post.userId,
     content: post.content,
     mediaIds: post.mediaIds,
-    media,
+    media: validMedia,
     visibility: post.visibility,
     createdAt: post.createdAt.toISOString(),
     version: post.version
   })
   
-  res.status(201).send(post);
+  // Include media in response so client has it immediately
+  const postResponse: any = post.toJSON();
+  if (validMedia) {
+    postResponse.media = validMedia;
+  }
+  
+  res.status(201).send(postResponse);
 });
 
 export { router as createPostRouter };

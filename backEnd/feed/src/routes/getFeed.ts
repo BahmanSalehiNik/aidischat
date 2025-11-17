@@ -117,37 +117,67 @@ router.get('/api/feeds',
     
     // Generate signed URLs for media if Azure gateway is available
     let mediaWithSignedUrls = post.media;
-    if (azureGateway && post.media && Array.isArray(post.media)) {
-      mediaWithSignedUrls = await Promise.all(
-        post.media.map(async (mediaItem: any) => {
-          if (!mediaItem?.url) return mediaItem;
-          
-          // Try to parse blob URL to extract container and blob name
-          const parsed = azureGateway!.parseBlobUrl(mediaItem.url);
-          if (parsed) {
-            try {
-              // Generate signed download URL (15 minutes expiry)
-              const signedUrl = await azureGateway!.generateDownloadUrl(
-                parsed.container,
-                parsed.blobName,
-                900
-              );
-              return {
-                ...mediaItem,
-                url: signedUrl,
-                originalUrl: mediaItem.url, // Keep original for reference
-              };
-            } catch (error) {
-              console.error('Error generating signed URL for media:', error);
-              // Return original URL if signing fails
-              return mediaItem;
+    if (azureGateway && post.media && Array.isArray(post.media) && post.media.length > 0) {
+      console.log('Processing media for post:', post._id, 'Media count:', post.media.length);
+      
+      // Filter out invalid media items (where url === id, meaning it's just a mediaId, not a real URL)
+      const validMediaItems = post.media.filter((mediaItem: any) => {
+        if (!mediaItem?.url) return false;
+        // If url is the same as id, it's likely just a mediaId placeholder, not a real URL
+        if (mediaItem.url === mediaItem.id) {
+          console.log('Skipping invalid media item (url === id):', mediaItem);
+          return false;
+        }
+        return true;
+      });
+      
+      if (validMediaItems.length > 0) {
+        mediaWithSignedUrls = await Promise.all(
+          validMediaItems.map(async (mediaItem: any) => {
+            console.log('Processing media URL:', mediaItem.url);
+            
+            // Try to parse blob URL to extract container and blob name
+            const parsed = azureGateway!.parseBlobUrl(mediaItem.url);
+            if (parsed) {
+              console.log('Parsed blob URL:', parsed);
+              try {
+                // Generate signed download URL (15 minutes expiry)
+                const signedUrl = await azureGateway!.generateDownloadUrl(
+                  parsed.container,
+                  parsed.blobName,
+                  900
+                );
+                console.log('Generated signed URL for media');
+                return {
+                  ...mediaItem,
+                  url: signedUrl,
+                  originalUrl: mediaItem.url, // Keep original for reference
+                };
+              } catch (error) {
+                console.error('Error generating signed URL for media:', error, 'URL:', mediaItem.url);
+                // Return original URL if signing fails
+                return mediaItem;
+              }
+            } else {
+              console.log('Could not parse blob URL:', mediaItem.url);
             }
-          }
-          
-          // If not a blob URL, return as-is (might be a public URL or different format)
-          return mediaItem;
-        })
-      );
+            
+            // If not a blob URL, return as-is (might be a public URL or different format)
+            return mediaItem;
+          })
+        );
+      } else {
+        // No valid media items after filtering
+        mediaWithSignedUrls = undefined;
+        console.log('No valid media items after filtering for post:', post._id);
+      }
+    } else {
+      console.log('Media processing skipped:', {
+        hasGateway: !!azureGateway,
+        hasMedia: !!post.media,
+        isArray: Array.isArray(post.media),
+        mediaLength: post.media?.length || 0
+      });
     }
     
     return {

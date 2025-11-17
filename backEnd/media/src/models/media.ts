@@ -98,8 +98,8 @@ const mediaSchema = new mongoose.Schema(
 // ----- EXPORT MODEL -----
 const Media = mongoose.model<MediaDoc, MediaModel>('Media', mediaSchema);
 
-// ----- STATIC BUILD METHOD -----
-mediaSchema.statics.build = (attrs: MediaAttrs) => {
+// ----- STATIC BUILD METHOD (defined after model creation) -----
+Media.build = function(attrs: MediaAttrs) {
   return new Media(attrs);
 };
 

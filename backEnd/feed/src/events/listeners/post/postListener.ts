@@ -21,17 +21,42 @@ export class PostCreatedListener extends Listener<PostCreatedEvent> {
     } = data;
 
     // Use media from event if available, otherwise fallback to mediaIds
-    let postMedia: { url: string; type: string }[] | undefined = undefined;
+    // Media from event contains id and url (unsigned) as published by media service
+    let postMedia: { id: string; url: string; type: string }[] | undefined = undefined;
     if (media && media.length > 0) {
-      // Use media URLs from the event (enriched by post service)
-      postMedia = media;
+      // Use media from the event (contains id and url from media service)
+      console.log('Using media from event:', media);
+      // Filter out invalid media (where url === id, meaning it's just a placeholder)
+      const validMedia = media.filter((m: any) => {
+        const hasValidUrl = m.url && m.url !== m.id && m.url !== '';
+        if (!hasValidUrl) {
+          console.log('Filtering out invalid media item (url === id or empty):', m);
+        }
+        return hasValidUrl;
+      });
+      
+      if (validMedia.length > 0) {
+        // Ensure all media items have id field (for backward compatibility)
+        postMedia = validMedia.map((m: any) => ({
+          id: m.id || m.url || '', // Use id if available, fallback to url or empty string
+          url: m.url,
+          type: m.type || 'image',
+        }));
+      } else {
+        console.log('No valid media items after filtering');
+        // Don't set postMedia to invalid placeholder - keep it undefined
+        // The post will be updated later when valid media is available
+      }
     } else if (mediaIds && mediaIds.length > 0) {
-      // Fallback: convert mediaIds to media objects (URLs will be generated in getFeed route)
-      postMedia = mediaIds.map((mediaId: string) => ({
-        url: mediaId,
-        type: 'image',
-      }));
+      // Don't create placeholder media objects - wait for valid media from PostUpdatedEvent
+      // This prevents posts from having invalid media URLs
+      console.log('MediaIds present but no media in event - will wait for PostUpdatedEvent with valid media');
+      postMedia = undefined;
+    } else {
+      console.log('No media or mediaIds in event');
     }
+
+    console.log('Post media to save:', postMedia);
 
     const post = Post.build({
       id,
@@ -43,6 +68,7 @@ export class PostCreatedListener extends Listener<PostCreatedEvent> {
     });
 
     await post.save();
+    console.log('Post saved with media:', post.media);
 
     // Enqueue fan-out job
     await fanoutQueue.add('fanout-job', { postId: id, authorId: userId, visibility });
@@ -75,17 +101,38 @@ export class PostUpdatedListener extends Listener<PostUpdatedEvent> {
       return;
     }
 
-    // Use media from event if available, otherwise fallback to mediaIds
-    let postMedia: { url: string; type: string }[] | undefined = undefined;
+    // Use media from event if available, otherwise keep existing media
+    // Media from event contains id and url (unsigned) as published by media service
+    let postMedia: { id: string; url: string; type: string }[] | undefined = undefined;
     if (media && media.length > 0) {
-      // Use media URLs from the event (enriched by post service)
-      postMedia = media;
+      // Filter out invalid media (where url === id, meaning it's just a placeholder)
+      const validMedia = media.filter((m: any) => {
+        const hasValidUrl = m.url && m.url !== m.id && m.url !== '';
+        if (!hasValidUrl) {
+          console.log('Filtering out invalid media item in update (url === id or empty):', m);
+        }
+        return hasValidUrl;
+      });
+      
+      if (validMedia.length > 0) {
+        // Ensure all media items have id field (for backward compatibility)
+        postMedia = validMedia.map((m: any) => ({
+          id: m.id || m.url || '', // Use id if available, fallback to url or empty string
+          url: m.url,
+          type: m.type || 'image',
+        }));
+      } else {
+        console.log('No valid media items in update event - keeping existing media');
+        // Keep existing media if update doesn't have valid media
+        postMedia = post.media;
+      }
     } else if (mediaIds && mediaIds.length > 0) {
-      // Fallback: convert mediaIds to media objects
-      postMedia = mediaIds.map((mediaId: string) => ({
-        url: mediaId,
-        type: 'image',
-      }));
+      // If mediaIds are present but no media, keep existing media (don't overwrite with invalid data)
+      console.log('MediaIds present but no media in update event - keeping existing media');
+      postMedia = post.media;
+    } else {
+      // No mediaIds means media was removed - clear it
+      postMedia = undefined;
     }
 
     // Update post data

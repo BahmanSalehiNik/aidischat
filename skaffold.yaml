@@ -128,5 +128,35 @@ build:
             src: 'src/**/*.ts' 
 manifests:
   rawYaml: 
-    - ./infra/k8s/*
+    # Phase 1: Infrastructure services (deployed first, in dependency order)
+    - ./infra/k8s/redpanda-depl.yaml
+    - ./infra/k8s/nats-depl.yaml
+    - ./infra/k8s/*-mongo-depl.yaml
+    - ./infra/k8s/*-mongo.yaml
+    - ./infra/k8s/expiration-redis-depl.yaml
+    - ./infra/k8s/realtime-redis-depl.yaml
+    - ./infra/k8s/redis-room-depl.yaml
+    # Phase 2: Application services (deployed after infrastructure)
+    # Services with startup probes will wait for dependencies automatically
+    - ./infra/k8s/auth-depl.yaml
+    - ./infra/k8s/user*.yaml
+    - ./infra/k8s/friendship-depl.yaml
+    - ./infra/k8s/media-depl.yaml
+    - ./infra/k8s/post-depl.yaml
+    - ./infra/k8s/feed-depl.yaml
+    - ./infra/k8s/room-depl.yaml
+    - ./infra/k8s/chat-depl.yaml
+    - ./infra/k8s/agent-depl.yaml
+    - ./infra/k8s/ai-gateway-depl.yaml
+    - ./infra/k8s/realtime-gateway-depl.yaml
+    - ./infra/k8s/api-gateway-depl.yaml
+    - ./infra/k8s/ecommerce-orders-depl.yaml
+    - ./infra/k8s/ecommerece-models-depl.yaml
+    - ./infra/k8s/expiration-depl.yaml
+    # Phase 3: Ingress (deployed last)
+    - ./infra/k8s/ingress-srv.yaml
+deploy:
+  kubectl:
+    # Manifests are applied in order, and services use readiness/startup probes
+    # to wait for dependencies automatically
 

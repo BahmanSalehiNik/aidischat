@@ -15,6 +15,7 @@ interface PostAttrs {
   userId: string;
   content: string;
   mediaIds?: string[];
+  media?: { id: string; url: string; type: string }[];
   visibility:Visibility;
   version: number;
   status?: PostStatus
@@ -25,6 +26,7 @@ interface PostDoc extends mongoose.Document {
   userId: string;
   content: string;
   mediaIds?: string[];
+  media?: { id: string; url: string; type: string }[];
   visibility: string;
   createdAt: Date;
   updatedAt: Date;
@@ -46,8 +48,15 @@ const postSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true },
     content: { type: String, required: true },
-    // TODO: Change this to { url: string; type: string }[]
     mediaIds: [String],
+    media: {
+      type: [{
+        id: { type: String, required: false },
+        url: { type: String, required: false },
+        type: { type: String, required: false },
+      }],
+      default: undefined,
+    },
     visibility: { type: String, Visibility, default: 'public' },
     reactions: [{ userId: String, type: String }],
     status: {
@@ -85,4 +94,4 @@ postSchema.statics.build = async(attrs: PostAttrs)=>{
 
 const Post = mongoose.model<PostDoc, PostModel>('Post', postSchema);
 
-export { Post, PostStatus }
+export { Post, PostDoc, PostStatus }
