@@ -3,7 +3,10 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState } from 'react';
-import { postApi } from '../../utils/api';
+import * as ImagePicker from 'expo-image-picker';
+import { Image as ExpoImage } from 'expo-image';
+import { postApi, mediaApi } from '../../utils/api';
+import { StorageContainers } from '../../utils/storageContainers';
 
 type Visibility = 'public' | 'friends' | 'private';
 
@@ -14,6 +17,8 @@ export default function CreatePostScreen() {
   const [visibility, setVisibility] = useState<Visibility>('public');
   const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<Array<{ uri: string; type: string; name?: string }>>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
 
   const visibilityOptions: { label: string; value: Visibility; icon: string }[] = [
     { label: 'Public', value: 'public', icon: 'globe-outline' },
@@ -21,17 +26,100 @@ export default function CreatePostScreen() {
     { label: 'Private', value: 'private', icon: 'lock-closed-outline' },
   ];
 
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'We need access to your photos to upload images.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.8,
+      allowsEditing: false,
+    });
+
+    if (!result.canceled && result.assets) {
+      const newImages = result.assets.map((asset: any) => ({
+        uri: asset.uri,
+        type: asset.mimeType || 'image/jpeg',
+        name: asset.fileName || `image_${Date.now()}.jpg`,
+      }));
+      setSelectedImages([...selectedImages, ...newImages]);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setSelectedImages(selectedImages.filter((_, i) => i !== index));
+  };
+
+  const uploadImages = async (): Promise<string[]> => {
+    if (selectedImages.length === 0) return [];
+
+    setUploadingImages(true);
+    const mediaIds: string[] = [];
+
+    try {
+      for (const image of selectedImages) {
+        // Step 1: Get upload URL
+        const uploadUrlResponse = await mediaApi.getUploadUrl(
+          StorageContainers.Posts, // container name
+          image.type,
+          image.name
+        );
+
+        const { uploadUrl, provider, container, key } = uploadUrlResponse;
+
+        // Step 2: Get file size before uploading
+        const fileResponse = await fetch(image.uri);
+        const fileBlob = await fileResponse.blob();
+        const fileSize = fileBlob.size;
+
+        // Step 3: Upload to storage
+        await mediaApi.uploadFile(uploadUrl, image.uri, image.type, provider);
+
+        // Step 4: Construct the storage URL (remove query params to get base URL)
+        const storageUrl = uploadUrl.split('?')[0];
+
+        // Step 5: Register media with media service
+        const mediaResponse = await mediaApi.createMedia({
+          provider,
+          bucket: container,
+          key,
+          url: storageUrl,
+          type: 'image',
+          size: fileSize,
+        });
+
+        mediaIds.push(mediaResponse.id);
+      }
+    } catch (error: any) {
+      console.error('Error uploading images:', error);
+      throw new Error(error?.message || 'Failed to upload images. Please try again.');
+    } finally {
+      setUploadingImages(false);
+    }
+
+    return mediaIds;
+  };
+
   const handleSubmit = async () => {
-    if (!content.trim()) {
-      Alert.alert('Error', 'Please enter some content for your post.');
+    if (!content.trim() && selectedImages.length === 0) {
+      Alert.alert('Error', 'Please enter some content or add a photo.');
       return;
     }
 
     setIsSubmitting(true);
     try {
+      // Upload images first
+      const mediaIds = await uploadImages();
+
+      // Create post with media IDs
       await postApi.createPost({
         content: content.trim(),
         visibility,
+        mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
       });
       
       Alert.alert('Success', 'Post created successfully!', [
@@ -39,6 +127,7 @@ export default function CreatePostScreen() {
           text: 'OK',
           onPress: () => {
             setContent('');
+            setSelectedImages([]);
             router.back();
           },
         },
@@ -68,9 +157,9 @@ export default function CreatePostScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Create Post</Text>
         <TouchableOpacity
-          style={[styles.postButton, (!content.trim() || isSubmitting) && styles.postButtonDisabled]}
+          style={[styles.postButton, ((!content.trim() && selectedImages.length === 0) || isSubmitting) && styles.postButtonDisabled]}
           onPress={handleSubmit}
-          disabled={!content.trim() || isSubmitting}
+          disabled={(!content.trim() && selectedImages.length === 0) || isSubmitting}
         >
           {isSubmitting ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
@@ -154,19 +243,42 @@ export default function CreatePostScreen() {
           )}
         </View>
 
-        {/* Media Section (Placeholder for future implementation) */}
+        {/* Media Section */}
         <View style={styles.mediaSection}>
           <Text style={styles.sectionLabel}>Media</Text>
           <TouchableOpacity
             style={styles.mediaButton}
-            onPress={() => {
-              Alert.alert('Coming Soon', 'Media upload will be available soon.');
-            }}
-            disabled={isSubmitting}
+            onPress={pickImage}
+            disabled={isSubmitting || uploadingImages}
           >
             <Ionicons name="image-outline" size={24} color="#007AFF" />
-            <Text style={styles.mediaButtonText}>Add Photo or Video</Text>
+            <Text style={styles.mediaButtonText}>
+              {uploadingImages ? 'Uploading...' : 'Add Photo'}
+            </Text>
           </TouchableOpacity>
+
+          {selectedImages.length > 0 && (
+            <View style={styles.selectedImagesContainer}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {selectedImages.map((image, index) => (
+                  <View key={index} style={styles.imagePreview}>
+                    <ExpoImage
+                      source={{ uri: image.uri }}
+                      style={styles.previewImage}
+                      contentFit="cover"
+                    />
+                    <TouchableOpacity
+                      style={styles.removeImageButton}
+                      onPress={() => removeImage(index)}
+                      disabled={isSubmitting}
+                    >
+                      <Ionicons name="close-circle" size={24} color="#FF3B30" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -316,5 +428,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#007AFF',
     fontWeight: '500',
+  },
+  selectedImagesContainer: {
+    marginTop: 12,
+  },
+  imagePreview: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  previewImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 8,
+    backgroundColor: '#F5F5F5',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
   },
 });

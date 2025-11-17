@@ -27,6 +27,14 @@ const startMongoose = async ()=>{
         throw new Error("KAFKA_BROKER_URL must be defined!")
     }
     
+    // Azure Storage credentials are optional - feed service can work without them
+    // but signed URL generation for media will be disabled if not provided
+    if (process.env.AZURE_STORAGE_ACCOUNT && process.env.AZURE_STORAGE_KEY) {
+        console.log("Azure Storage credentials found - signed URL generation enabled");
+    } else {
+        console.log("Azure Storage credentials not found - signed URL generation disabled");
+    }
+    
     try{
         // ------------ Mongoose ----------
         await mongoose.connect(process.env.MONGO_URI);

@@ -6,6 +6,7 @@ import {
   SASProtocol,
   BlobSASSignatureValues
 } from '@azure/storage-blob';
+import { StorageContainer } from '../models/media';
 
 export class AzureStorageGateway {
   private account: string;
@@ -23,8 +24,29 @@ export class AzureStorageGateway {
     );
   }
 
+  // Ensure container exists, create if it doesn't
+  // Only creates containers from the allowed StorageContainer enum
+  async ensureContainerExists(containerName: string): Promise<void> {
+    // Validate container name is in allowed set
+    const allowedContainers = Object.values(StorageContainer);
+    if (!allowedContainers.includes(containerName as StorageContainer)) {
+      throw new Error(
+        `Container "${containerName}" is not allowed. Allowed containers: ${allowedContainers.join(', ')}`
+      );
+    }
+
+    const containerClient = this.client.getContainerClient(containerName);
+    const exists = await containerClient.exists();
+    if (!exists) {
+      await containerClient.create();
+    }
+  }
+
   // generate an upload SAS URL for a blob (BlockBlob)
   async generateUploadUrl(containerName: string, blobName: string, contentType: string, expiresSeconds = 60): Promise<string> {
+    // Ensure container exists before generating URL
+    await this.ensureContainerExists(containerName);
+    
     const containerClient = this.client.getContainerClient(containerName);
     const blobClient = containerClient.getBlockBlobClient(blobName);
 
@@ -62,6 +84,23 @@ export class AzureStorageGateway {
 
     const sasToken = generateBlobSASQueryParameters(sasOptions, this.credential).toString();
     return `${blobClient.url}?${sasToken}`;
+  }
+
+  // Parse Azure blob URL to extract container and blob name
+  // Format: https://<account>.blob.core.windows.net/<container>/<blob-name>
+  parseBlobUrl(blobUrl: string): { container: string; blobName: string } | null {
+    try {
+      const url = new URL(blobUrl);
+      const pathParts = url.pathname.split('/').filter(Boolean);
+      if (pathParts.length < 2) {
+        return null;
+      }
+      const container = pathParts[0];
+      const blobName = pathParts.slice(1).join('/');
+      return { container, blobName };
+    } catch {
+      return null;
+    }
   }
 
   // delete

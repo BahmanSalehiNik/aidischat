@@ -4,8 +4,19 @@ import { Feed } from '../models/feed/feed';
 import { Post } from '../models/post/post';
 import { Profile } from '../models/user/profile';
 import { User } from '../models/user/user';
+import { ReadOnlyAzureStorageGateway } from '../storage/azureStorageGateway';
 
 const router = express.Router();
+
+// Initialize read-only Azure Storage Gateway if credentials are available
+// Note: For production, consider using a read-only storage account key or SAS token
+let azureGateway: ReadOnlyAzureStorageGateway | null = null;
+if (process.env.AZURE_STORAGE_ACCOUNT && process.env.AZURE_STORAGE_KEY) {
+  azureGateway = new ReadOnlyAzureStorageGateway(
+    process.env.AZURE_STORAGE_ACCOUNT,
+    process.env.AZURE_STORAGE_KEY
+  );
+}
 
 /**
  * GET /api/feeds
@@ -76,7 +87,7 @@ router.get('/api/feeds',
 
   // Build items array using the sorted posts order (newest first)
   // This maintains the database sort order without JavaScript sorting
-  const items = posts.map(post => {
+  const items = await Promise.all(posts.map(async (post) => {
     const postId = post._id?.toString();
     const feed = feedMap.get(postId);
     if (!feed) return null;
@@ -104,6 +115,41 @@ router.get('/api/feeds',
       }
     }
     
+    // Generate signed URLs for media if Azure gateway is available
+    let mediaWithSignedUrls = post.media;
+    if (azureGateway && post.media && Array.isArray(post.media)) {
+      mediaWithSignedUrls = await Promise.all(
+        post.media.map(async (mediaItem: any) => {
+          if (!mediaItem?.url) return mediaItem;
+          
+          // Try to parse blob URL to extract container and blob name
+          const parsed = azureGateway!.parseBlobUrl(mediaItem.url);
+          if (parsed) {
+            try {
+              // Generate signed download URL (15 minutes expiry)
+              const signedUrl = await azureGateway!.generateDownloadUrl(
+                parsed.container,
+                parsed.blobName,
+                900
+              );
+              return {
+                ...mediaItem,
+                url: signedUrl,
+                originalUrl: mediaItem.url, // Keep original for reference
+              };
+            } catch (error) {
+              console.error('Error generating signed URL for media:', error);
+              // Return original URL if signing fails
+              return mediaItem;
+            }
+          }
+          
+          // If not a blob URL, return as-is (might be a public URL or different format)
+          return mediaItem;
+        })
+      );
+    }
+    
     return {
       feedId: feed._id,
       postId: post._id,
@@ -113,17 +159,20 @@ router.get('/api/feeds',
         avatarUrl: profile?.avatarUrl,
       },
       content: post.content,
-      media: post.media,
+      media: mediaWithSignedUrls,
       visibility: post.visibility,
       reactionsSummary: post.reactionsSummary,
       commentsCount: post.commentsCount,
       createdAt: post.createdAt || post.originalCreation,
     };
-  }).filter(Boolean);
+  }));
+  
+  // Filter out null items
+  const filteredItems = items.filter(Boolean);
 
   const nextCursor = feeds[feeds.length - 1]._id;
 
-  res.send({ items, nextCursor });
+  res.send({ items: filteredItems, nextCursor });
 });
 
 export { router as getFeedRouter };

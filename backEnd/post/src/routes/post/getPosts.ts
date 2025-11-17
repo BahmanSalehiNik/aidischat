@@ -4,6 +4,7 @@ import { Post, PostStatus } from '../../models/post';
 import { Profile } from '../../models/user/profile';
 import { User } from '../../models/user/user';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
+import { getMediaUrlsByIds } from '../../utils/mediaUtils';
 
 const router = express.Router();
 
@@ -87,7 +88,7 @@ router.get(
     }));
 
     // Enrich posts with author information
-    const enrichedPosts = filteredPosts.map((post: any) => {
+    const enrichedPosts = await Promise.all(filteredPosts.map(async (post: any) => {
       const postUserId = post.userId?.toString();
       const profile = profileMap.get(postUserId);
       const user = userMap.get(postUserId);
@@ -112,15 +113,21 @@ router.get(
       }
       // If still no name, we'll let the frontend handle the fallback
 
+      // Fetch media URLs if mediaIds exist
+      const media = post.mediaIds && post.mediaIds.length > 0 
+        ? await getMediaUrlsByIds(post.mediaIds)
+        : undefined;
+
       return {
         ...post,
+        media,
         author: {
           userId: post.userId,
           name: displayName,
           avatarUrl: profile?.avatarUrl,
         },
       };
-    });
+    }));
 
     // Note: Posts are already sorted by createdAt: -1 in the database query
     // The order is preserved through filtering and mapping, so no need to re-sort

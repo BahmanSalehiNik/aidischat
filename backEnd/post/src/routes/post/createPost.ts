@@ -5,6 +5,7 @@ import { PostCreatedPublisher } from '../../events/publishers/postPublisher';
 import { Post } from '../../models/post';
 import { kafkaWrapper } from '../../kafka-client';
 import { body } from 'express-validator';
+import { getMediaUrlsByIds } from '../../utils/mediaUtils';
 
 const router = express.Router();
 
@@ -31,11 +32,17 @@ router.post('/api/post',
 
   await post.save();
 
+  // Fetch media URLs from media collection if mediaIds exist
+  const media = post.mediaIds && post.mediaIds.length > 0 
+    ? await getMediaUrlsByIds(post.mediaIds)
+    : undefined;
+
   await new PostCreatedPublisher(kafkaWrapper.producer).publish({
     id: post.id,
     userId: post.userId,
     content: post.content,
     mediaIds: post.mediaIds,
+    media,
     visibility: post.visibility,
     createdAt: post.createdAt.toISOString(),
     version: post.version

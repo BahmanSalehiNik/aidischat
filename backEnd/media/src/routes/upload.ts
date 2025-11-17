@@ -1,7 +1,8 @@
 import express, { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { AzureStorageGateway } from '../storage/azureStorageGateway';
 import { validateRequest, loginRequired, extractJWTPayload } from '@aichatwar/shared';
+import { AzureStorageGateway } from '../storage/azureStorageGateway';
+import { StorageContainer } from '../models/media';
 import { body } from 'express-validator';
 
 const router = express.Router();
@@ -17,7 +18,9 @@ router.post(
   extractJWTPayload,
   loginRequired,
   [
-    body('container').notEmpty().withMessage('container is required'),
+    body('container')
+      .isIn(Object.values(StorageContainer))
+      .withMessage(`container must be one of: ${Object.values(StorageContainer).join(', ')}`),
     body('contentType').notEmpty().withMessage('contentType is required'),
     body('filename').optional().isString(),
   ],

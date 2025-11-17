@@ -241,6 +241,60 @@ export const messageApi = {
   },
 };
 
+// Media API
+export const mediaApi = {
+  // Get upload URL from media service
+  getUploadUrl: async (container: string, contentType: string, filename?: string) => {
+    const api = getApiClient();
+    return api.post<{ uploadUrl: string; provider: string; container: string; key: string }>('/media/upload/', {
+      container,
+      contentType,
+      filename,
+    });
+  },
+
+  // Upload file directly to storage using signed URL
+  uploadFile: async (uploadUrl: string, fileUri: string, contentType: string, provider?: string): Promise<void> => {
+    // In React Native, we need to read the file and send it as binary data
+    const response = await fetch(fileUri);
+    const blob = await response.blob();
+    
+    // Build headers based on provider
+    const headers: Record<string, string> = {
+      'Content-Type': contentType,
+    };
+    
+    // Add provider-specific headers if needed
+    if (provider === 'azure' || uploadUrl.includes('blob.core.windows.net')) {
+      headers['x-ms-blob-type'] = 'BlockBlob';
+    }
+    
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers,
+      body: blob,
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`);
+    }
+  },
+
+  // Register uploaded media with media service
+  createMedia: async (data: {
+    provider: string;
+    bucket: string;
+    key: string;
+    url: string;
+    type: 'image' | 'video';
+    size: number;
+  }) => {
+    const api = getApiClient();
+    return api.post<{ id: string }>('/media/', data);
+  },
+};
+
 // Post API
 export const postApi = {
   createPost: async (data: { content: string; mediaIds?: string[]; visibility?: 'public' | 'friends' | 'private' }) => {
@@ -266,6 +320,7 @@ export const postApi = {
         userId: post.userId || '',
         content: post.content || '',
         mediaIds: post.mediaIds || [],
+        media: post.media || [],
         visibility: post.visibility || 'public',
         createdAt: post.createdAt || new Date().toISOString(),
         reactions: post.reactions || [],
@@ -290,7 +345,8 @@ export const postApi = {
       id: item.postId || item.feedId,
       userId: item.author?.userId || '',
       content: item.content || '',
-      mediaIds: item.media?.map((m: any) => (typeof m === 'string' ? m : m.url)) || [],
+      mediaIds: item.media?.map((m: any) => (typeof m === 'string' ? m : m.id || m.url)) || [],
+      media: item.media || [],
       visibility: item.visibility || 'public',
       createdAt: item.createdAt || new Date().toISOString(),
       reactions: item.reactionsSummary?.map((r: any) => ({ type: r.type, count: r.count })) || [],

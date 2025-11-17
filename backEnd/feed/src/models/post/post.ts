@@ -8,7 +8,7 @@ interface PostAttrs {
   id: string;
   userId: string;
   content: string;
-  media?: string[];//{ url: string; type: string }[];
+  media?: { url: string; type: string }[];
   visibility: Visibility;
   commentsCount?: number;
   reactionsSummary?: { type: string; count: number }[];

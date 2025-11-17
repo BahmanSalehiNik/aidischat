@@ -15,18 +15,29 @@ export class PostCreatedListener extends Listener<PostCreatedEvent> {
       userId,
       content,
       mediaIds,
+      media,
       visibility,
       createdAt,
     } = data;
 
-    // Save projection
-    const media = mediaIds ? mediaIds : undefined;
+    // Use media from event if available, otherwise fallback to mediaIds
+    let postMedia: { url: string; type: string }[] | undefined = undefined;
+    if (media && media.length > 0) {
+      // Use media URLs from the event (enriched by post service)
+      postMedia = media;
+    } else if (mediaIds && mediaIds.length > 0) {
+      // Fallback: convert mediaIds to media objects (URLs will be generated in getFeed route)
+      postMedia = mediaIds.map((mediaId: string) => ({
+        url: mediaId,
+        type: 'image',
+      }));
+    }
 
     const post = Post.build({
       id,
       userId,
       content,
-      media,
+      media: postMedia,
       visibility: Visibility[visibility as keyof typeof Visibility],
       originalCreation: createdAt
     });
@@ -51,6 +62,7 @@ export class PostUpdatedListener extends Listener<PostUpdatedEvent> {
       id,
       content,
       mediaIds,
+      media,
       visibility,
       updatedAt,
     } = data;
@@ -63,9 +75,22 @@ export class PostUpdatedListener extends Listener<PostUpdatedEvent> {
       return;
     }
 
+    // Use media from event if available, otherwise fallback to mediaIds
+    let postMedia: { url: string; type: string }[] | undefined = undefined;
+    if (media && media.length > 0) {
+      // Use media URLs from the event (enriched by post service)
+      postMedia = media;
+    } else if (mediaIds && mediaIds.length > 0) {
+      // Fallback: convert mediaIds to media objects
+      postMedia = mediaIds.map((mediaId: string) => ({
+        url: mediaId,
+        type: 'image',
+      }));
+    }
+
     // Update post data
     post.content = content;
-    post.media = mediaIds ? mediaIds.map(id => ({ url: id, type: 'image' })) : undefined;
+    post.media = postMedia;
     post.visibility = visibility as any;
     post.updatedAt = new Date(updatedAt);
 

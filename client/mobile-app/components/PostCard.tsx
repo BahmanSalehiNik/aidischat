@@ -1,11 +1,13 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Image as ExpoImage } from 'expo-image';
 
 export interface Post {
   id: string;
   userId: string;
   content: string;
   mediaIds?: string[];
+  media?: Array<{ url: string; originalUrl?: string; type?: string }>;
   visibility: 'public' | 'friends' | 'private';
   createdAt: string;
   updatedAt?: string;
@@ -96,10 +98,28 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onPress }) => {
         <Text style={styles.postText}>{post.content}</Text>
       </View>
 
-      {post.mediaIds && post.mediaIds.length > 0 && (
+      {post.media && post.media.length > 0 && (
         <View style={styles.mediaContainer}>
-          <Ionicons name="image-outline" size={20} color="#8E8E93" />
-          <Text style={styles.mediaText}>{post.mediaIds.length} media</Text>
+          {post.media.length === 1 ? (
+            <ExpoImage
+              source={{ uri: post.media[0].url }}
+              style={styles.singleImage}
+              contentFit="cover"
+              transition={200}
+            />
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaScroll}>
+              {post.media.map((mediaItem, index) => (
+                <ExpoImage
+                  key={index}
+                  source={{ uri: mediaItem.url }}
+                  style={styles.multiImage}
+                  contentFit="cover"
+                  transition={200}
+                />
+              ))}
+            </ScrollView>
+          )}
         </View>
       )}
 
@@ -177,18 +197,23 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   mediaContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
     marginBottom: 12,
-    gap: 8,
   },
-  mediaText: {
-    fontSize: 13,
-    color: '#8E8E93',
+  singleImage: {
+    width: '100%',
+    height: 300,
+    borderRadius: 8,
+    backgroundColor: '#F5F5F5',
+  },
+  mediaScroll: {
+    marginVertical: 0,
+  },
+  multiImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 8,
+    marginRight: 8,
+    backgroundColor: '#F5F5F5',
   },
   footer: {
     flexDirection: 'row',

@@ -4,6 +4,7 @@ import { loginRequired, extractJWTPayload, validateRequest, NotFoundError, NotAu
 import { Post } from '../../models/post';
 import { PostUpdatedPublisher } from "../../events/publishers/postPublisher";
 import { kafkaWrapper } from "../../kafka-client";
+import { getMediaUrlsByIds } from '../../utils/mediaUtils';
 
 const router = express.Router();
 
@@ -38,6 +39,11 @@ router.patch(
 
     await post.save();
 
+    // Fetch media URLs from media collection if mediaIds exist
+    const media = post.mediaIds && post.mediaIds.length > 0 
+      ? await getMediaUrlsByIds(post.mediaIds)
+      : undefined;
+
     // 🔢 Aggregate reactions for event (type -> count)
     const aggregatedReactions = post.reactions.reduce((acc: Record<string, number>, reaction) => {
       acc[reaction.type] = (acc[reaction.type] || 0) + 1;
@@ -55,6 +61,7 @@ router.patch(
       userId: post.userId,
       content: post.content,
       mediaIds: post.mediaIds,
+      media,
       visibility: post.visibility as Visibility,
       status: post.status,
       reactions: reactionsArray,
