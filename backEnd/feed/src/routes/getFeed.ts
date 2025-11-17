@@ -94,6 +94,16 @@ router.get('/api/feeds',
       displayName = user.email.split('@')[0];
     }
     
+    if (!displayName) {
+      if (postUserId === userId) {
+        displayName = 'You';
+      } else if (postUserId) {
+        displayName = `User ${postUserId.slice(0, 8)}`;
+      } else {
+        displayName = 'User';
+      }
+    }
+    
     return {
       feedId: feed._id,
       postId: post._id,

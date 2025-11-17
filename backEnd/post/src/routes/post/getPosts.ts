@@ -100,6 +100,16 @@ router.get(
         // Extract name from email (e.g., "john@example.com" -> "john")
         displayName = user.email.split('@')[0];
       }
+      
+      if (!displayName) {
+        if (postUserId === currentUserId) {
+          displayName = 'You';
+        } else if (postUserId) {
+          displayName = `User ${postUserId.slice(0, 8)}`;
+        } else {
+          displayName = 'User';
+        }
+      }
       // If still no name, we'll let the frontend handle the fallback
 
       return {

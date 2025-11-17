@@ -9,6 +9,7 @@ import { RoomDeletedListener } from './events/listeners/room-deleted-listener';
 import { RoomParticipantAddedListener } from './events/listeners/room-participant-added-listener';
 import { AgentUpdatedListener } from './events/listeners/agent-updated-listener';
 import { UserUpdatedListener } from './events/listeners/user-updated-listener';
+import { UserCreatedListener } from './events/listeners/user-created-listener';
 
 
 
@@ -57,8 +58,9 @@ const startMongoose = async ()=>{
         new RoomDeletedListener(kafkaWrapper.consumer('chat-service-room-deleted')).listen();
         new RoomParticipantAddedListener(kafkaWrapper.consumer('chat-service-room-participant-added')).listen();
 
-        // Agent and user update listeners - each with separate consumer group
+        // Agent and user listeners - each with separate consumer group
         new AgentUpdatedListener(kafkaWrapper.consumer('chat-service-agent-updated')).listen();
+        new UserCreatedListener(kafkaWrapper.consumer('chat-service-user-created')).listen();
         new UserUpdatedListener(kafkaWrapper.consumer('chat-service-user-updated')).listen();
 
         console.log("All Kafka listeners started successfully");

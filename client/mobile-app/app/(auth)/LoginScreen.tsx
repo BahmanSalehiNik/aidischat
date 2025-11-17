@@ -16,6 +16,7 @@ import { useAuthStore } from '../../store/authStore';
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
   const { signIn, loading, error } = useAuth();
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
@@ -27,15 +28,27 @@ export default function LoginScreen() {
   }, [isAuthenticated]);
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedEmail || !trimmedPassword) {
+      setFormError('Email and password are required.');
       return;
     }
 
-    const result = await signIn(email, password);
+    setFormError(null);
+    const result = await signIn(trimmedEmail, trimmedPassword);
     if (result.success) {
       router.replace('/(main)/HomeScreen');
+      return;
+    }
+
+    if (result.error) {
+      setFormError(result.error);
     }
   };
+
+  const displayError = formError || error;
 
   return (
     <KeyboardAvoidingView
@@ -46,9 +59,13 @@ export default function LoginScreen() {
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>Sign in to continue</Text>
 
-        {error && (
+        {displayError && (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
+            {displayError.split('\n').map((line, idx) => (
+              <Text key={`${line}-${idx}`} style={styles.errorText}>
+                {line}
+              </Text>
+            ))}
           </View>
         )}
 

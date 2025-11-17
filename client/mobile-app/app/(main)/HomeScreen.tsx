@@ -5,10 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useCallback } from 'react';
 import { postApi } from '../../utils/api';
 import { PostCard, Post } from '../../components/PostCard';
+import { useAuthStore } from '../../store/authStore';
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user } = useAuthStore();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -16,7 +18,17 @@ export default function HomeScreen() {
   const loadFeed = useCallback(async () => {
     try {
       const feedPosts = await postApi.getFeed();
-      setPosts(Array.isArray(feedPosts) ? feedPosts : []);
+      if (Array.isArray(feedPosts) && feedPosts.length > 0) {
+        setPosts(feedPosts);
+        return;
+      }
+
+      if (user?.id) {
+        const fallbackPosts = await postApi.getUserPosts(user.id);
+        setPosts(Array.isArray(fallbackPosts) ? fallbackPosts : []);
+      } else {
+        setPosts([]);
+      }
     } catch (error: any) {
       console.error('Error loading feed:', error);
       // If feed fails, try to get user's own posts as fallback
@@ -29,7 +41,7 @@ export default function HomeScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useFocusEffect(
     useCallback(() => {

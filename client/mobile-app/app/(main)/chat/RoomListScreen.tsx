@@ -219,15 +219,15 @@ export default function RoomListScreen() {
         <View style={styles.headerButtons}>
           <TouchableOpacity
             style={styles.headerButton}
-            onPress={() => router.push('/(main)/ProfileScreen')}
-          >
-            <Ionicons name="person" size={22} color="#007AFF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerButton}
             onPress={() => router.push('/(main)/SearchScreen')}
           >
             <Ionicons name="search" size={22} color="#007AFF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={() => router.push('/(main)/ProfileScreen')}
+          >
+            <Ionicons name="person" size={22} color="#007AFF" />
           </TouchableOpacity>
         </View>
       </View>

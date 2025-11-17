@@ -6,7 +6,7 @@ metadata:
     nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/websocket-services: "realtime-gateway-srv"
+    nginx.ingress.kubernetes.io/websocket-services: "api-gateway-srv"
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
     # SECURITY NOTE: Default rule below accepts requests from any host/IP
     # This is for development only. For production:
@@ -21,250 +21,36 @@ spec:
     # SECURITY: Remove this rule in production! See SECURITY_NOTES.md
     - http:
         paths:
-         # Specific routes first (more specific paths must come before general ones)
-         # Route /api/users/rooms to room service (not user service)
-         - path: /api/users/rooms
-           pathType: Exact
-           backend:
-             service:
-               name: room-srv
-               port: 
-                 number: 3000
-         # Route /api/rooms/*/messages to chat service (not room service)
-         - path: /api/rooms/.*/messages
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-         # Route /api/debug/* to chat service (for debug endpoints)
-         - path: /api/debug/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-         # General user routes
-         - path: /api/users/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: user-srv
-               port: 
-                 number: 3000
-         - path: /api/ecommerce/models/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: ecommerce-models-srv
-               port: 
-                 number: 3000
-         - path: /api/ecommerce/orders/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: ecommerce-orders-srv
-               port: 
-                 number: 3000
-         - path: /api/friends/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: friendship-srv
-               port: 
-                 number: 3000
-         - path: /api/media/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: media-srv
-               port: 
-                 number: 3000
-         - path: /api/post/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: post-srv
-               port: 
-                 number: 3000
-         - path: /api/feed/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: feed-srv
-               port: 
-                 number: 3000
-         - path: /api/agents/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: agent-srv
-               port: 
-                 number: 3000
-         # Route /api/rooms/*/messages to chat service (must come before general /api/rooms route)
-         - path: /api/rooms/.*/messages
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-         # General room routes (must come after specific routes)
-         - path: /api/rooms/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: room-srv
-               port: 
-                 number: 3000
-         - path: /api/messages/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-         - path: /api/realtime/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: realtime-gateway-srv
-               port: 
-                 number: 3000
-         - path: /api/ai-gateway/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: ai-gateway-srv
-               port: 
-                 number: 3000
-         - path: /api/ai-gateway/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: ai-gateway-srv
-               port: 
-                 number: 3000
+          - path: /api/realtime/?(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: realtime-gateway-srv
+                port:
+                  number: 3000
+          - path: /api/?(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-gateway-srv
+                port:
+                  number: 3000
     # Specific host rule (for production)
     - host: aichatwar-games.com
       http:
         paths:
-         # Specific routes first (more specific paths must come before general ones)
-         # Route /api/users/rooms to room service (not user service)
-         - path: /api/users/rooms
-           pathType: Exact
-           backend:
-             service:
-               name: room-srv
-               port: 
-                 number: 3000
-         # Route /api/rooms/*/messages to chat service (not room service)
-         - path: /api/rooms/.*/messages
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-         # Route /api/debug/* to chat service (for debug endpoints)
-         - path: /api/debug/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-         # General user routes
-         - path: /api/users/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: user-srv
-               port: 
-                 number: 3000
-         - path: /api/ecommerce/models/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: ecommerce-models-srv
-               port: 
-                 number: 3000
-         - path: /api/ecommerce/orders/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: ecommerce-orders-srv
-               port: 
-                 number: 3000
-         - path: /api/friends/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: friendship-srv
-               port: 
-                 number: 3000
-         - path: /api/media/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: media-srv
-               port: 
-                 number: 3000
-
-         - path: /api/post/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: post-srv
-               port: 
-                 number: 3000
-        
-         - path: /api/feed/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: feed-srv
-               port: 
-                 number: 3000
-                 
-         - path: /api/agents/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: agent-srv
-               port: 
-                 number: 3000
-                 
-         - path: /api/rooms/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: room-srv
-               port: 
-                 number: 3000
-                 
-         - path: /api/messages/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: chat-srv
-               port: 
-                 number: 3000
-                 
-         - path: /api/realtime/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: realtime-gateway-srv
-               port: 
-                 number: 3000
-         - path: /api/ai-gateway/?(.*)
-           pathType: ImplementationSpecific
-           backend:
-             service:
-               name: ai-gateway-srv
-               port: 
-                 number: 3000
+          - path: /api/realtime/?(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: realtime-gateway-srv
+                port:
+                  number: 3000
+          - path: /api/?(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-gateway-srv
+                port:
+                  number: 3000
 

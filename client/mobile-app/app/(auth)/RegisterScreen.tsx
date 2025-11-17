@@ -17,6 +17,7 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
   const { signUp, loading, error } = useAuth();
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
@@ -28,23 +29,38 @@ export default function RegisterScreen() {
   }, [isAuthenticated]);
 
   const handleRegister = async () => {
-    if (!email.trim() || !password.trim()) {
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+    const trimmedConfirmPassword = confirmPassword.trim();
+
+    if (!trimmedEmail || !trimmedPassword || !trimmedConfirmPassword) {
+      setFormError('All fields are required.');
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (trimmedPassword.length < 8) {
+      setFormError('Password must be at least 8 characters long.');
       return;
     }
 
-    if (password.length < 8) {
+    if (trimmedPassword !== trimmedConfirmPassword) {
+      setFormError('Passwords do not match.');
       return;
     }
 
-    const result = await signUp(email, password);
+    setFormError(null);
+    const result = await signUp(trimmedEmail, trimmedPassword);
     if (result.success) {
       router.replace('/(main)/HomeScreen');
+      return;
+    }
+
+    if (result.error) {
+      setFormError(result.error);
     }
   };
+
+  const displayError = formError || error;
 
   return (
     <KeyboardAvoidingView
@@ -55,9 +71,13 @@ export default function RegisterScreen() {
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>Sign up to get started</Text>
 
-        {error && (
+        {displayError && (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
+            {displayError.split('\n').map((line, idx) => (
+              <Text key={`${line}-${idx}`} style={styles.errorText}>
+                {line}
+              </Text>
+            ))}
           </View>
         )}
 

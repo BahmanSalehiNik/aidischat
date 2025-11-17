@@ -2,6 +2,25 @@ import { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { authApi, ApiError } from '../utils/api';
 
+const extractErrorMessage = (err: unknown, fallback: string) => {
+  const apiError = err as ApiError | (Error & { errors?: ApiError['errors'] });
+
+  if (apiError?.errors?.length) {
+    const uniqueMessages = Array.from(
+      new Set(apiError.errors.map(({ message }) => message).filter(Boolean))
+    );
+    if (uniqueMessages.length) {
+      return uniqueMessages.join('\n');
+    }
+  }
+
+  if (apiError?.message) {
+    return apiError.message;
+  }
+
+  return fallback;
+};
+
 export const useAuth = () => {
   const { setAuth, logout, isAuthenticated, user, token } = useAuthStore();
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +47,7 @@ export const useAuth = () => {
       await setAuth(user, token);
       return { success: true };
     } catch (err) {
-      const apiError = err as ApiError;
-      const errorMessage = apiError.message || 'Failed to sign in';
+      const errorMessage = extractErrorMessage(err, 'Failed to sign in');
       setError(errorMessage);
       return { success: false, error: errorMessage };
     } finally {
@@ -58,8 +76,7 @@ export const useAuth = () => {
       await setAuth(user, token);
       return { success: true };
     } catch (err) {
-      const apiError = err as ApiError;
-      const errorMessage = apiError.message || 'Failed to sign up';
+      const errorMessage = extractErrorMessage(err, 'Failed to sign up');
       setError(errorMessage);
       return { success: false, error: errorMessage };
     } finally {

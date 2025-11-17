@@ -1,6 +1,27 @@
 import { API_BASE_URL } from '@env';
 import { useAuthStore } from '../store/authStore';
 
+const DEFAULT_BASE_URL = 'http://localhost:3000';
+const API_PATH_REGEX = /\/api(\/|$)/i;
+
+const normalizeBaseUrl = (baseUrl?: string | null) => {
+  if (!baseUrl) {
+    return '';
+  }
+
+  const trimmed = baseUrl.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, '');
+  if (API_PATH_REGEX.test(withoutTrailingSlash)) {
+    return withoutTrailingSlash;
+  }
+
+  return `${withoutTrailingSlash}/api`;
+};
+
 export interface ApiError {
   message: string;
   errors?: Array<{ message: string; field?: string }>;
@@ -140,9 +161,11 @@ let lastBaseUrl: string | null = null;
 export const getApiClient = (): ApiClient => {
   // Log the raw environment variable to debug
   console.log(`📋 Raw API_BASE_URL from env:`, API_BASE_URL);
-  
-  const currentBaseUrl = API_BASE_URL || 'http://localhost:3000';
-  
+
+  const normalizedEnvBase = normalizeBaseUrl(API_BASE_URL);
+  const fallbackBase = normalizeBaseUrl(DEFAULT_BASE_URL);
+  const currentBaseUrl = normalizedEnvBase || fallbackBase;
+
   // Reinitialize if base URL changed (e.g., .env was updated)
   if (!apiClient || lastBaseUrl !== currentBaseUrl) {
     console.log(`🔧 Initializing API Client with base URL: ${currentBaseUrl}`);
@@ -151,7 +174,7 @@ export const getApiClient = (): ApiClient => {
   } else {
     console.log(`♻️  Using existing API Client with base URL: ${currentBaseUrl}`);
   }
-  
+
   return apiClient;
 };
 

@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: bahmansalehinic4/api-gateway
+          env:
+            - name: PORT
+              value: "3000"
+            - name: PROXY_TIMEOUT_MS
+              value: "30000"
+            - name: CORS_ALLOWED_ORIGINS
+              value: "*"
+            - name: USER_SERVICE_URL
+              value: "http://user-srv:3000"
+            - name: POST_SERVICE_URL
+              value: "http://post-srv:3000"
+            - name: FEED_SERVICE_URL
+              value: "http://feed-srv:3000"
+            - name: ROOM_SERVICE_URL
+              value: "http://room-srv:3000"
+            - name: CHAT_SERVICE_URL
+              value: "http://chat-srv:3000"
+            - name: FRIENDSHIP_SERVICE_URL
+              value: "http://friendship-srv:3000"
+            - name: MEDIA_SERVICE_URL
+              value: "http://media-srv:3000"
+            - name: AGENT_SERVICE_URL
+              value: "http://agent-srv:3000"
+            - name: ECOMMERCE_MODELS_SERVICE_URL
+              value: "http://ecommerce-models-srv:3000"
+            - name: ECOMMERCE_ORDERS_SERVICE_URL
+              value: "http://ecommerce-orders-srv:3000"
+            - name: REALTIME_GATEWAY_URL
+              value: "http://realtime-gateway-srv:3000"
+            - name: AI_GATEWAY_URL
+              value: "http://ai-gateway-srv:3000"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway-srv
+spec:
+  selector:
+    app: api-gateway
+  ports:
+    - name: http
+      protocol: TCP
+      port: 3000
+      targetPort: 3000
+
