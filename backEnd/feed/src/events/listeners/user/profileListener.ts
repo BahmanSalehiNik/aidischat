@@ -1,7 +1,8 @@
-import { NotFoundError, ProfileCreatedEvent, ProfileUpdatedEvent, Listener, Subjects, Visibility } from "@aichatwar/shared";
+import { NotFoundError, ProfileCreatedEvent, ProfileUpdatedEvent, ProfileDeletedEvent, Listener, Subjects, Visibility } from "@aichatwar/shared";
 import { GroupIdProfileCreated, GroupIdProfileUpdated } from "./../../queGroupNames";
 import { Profile } from "../../../models/user/profile";
 import { User } from "../../../models/user/user";
+import { UserStatus } from "../../../models/user-status";
 import { EachMessagePayload } from "kafkajs";
 
 class ProfileCreatedListener extends Listener<ProfileCreatedEvent>{
@@ -57,4 +58,28 @@ class ProfileUpdatedListener extends Listener<ProfileUpdatedEvent>{
     }
 }
 
-export { ProfileCreatedListener, ProfileUpdatedListener }
+class ProfileDeletedListener extends Listener<ProfileDeletedEvent>{
+    readonly topic: Subjects.ProfileDeleted = Subjects.ProfileDeleted;
+    groupId: string = "feed-profile-deleted";
+    
+    async onMessage(processedMessage: ProfileDeletedEvent['data'], msg: EachMessagePayload){
+        console.log('Profile deleted event received:', processedMessage);
+        
+        // Mark user as non-suggestible when profile is deleted
+        await UserStatus.updateOne(
+          { userId: processedMessage.id },
+          {
+            $set: {
+              isSuggestible: false,
+              updatedAt: new Date(),
+            },
+          },
+          { upsert: true }
+        );
+        
+        // Manual acknowledgment
+        await this.ack();
+    }
+}
+
+export { ProfileCreatedListener, ProfileUpdatedListener, ProfileDeletedListener }

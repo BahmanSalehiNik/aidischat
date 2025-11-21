@@ -6,6 +6,7 @@ import cookieSession from "cookie-session";
 
 
 import { getFeedRouter } from "./routes/getFeed";
+import { adminRouter } from "./routes/admin";
 
 import { errorHandler, NotFoundError, extractJWTPayload } from "@aichatwar/shared";
 
@@ -26,6 +27,7 @@ app.use(cookieSession({
 app.use(extractJWTPayload);
 
 app.use(getFeedRouter);
+app.use(adminRouter);
 
 
 app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));

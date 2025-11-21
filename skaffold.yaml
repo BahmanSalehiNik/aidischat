@@ -125,6 +125,14 @@ build:
       sync:
         manual:
           - dest: .
+            src: 'src/**/*.ts'
+    - image: bahmansalehinic4/search
+      context: backEnd/search
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
             src: 'src/**/*.ts' 
 manifests:
   rawYaml: 
@@ -144,6 +152,7 @@ manifests:
     - ./infra/k8s/media-depl.yaml
     - ./infra/k8s/post-depl.yaml
     - ./infra/k8s/feed-depl.yaml
+    - ./infra/k8s/search-depl.yaml
     - ./infra/k8s/room-depl.yaml
     - ./infra/k8s/chat-depl.yaml
     - ./infra/k8s/agent-depl.yaml

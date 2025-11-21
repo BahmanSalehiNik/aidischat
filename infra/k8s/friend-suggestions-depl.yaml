@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: friend-suggestions-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: friend-suggestions
+  template:
+    metadata:
+      labels:
+        app: friend-suggestions
+    spec:
+      containers:
+        - name: friend-suggestions
+          image: bahmansalehinic4/friend-suggestions
+          env:
+            - name: KAFKA_BROKER_URL
+              value: 'redpanda-srv:9092'
+            - name: KAFKA_CLIENT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MONGO_URI
+              value: "mongodb://friend-suggestions-mongo-srv:27017/friend-suggestions"
+            - name: JWT_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: JWT_DEV
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: friend-suggestions-srv
+spec:
+  selector:
+    app: friend-suggestions
+  ports:
+    - name: friend-suggestions
+      protocol: TCP
+      port: 3000
+      targetPort: 3000
+

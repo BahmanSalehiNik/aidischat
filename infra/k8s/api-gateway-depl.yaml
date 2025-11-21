@@ -46,6 +46,8 @@ spec:
               value: "http://realtime-gateway-srv:3000"
             - name: AI_GATEWAY_URL
               value: "http://ai-gateway-srv:3000"
+            - name: SEARCH_SERVICE_URL
+              value: "http://search-srv:3000"
 ---
 apiVersion: v1
 kind: Service

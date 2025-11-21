@@ -378,6 +378,53 @@ export const postApi = {
   },
 };
 
+// Search API
+export interface SearchResult {
+  id: string;
+  type: 'users' | 'posts' | 'agents' | 'pages';
+  title: string;
+  subtitle?: string;
+  snippet?: string;
+  avatarUrl?: string;
+  score?: number;
+}
+
+export interface SearchResponse {
+  query: string;
+  types?: string[];
+  results: SearchResult[];
+}
+
+export interface AutocompleteResponse {
+  users?: SearchResult[];
+  posts?: SearchResult[];
+  agents?: SearchResult[];
+  pages?: SearchResult[];
+}
+
+export const searchApi = {
+  search: async (query: string, types?: string[]): Promise<SearchResponse> => {
+    const api = getApiClient();
+    const typesParam = types && types.length > 0 ? types.join(',') : undefined;
+    const url = typesParam 
+      ? `/search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(typesParam)}`
+      : `/search?q=${encodeURIComponent(query)}`;
+    return api.get<SearchResponse>(url);
+  },
+
+  autocomplete: async (
+    query: string,
+    limit: number = 5,
+    types: string[] = ['users', 'posts', 'agents', 'pages']
+  ): Promise<AutocompleteResponse> => {
+    const api = getApiClient();
+    const typesParam = types.join(',');
+    return api.get<AutocompleteResponse>(
+      `/search/autocomplete?q=${encodeURIComponent(query)}&limit=${limit}&types=${encodeURIComponent(typesParam)}`
+    );
+  },
+};
+
 // Debug API
 export const debugApi = {
   checkParticipant: async (roomId: string, participantId: string) => {

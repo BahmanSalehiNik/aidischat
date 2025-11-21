@@ -33,6 +33,8 @@ app.use(cookieSession({
     sameSite: "lax"
 }))
 
+app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));
+
 app.use(extractJWTPayload);
 
 app.use(createPostRouter);
@@ -45,9 +47,6 @@ app.use(getCommentsRouter);
 app.use(getCommentByIdRouter);
 app.use(updateCommentRouter);
 app.use(deleteCommentRouter);
-
-
-app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));
 
 
 app.all('*', async ()=>{

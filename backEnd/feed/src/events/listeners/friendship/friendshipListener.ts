@@ -1,6 +1,7 @@
 import { NotFoundError, FriendshipAcceptedEvent, FriendshipRequestedEvent, FriendshipUpdatedEvent, Listener, Subjects } from "@aichatwar/shared";
 import { GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated } from "../../queGroupNames";
 import { Friendship } from "../../../models/friendship/freindship";
+import { BlockList } from "../../../models/block-list";
 import { EachMessagePayload } from "kafkajs";
 
 class FriendshipAcceptedListener extends Listener<FriendshipAcceptedEvent>{
@@ -37,6 +38,32 @@ class FriendshipUpdatedListener extends Listener<FriendshipUpdatedEvent>{
         }
         friendship.status = processedMessage.status;
         await friendship.save();
+
+        // Update block list for filtering
+        const status = processedMessage.status;
+        if (status === 'blocked' || status === 'removed') {
+          // Add to block list (bidirectional for safety)
+          await Promise.all([
+            BlockList.updateOne(
+              { userId: processedMessage.requester, blockedUserId: processedMessage.recipient },
+              { $set: { blockedAt: new Date() } },
+              { upsert: true }
+            ),
+            BlockList.updateOne(
+              { userId: processedMessage.recipient, blockedUserId: processedMessage.requester },
+              { $set: { blockedAt: new Date() } },
+              { upsert: true }
+            ),
+          ]);
+        } else if (status === 'accepted') {
+          // Remove from block list if exists
+          await BlockList.deleteMany({
+            $or: [
+              { userId: processedMessage.requester, blockedUserId: processedMessage.recipient },
+              { userId: processedMessage.recipient, blockedUserId: processedMessage.requester },
+            ],
+          });
+        }
         
         // Manual acknowledgment - only after successful save
         await this.ack();

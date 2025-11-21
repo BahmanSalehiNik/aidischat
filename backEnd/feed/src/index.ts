@@ -3,14 +3,15 @@ import express from "express";
 import mongoose from "mongoose";
 import { app } from "./app";
 import { kafkaWrapper } from './kafka-client';
-import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/user/userListener";
-import { ProfileCreatedListener, ProfileUpdatedListener } from "./events/listeners/user/profileListener";
+import { UserCreatedListener, UserUpdatedListener, UserDeletedListener } from "./events/listeners/user/userListener";
+import { ProfileCreatedListener, ProfileUpdatedListener, ProfileDeletedListener } from "./events/listeners/user/profileListener";
 import { PostCreatedListener, PostUpdatedListener, PostDeletedListener } from "./events/listeners/post/postListener";
 import { CommentCreatedListener, CommentDeletedListener } from "./events/listeners/comment/commentListener";
 import { FriendshipAcceptedListener, 
     FriendshipUpdatedListener, 
     FriendshipRequestedListener } from "./events/listeners/friendship/friendshipListener";
 import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdPostCreated, GroupIdPostUpdated, GroupIdPostDeleted, GroupIdCommentCreated, GroupIdCommentDeleted, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated } from "./events/queGroupNames";
+import { trendingWorker } from "./modules/trending/trendingWorker";
 
 
 const startMongoose = async ()=>{
@@ -58,10 +59,12 @@ const startMongoose = async ()=>{
         // User listeners - each with separate consumer group
         new UserCreatedListener(kafkaWrapper.consumer(GroupIdUserCreated)).listen();
         new UserUpdatedListener(kafkaWrapper.consumer(GroupIdUserUpdated)).listen();
+        new UserDeletedListener(kafkaWrapper.consumer("feed-user-deleted")).listen();
 
         // Profile listeners - each with separate consumer group
         new ProfileCreatedListener(kafkaWrapper.consumer(GroupIdProfileCreated)).listen();
         new ProfileUpdatedListener(kafkaWrapper.consumer(GroupIdProfileUpdated)).listen();
+        new ProfileDeletedListener(kafkaWrapper.consumer("feed-profile-deleted")).listen();
 
         // Post listeners - each with separate consumer group
         new PostCreatedListener(kafkaWrapper.consumer(GroupIdPostCreated)).listen();
@@ -79,6 +82,8 @@ const startMongoose = async ()=>{
 
         console.log("All Kafka listeners started successfully");
 
+        trendingWorker.start();
+
         app.listen(3000, ()=>{
             console.log("app listening on port 3000! feed service")
         });
@@ -90,15 +95,3 @@ const startMongoose = async ()=>{
 }
 
 startMongoose()
-
-
-
-
-app.use(function (req: express.Request, res: express.Response, next) {
-    next({ status: 404 });
-});
-
-app.use(function (err: any, req: express.Request, res: express.Response, next: express.NextFunction) {
-    console.error(err);
-    res.status(err.status || 500).json();
-});

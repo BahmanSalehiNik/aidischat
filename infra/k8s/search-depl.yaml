@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: search
+  template:
+    metadata:
+      labels:
+        app: search
+    spec:
+      containers:
+        - name: search
+          image: bahmansalehinic4/search
+          env:
+            - name: MONGO_URI
+              value: "mongodb://search-mongo-srv:27017/search"
+            - name: JWT_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: JWT_DEV
+            - name: KAFKA_BROKER_URL
+              value: 'redpanda-srv:9092'
+            - name: KAFKA_CLIENT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-srv
+spec:
+  selector:
+    app: search
+  ports:
+    - name: search
+      protocol: TCP
+      port: 3000
+      targetPort: 3000
+

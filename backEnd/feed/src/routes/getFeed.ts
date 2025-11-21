@@ -1,15 +1,17 @@
 import express, { Request, Response } from 'express';
 import { loginRequired, extractJWTPayload, validateRequest } from '@aichatwar/shared';
-import { Feed } from '../models/feed/feed';
+import { Feed, FeedStatus } from '../models/feed/feed';
 import { Post } from '../models/post/post';
 import { Profile } from '../models/user/profile';
 import { User } from '../models/user/user';
+import { BlockList } from '../models/block-list';
+import { UserStatus } from '../models/user-status';
 import { ReadOnlyAzureStorageGateway } from '../storage/azureStorageGateway';
+import { trendingService } from '../modules/trending/trendingService';
 
 const router = express.Router();
 
 // Initialize read-only Azure Storage Gateway if credentials are available
-// Note: For production, consider using a read-only storage account key or SAS token
 let azureGateway: ReadOnlyAzureStorageGateway | null = null;
 if (process.env.AZURE_STORAGE_ACCOUNT && process.env.AZURE_STORAGE_KEY) {
   azureGateway = new ReadOnlyAzureStorageGateway(
@@ -18,11 +20,149 @@ if (process.env.AZURE_STORAGE_ACCOUNT && process.env.AZURE_STORAGE_KEY) {
   );
 }
 
+const sanitizeMediaItems = (media: any[] | undefined | null) => {
+  if (!media || !Array.isArray(media)) return [];
+  return media.filter((mediaItem: any) => mediaItem?.url && mediaItem.url !== mediaItem.id);
+};
+
+async function buildSignedMedia(media: any[] | undefined | null) {
+  const validMediaItems = sanitizeMediaItems(media);
+  if (!validMediaItems.length) {
+    return undefined;
+  }
+
+  if (!azureGateway) {
+    return validMediaItems;
+  }
+
+  return Promise.all(
+    validMediaItems.map(async (mediaItem: any) => {
+      const parsed = azureGateway!.parseBlobUrl(mediaItem.url);
+      if (parsed) {
+        try {
+          const signedUrl = await azureGateway!.generateDownloadUrl(
+            parsed.container,
+            parsed.blobName,
+            900
+          );
+          return {
+            ...mediaItem,
+            url: signedUrl,
+            originalUrl: mediaItem.url,
+          };
+        } catch (error) {
+          console.error('Error generating signed URL for media:', error);
+        }
+      }
+      return mediaItem;
+    })
+  );
+}
+
+/**
+ * Helper function to get recent public posts as trending-like format
+ */
+async function getRecentPublicPostsAsTrending(
+  userId: string,
+  limit: number,
+  excludePostIds: Set<string> = new Set()
+): Promise<any[]> {
+  const blockedUsers = await BlockList.find({ userId })
+    .select('blockedUserId')
+    .lean();
+  const blockedSet = new Set(blockedUsers.map((b: any) => b.blockedUserId));
+  
+  const nonSuggestibleUsers = await UserStatus.find({ isSuggestible: false })
+    .select('userId')
+    .lean();
+  const excludeUserIds = [...nonSuggestibleUsers.map((u: any) => u.userId), ...Array.from(blockedSet)];
+  
+  const recentPublicPosts = await Post.find({
+    visibility: 'public',
+    media: { $exists: true, $ne: [], $not: { $size: 0 } },
+    _id: { $nin: Array.from(excludePostIds) },
+    userId: { $nin: excludeUserIds },
+  })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+
+  return recentPublicPosts.map(post => ({
+    postId: post._id!.toString(),
+    authorId: post.userId,
+    content: post.content,
+    media: post.media,
+    createdAt: post.createdAt || new Date(post.originalCreation),
+    trendingScore: 0,
+  }));
+}
+
+/**
+ * Helper to build trending items from trending posts
+ */
+async function buildTrendingItems(
+  trending: any[],
+  userId: string,
+  excludePostIds: Set<string> = new Set()
+): Promise<any[]> {
+  if (trending.length === 0) return [];
+
+  const trendingAuthorIds = Array.from(new Set(trending.map((t) => t.authorId)));
+  const [profiles, users] = await Promise.all([
+    Profile.find({ userId: { $in: trendingAuthorIds } })
+      .select('userId username avatarUrl')
+      .lean(),
+    User.find({ _id: { $in: trendingAuthorIds } })
+      .select('_id email')
+      .lean(),
+  ]);
+
+  const profileMap = new Map(profiles.map((p: any) => [p.userId, p]));
+  const userMap = new Map(users.map((u: any) => {
+    const id = typeof u._id === 'string' ? u._id : u._id.toString();
+    return [id, u];
+  }));
+
+  return Promise.all(
+    trending.map(async (entry) => {
+      const profile = profileMap.get(entry.authorId);
+      const user = userMap.get(entry.authorId);
+      let displayName: string | undefined = profile?.username;
+      if (!displayName && user?.email) {
+        displayName = user.email.split('@')[0];
+      }
+      if (!displayName) {
+        displayName = `User ${entry.authorId.slice(0, 8)}`;
+      }
+
+      const mediaWithSignedUrls = await buildSignedMedia(entry.media);
+
+      return {
+        feedId: null,
+        postId: entry.postId,
+        author: {
+          userId: entry.authorId,
+          name: displayName,
+          avatarUrl: profile?.avatarUrl,
+        },
+        content: entry.content,
+        media: mediaWithSignedUrls,
+        visibility: 'public',
+        reactionsSummary: [],
+        commentsCount: undefined,
+        createdAt: entry.createdAt,
+        source: 'trending',
+        status: FeedStatus.Unseen,
+      };
+    })
+  );
+}
+
 /**
  * GET /api/feeds
  * Query Params:
  *  - limit: number (default: 10)
- *  - cursor: timestamp or feedId (for pagination)
+ *  - cursor: feedId or 'trending' (for pagination)
  */
 router.get('/api/feeds', 
     loginRequired, 
@@ -32,79 +172,136 @@ router.get('/api/feeds',
   const limit = parseInt((req.query.limit as string) || '10', 10);
   const cursor = req.query.cursor as string | undefined;
 
-  // Pagination filter: fetch posts before cursor
-  const query: any = { userId };
+  // Check if cursor indicates we should fetch trending
+  const isTrendingCursor = cursor === 'trending' || cursor === null || cursor === 'null';
+  
+  // If cursor is 'trending', we're paginating through trending posts
+  if (isTrendingCursor) {
+    console.log('[Feed] Fetching trending posts (cursor: trending)');
+    
+    // Get all feed post IDs to exclude from trending
+    const allFeedPostIds = await Feed.find({ userId })
+      .select('postId')
+      .lean();
+    const excludePostIds = new Set(allFeedPostIds.map(f => f.postId));
 
-  if (cursor) {
+    // Fetch trending posts
+    let trending = await trendingService.getTopPosts(limit * 2, userId);
+    
+    if (trending.length < limit) {
+      const recentAsTrending = await getRecentPublicPostsAsTrending(userId, limit * 2, excludePostIds);
+      const allTrending = [...trending, ...recentAsTrending];
+      const uniqueTrendingMap = new Map();
+      allTrending.forEach(post => {
+        if (!uniqueTrendingMap.has(post.postId)) {
+          uniqueTrendingMap.set(post.postId, post);
+        }
+      });
+      trending = Array.from(uniqueTrendingMap.values())
+        .sort((a, b) => {
+          if (b.trendingScore !== a.trendingScore) {
+            return b.trendingScore - a.trendingScore;
+          }
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        })
+        .slice(0, limit * 2);
+    }
+
+    // Filter out posts already in feed
+    const uniqueTrending = trending.filter(t => !excludePostIds.has(t.postId));
+    
+    const trendingItems = await buildTrendingItems(uniqueTrending.slice(0, limit), userId);
+    
+    // For trending pagination, use a simple offset-based approach
+    // Return 'trending' as next cursor to continue fetching trending
+    const nextCursor = uniqueTrending.length > limit ? 'trending' : null;
+    
+    return res.send({ 
+      items: trendingItems, 
+      nextCursor,
+      source: 'trending'
+    });
+  }
+
+  // Fetch personalized feeds with pagination
+  const feedQuery: any = { userId, status: { $in: [FeedStatus.Unseen, FeedStatus.Seen] } };
+  
+  if (cursor && cursor !== 'trending') {
     const cursorFeed = await Feed.findById(cursor);
     if (cursorFeed) {
-      query.createdAt = { $lt: cursorFeed.createdAt };
+      feedQuery.createdAt = { $lt: cursorFeed.createdAt };
     }
   }
 
-  // Fetch feed entries - sort by createdAt (newest first)
-  const feeds = await Feed.find(query)
+  // Fetch feed entries
+  const feeds = await Feed.find(feedQuery)
     .sort({ createdAt: -1 })
     .limit(limit)
     .lean();
 
+  // If no feeds, return trending
   if (!feeds.length) {
-    return res.send({ items: [], nextCursor: null });
+    console.log('[Feed] No personalized feeds, returning trending');
+    const allFeedPostIds = await Feed.find({ userId })
+      .select('postId')
+      .lean();
+    const excludePostIds = new Set(allFeedPostIds.map(f => f.postId));
+
+    let trending = await trendingService.getTopPosts(limit, userId);
+    if (trending.length === 0) {
+      trending = await getRecentPublicPostsAsTrending(userId, limit, excludePostIds);
+    }
+
+    const uniqueTrending = trending.filter(t => !excludePostIds.has(t.postId));
+    const trendingItems = await buildTrendingItems(uniqueTrending.slice(0, limit), userId);
+    
+    return res.send({ 
+      items: trendingItems, 
+      nextCursor: uniqueTrending.length > limit ? 'trending' : null,
+      source: 'trending'
+    });
   }
 
-  // Extract postIds for this batch
+  // Extract postIds and fetch posts
   const postIds = feeds.map(f => f.postId);
-
-  // Fetch projected post data - sort by createdAt (newest first) using database index
   const posts = await Post.find({ _id: { $in: postIds } })
     .sort({ createdAt: -1 })
     .lean()
     .exec();
 
-  // Fetch profile info of authors
+  // Fetch profile and user info
   const authorIds = Array.from(new Set(posts.map(p => p.userId)));
-  const profiles = await Profile.find({ userId: { $in: authorIds } })
-    .select('userId username avatarUrl')
-    .lean();
+  const [profiles, users] = await Promise.all([
+    Profile.find({ userId: { $in: authorIds } })
+      .select('userId username avatarUrl')
+      .lean(),
+    User.find({ _id: { $in: authorIds } })
+      .select('_id email')
+      .lean(),
+  ]);
 
-  // Fetch user information for fallback (email)
-  const users = await User.find({ _id: { $in: authorIds } })
-    .select('_id email')
-    .lean();
-
-  // Map posts by id for easy lookup
-  const postMap = new Map(posts.map(p => [p._id, p]));
-  
-  // Create maps for profile and user lookup
   const profileMap = new Map(profiles.map((p: any) => [p.userId, p]));
   const userMap = new Map(users.map((u: any) => {
-    const userId = typeof u._id === 'string' ? u._id : u._id.toString();
-    return [userId, u];
+    const id = typeof u._id === 'string' ? u._id : u._id.toString();
+    return [id, u];
   }));
 
-  // Create a map of feedId to feed for lookup
+  const postMap = new Map(posts.map(p => [p._id, p]));
   const feedMap = new Map(feeds.map(f => [f.postId, f]));
 
-  // Build items array using the sorted posts order (newest first)
-  // This maintains the database sort order without JavaScript sorting
-  const items = await Promise.all(posts.map(async (post) => {
-    const postId = post._id?.toString();
-    const feed = feedMap.get(postId);
-    if (!feed) return null;
-    
+  // Build feed items with status, sorted by priority
+  const feedItems = await Promise.all(feeds.map(async (feed) => {
+    const post = postMap.get(feed.postId);
+    if (!post) return null;
+
     const postUserId = post.userId?.toString();
     const profile = profileMap.get(postUserId);
     const user = userMap.get(postUserId);
     
-    // Determine the display name: prefer username, fallback to email prefix
-    let displayName: string | undefined;
-    if (profile?.username) {
-      displayName = profile.username;
-    } else if (user?.email) {
-      // Extract name from email (e.g., "john@example.com" -> "john")
+    let displayName: string | undefined = profile?.username;
+    if (!displayName && user?.email) {
       displayName = user.email.split('@')[0];
     }
-    
     if (!displayName) {
       if (postUserId === userId) {
         displayName = 'You';
@@ -115,70 +312,7 @@ router.get('/api/feeds',
       }
     }
     
-    // Generate signed URLs for media if Azure gateway is available
-    let mediaWithSignedUrls = post.media;
-    if (azureGateway && post.media && Array.isArray(post.media) && post.media.length > 0) {
-      console.log('Processing media for post:', post._id, 'Media count:', post.media.length);
-      
-      // Filter out invalid media items (where url === id, meaning it's just a mediaId, not a real URL)
-      const validMediaItems = post.media.filter((mediaItem: any) => {
-        if (!mediaItem?.url) return false;
-        // If url is the same as id, it's likely just a mediaId placeholder, not a real URL
-        if (mediaItem.url === mediaItem.id) {
-          console.log('Skipping invalid media item (url === id):', mediaItem);
-          return false;
-        }
-        return true;
-      });
-      
-      if (validMediaItems.length > 0) {
-        mediaWithSignedUrls = await Promise.all(
-          validMediaItems.map(async (mediaItem: any) => {
-            console.log('Processing media URL:', mediaItem.url);
-            
-            // Try to parse blob URL to extract container and blob name
-            const parsed = azureGateway!.parseBlobUrl(mediaItem.url);
-            if (parsed) {
-              console.log('Parsed blob URL:', parsed);
-              try {
-                // Generate signed download URL (15 minutes expiry)
-                const signedUrl = await azureGateway!.generateDownloadUrl(
-                  parsed.container,
-                  parsed.blobName,
-                  900
-                );
-                console.log('Generated signed URL for media');
-                return {
-                  ...mediaItem,
-                  url: signedUrl,
-                  originalUrl: mediaItem.url, // Keep original for reference
-                };
-              } catch (error) {
-                console.error('Error generating signed URL for media:', error, 'URL:', mediaItem.url);
-                // Return original URL if signing fails
-                return mediaItem;
-              }
-            } else {
-              console.log('Could not parse blob URL:', mediaItem.url);
-            }
-            
-            // If not a blob URL, return as-is (might be a public URL or different format)
-            return mediaItem;
-          })
-        );
-      } else {
-        // No valid media items after filtering
-        mediaWithSignedUrls = undefined;
-        console.log('No valid media items after filtering for post:', post._id);
-      }
-    } else {
-      console.log('Media processing skipped:', {
-        hasGateway: !!azureGateway,
-        hasMedia: !!post.media,
-        isArray: Array.isArray(post.media),
-        mediaLength: post.media?.length || 0
-      });
-    }
+    const mediaWithSignedUrls = await buildSignedMedia(post.media);
     
     return {
       feedId: feed._id,
@@ -194,15 +328,113 @@ router.get('/api/feeds',
       reactionsSummary: post.reactionsSummary,
       commentsCount: post.commentsCount,
       createdAt: post.createdAt || post.originalCreation,
+      status: feed.status,
+      source: 'feed',
     };
   }));
+
+  const validFeedItems = feedItems.filter(Boolean);
+
+  // Sort by priority: unseen > seen, then by recency
+  validFeedItems.sort((a, b) => {
+    if (!a || !b) return 0;
+    const aUnseen = a.status === FeedStatus.Unseen ? 0 : 1;
+    const bUnseen = b.status === FeedStatus.Unseen ? 0 : 1;
+    if (aUnseen !== bUnseen) {
+      return aUnseen - bUnseen;
+    }
+    const aTime = new Date(a.createdAt).getTime();
+    const bTime = new Date(b.createdAt).getTime();
+    return bTime - aTime;
+  });
+
+  // Check if we have more personalized feeds
+  const hasMoreFeeds = feeds.length === limit;
+  const nextFeedCursor = hasMoreFeeds && feeds.length > 0 
+    ? feeds[feeds.length - 1]._id.toString() 
+    : null;
+
+  // ALWAYS append trending feeds after personalized feeds
+  // Get all feed post IDs to exclude from trending
+  const allFeedPostIds = await Feed.find({ userId })
+    .select('postId')
+    .lean();
+  const excludePostIds = new Set(allFeedPostIds.map(f => f.postId));
+  validFeedItems.forEach(item => {
+    if (item?.postId) {
+      excludePostIds.add(item.postId.toString());
+    }
+  });
+
+  // Fetch trending posts
+  let trending = await trendingService.getTopPosts(limit, userId);
   
-  // Filter out null items
-  const filteredItems = items.filter(Boolean);
+  if (trending.length < limit) {
+    const recentAsTrending = await getRecentPublicPostsAsTrending(userId, limit, excludePostIds);
+    const allTrending = [...trending, ...recentAsTrending];
+    const uniqueTrendingMap = new Map();
+    allTrending.forEach(post => {
+      if (!uniqueTrendingMap.has(post.postId)) {
+        uniqueTrendingMap.set(post.postId, post);
+      }
+    });
+    trending = Array.from(uniqueTrendingMap.values())
+      .sort((a, b) => {
+        if (b.trendingScore !== a.trendingScore) {
+          return b.trendingScore - a.trendingScore;
+        }
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      })
+      .slice(0, limit);
+  }
 
-  const nextCursor = feeds[feeds.length - 1]._id;
+  // Filter out duplicates and build trending items
+  const uniqueTrending = trending.filter(t => !excludePostIds.has(t.postId));
+  const trendingItems = await buildTrendingItems(uniqueTrending.slice(0, limit), userId);
 
-  res.send({ items: filteredItems, nextCursor });
+  // Merge: personalized feeds first, then trending
+  // Sort trending items: unseen > seen, then by recency
+  trendingItems.sort((a, b) => {
+    if (!a || !b) return 0;
+    const aUnseen = a.status === FeedStatus.Unseen ? 0 : 1;
+    const bUnseen = b.status === FeedStatus.Unseen ? 0 : 1;
+    if (aUnseen !== bUnseen) {
+      return aUnseen - bUnseen;
+    }
+    const aTime = new Date(a.createdAt).getTime();
+    const bTime = new Date(b.createdAt).getTime();
+    return bTime - aTime;
+  });
+
+  const allItems = [...validFeedItems, ...trendingItems];
+  
+  // Apply limit to total items
+  const finalItems = allItems.slice(0, limit);
+
+  // Determine next cursor:
+  // - If we have more personalized feeds, use feed cursor
+  // - If we've exhausted personalized feeds but have trending, use 'trending'
+  // - Otherwise, null
+  let nextCursor: string | null = null;
+  if (hasMoreFeeds) {
+    nextCursor = nextFeedCursor;
+  } else if (uniqueTrending.length > finalItems.filter(item => item.source === 'trending').length) {
+    nextCursor = 'trending';
+  }
+
+  const response: any = { 
+    items: finalItems, 
+    nextCursor 
+  };
+
+  if (trendingItems.length > 0) {
+    response.hasTrending = true;
+    response.trendingCount = finalItems.filter(item => item.source === 'trending').length;
+  }
+
+  console.log(`[Feed] Returning ${finalItems.length} items (${validFeedItems.length} feed, ${finalItems.filter(item => item.source === 'trending').length} trending), nextCursor: ${nextCursor}`);
+
+  res.send(response);
 });
 
 export { router as getFeedRouter };
