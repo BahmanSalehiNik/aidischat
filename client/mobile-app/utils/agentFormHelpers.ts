@@ -66,9 +66,28 @@ export const submitAgentForm = async (
   const agentData = prepareAgentData(formData, agentProfileId);
   const agentResponse = await agentsApi.createAgent(agentData);
 
+  // Handle response structure: backend returns { agent, agentProfile, provisioning }
+  // but we need to extract the agent ID
+  const agentId = (agentResponse as any).agent?.id || (agentResponse as any).id;
+
   return {
     profileId: agentProfileId,
-    agentId: agentResponse.id,
+    agentId: agentId || (agentResponse as any).agentId,
   };
+};
+
+export const updateAgentForm = async (
+  agentId: string,
+  profileId: string,
+  formData: AgentFormData,
+  customBreed: string,
+  customGender: string,
+  customProfession: string
+): Promise<void> => {
+  const profileData = prepareProfileData(formData, customBreed, customGender, customProfession);
+  await agentsApi.updateProfile(profileId, profileData);
+
+  const agentData = prepareAgentData(formData, profileId);
+  await agentsApi.updateAgent(agentId, agentData);
 };
 

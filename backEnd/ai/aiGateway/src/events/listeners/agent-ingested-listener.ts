@@ -153,6 +153,14 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
     // Extract character attributes from metadata
     const characterAttributes: CharacterAttributes | undefined = profile.metadata?.character;
 
+    // Log character attributes for debugging
+    if (characterAttributes) {
+      console.log(`[Agent Provision] Character attributes for agent ${profile.agentId}:`, JSON.stringify(characterAttributes, null, 2));
+    } else {
+      console.warn(`[Agent Provision] No character attributes found for agent ${profile.agentId}`);
+      console.warn(`[Agent Provision] Profile metadata:`, JSON.stringify(profile.metadata, null, 2));
+    }
+
     // Build agent name from character or use agentId
     const agentName = characterAttributes?.name || 
                      characterAttributes?.displayName || 
@@ -160,7 +168,7 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
 
     // Build enhanced system prompt using prompt engineering
     // Include all character attributes that aren't supported in provider APIs
-    const enhancedInstructions = PromptBuilder.buildSystemPrompt(
+    let enhancedInstructions = PromptBuilder.buildSystemPrompt(
       profile.systemPrompt,
       characterAttributes,
       {
@@ -171,6 +179,22 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
         style: 'detailed', // Use detailed style for agent creation
       }
     );
+
+    // If no character attributes and no base prompt, ensure we at least have the agent name
+    if (!enhancedInstructions.trim() && agentName) {
+      enhancedInstructions = `You are ${agentName}.`;
+      console.log(`[Agent Provision] No character attributes or base prompt found, using minimal instructions with name: ${agentName}`);
+    }
+
+    console.log(`[Agent Provision] Enhanced instructions length: ${enhancedInstructions.length} characters`);
+    if (enhancedInstructions.length > 0) {
+      console.log(`[Agent Provision] Full instructions being sent to provider:`);
+      console.log(`--- START INSTRUCTIONS ---`);
+      console.log(enhancedInstructions);
+      console.log(`--- END INSTRUCTIONS ---`);
+    } else {
+      console.warn(`[Agent Provision] WARNING: Enhanced instructions are empty!`);
+    }
 
     // Prepare agent creation request
     const agentRequest: AgentCreationRequest = {

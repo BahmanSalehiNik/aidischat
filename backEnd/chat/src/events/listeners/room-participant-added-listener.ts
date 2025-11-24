@@ -9,7 +9,8 @@ export class RoomParticipantAddedListener extends Listener<RoomParticipantAddedE
   readonly groupId = 'chat-service-room-participant-added';
 
   async onMessage(data: RoomParticipantAddedEvent['data'], payload: any) {
-    const { roomId, participantId, participantType, role, addedAt } = data;
+    const payloadWithInvite = data as RoomParticipantAddedEvent['data'] & { invitedByUserId?: string };
+    const { roomId, participantId, participantType, role, invitedByUserId } = payloadWithInvite;
 
     try {
       console.log(`[RoomParticipantAdded] Received event: roomId=${roomId}, participantId=${participantId}, role=${role}`);
@@ -32,7 +33,8 @@ export class RoomParticipantAddedListener extends Listener<RoomParticipantAddedE
         roomId,
         participantId,
         participantType,
-        role: role as any
+        role: role as any,
+        invitedByUserId,
       });
 
       await participant.save();

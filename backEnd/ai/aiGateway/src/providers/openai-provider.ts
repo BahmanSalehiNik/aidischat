@@ -16,34 +16,219 @@ export class OpenAIProvider extends BaseAiProvider {
   async generateResponse(request: AiProviderRequest): Promise<AiProviderResponse> {
     this.validateRequest(request);
 
-    try {
-      const completion = await this.client.chat.completions.create({
-        model: request.modelName,
-        messages: [
-          { role: 'system', content: request.systemPrompt || 'You are a helpful assistant.' },
-          { role: 'user', content: request.message },
-        ],
-        temperature: request.temperature ?? 0.7,
-        max_tokens: request.maxTokens,
-        // TODO: Handle tools if needed
-      });
+    console.log(`[OpenAI Provider] generateResponse called:`, {
+      hasAssistantId: !!request.assistantId,
+      hasThreadId: !!request.threadId,
+      assistantId: request.assistantId,
+      threadId: request.threadId,
+      messageLength: request.message.length,
+    });
 
-      const content = completion.choices[0]?.message?.content || '';
-      
-      return {
-        content,
-        usage: {
-          promptTokens: completion.usage?.prompt_tokens,
-          completionTokens: completion.usage?.completion_tokens,
-          totalTokens: completion.usage?.total_tokens,
-        },
-      };
+    try {
+      // If assistantId is provided, use Assistants API (threads and runs)
+      // Otherwise, fall back to Chat Completions API for backward compatibility
+      if (request.assistantId) {
+        console.log(`[OpenAI Provider] ✅ Using Assistants API path (assistantId provided)`);
+        return await this.generateResponseWithAssistant(request);
+      } else {
+        console.log(`[OpenAI Provider] ⚠️ Using Chat Completions API path (no assistantId, fallback mode)`);
+        // Fallback to Chat Completions API
+        const completion = await this.client.chat.completions.create({
+          model: request.modelName,
+          messages: [
+            { role: 'system', content: request.systemPrompt || 'You are a helpful assistant.' },
+            { role: 'user', content: request.message },
+          ],
+          temperature: request.temperature ?? 0.7,
+          max_tokens: request.maxTokens,
+        });
+
+        const content = completion.choices[0]?.message?.content || '';
+        
+        return {
+          content,
+          usage: {
+            promptTokens: completion.usage?.prompt_tokens,
+            completionTokens: completion.usage?.completion_tokens,
+            totalTokens: completion.usage?.total_tokens,
+          },
+        };
+      }
     } catch (error: any) {
       console.error('OpenAI API error:', error);
       return {
         content: '',
         error: error.message || 'Failed to generate response from OpenAI',
       };
+    }
+  }
+
+  private async generateResponseWithAssistant(request: AiProviderRequest): Promise<AiProviderResponse> {
+    if (!request.assistantId) {
+      throw new Error('Assistant ID is required for Assistants API');
+    }
+    if (!request.threadId) {
+      throw new Error('Thread ID is required for Assistants API');
+    }
+
+    console.log(`[OpenAI Provider] ========== ASSISTANTS API FLOW START ==========`);
+    console.log(`[OpenAI Provider] Assistant ID: ${request.assistantId}`);
+    console.log(`[OpenAI Provider] Thread ID: ${request.threadId}`);
+    console.log(`[OpenAI Provider] Message: "${request.message.substring(0, 100)}..."`);
+    
+    // VERIFY: Retrieve the assistant to confirm it exists and check its instructions
+    try {
+      const verifyAssistant = await this.client.beta.assistants.retrieve(request.assistantId);
+      console.log(`[OpenAI Provider] ✅ Verified assistant exists: ${verifyAssistant.id}`);
+      console.log(`[OpenAI Provider] Assistant name: ${verifyAssistant.name}`);
+      console.log(`[OpenAI Provider] Assistant instructions length: ${verifyAssistant.instructions?.length || 0}`);
+      if (verifyAssistant.instructions) {
+        console.log(`[OpenAI Provider] Assistant instructions preview: "${verifyAssistant.instructions.substring(0, 200)}..."`);
+      }
+    } catch (verifyError: any) {
+      console.error(`[OpenAI Provider] ❌ Failed to verify assistant ${request.assistantId}:`, verifyError.message);
+      throw new Error(`Assistant ${request.assistantId} not found or inaccessible: ${verifyError.message}`);
+    }
+
+    try {
+      // Step 1: Use existing thread (threadId is passed in request)
+      const threadId = request.threadId;
+      console.log(`[OpenAI Provider] Using existing thread: ${threadId}`);
+
+      // Step 2: Add message to thread
+      await this.client.beta.threads.messages.create(threadId, {
+        role: 'user',
+        content: request.message,
+      });
+      console.log(`[OpenAI Provider] Added message to thread ${threadId}`);
+
+      // Step 3: Create a run with the assistant ID
+      const run = await this.client.beta.threads.runs.create(threadId, {
+        assistant_id: request.assistantId,
+      });
+      console.log(`[OpenAI Provider] Created run ${run.id} with assistant ${request.assistantId}`);
+
+      // Step 4: Poll for completion
+      let runStatus = await this.client.beta.threads.runs.retrieve(threadId, run.id);
+      let attempts = 0;
+      const maxAttempts = 60; // 60 seconds max wait
+
+      while (runStatus.status === 'queued' || runStatus.status === 'in_progress') {
+        if (attempts >= maxAttempts) {
+          throw new Error('Run timeout: assistant took too long to respond');
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        runStatus = await this.client.beta.threads.runs.retrieve(threadId, run.id);
+        attempts++;
+        console.log(`[OpenAI Provider] Run ${run.id} status: ${runStatus.status} (attempt ${attempts})`);
+      }
+
+      if (runStatus.status === 'failed') {
+        const errorMessage = runStatus.last_error?.message || 'Run failed';
+        console.error(`[OpenAI Provider] Run failed: ${errorMessage}`);
+        throw new Error(`Assistant run failed: ${errorMessage}`);
+      }
+
+      if (runStatus.status !== 'completed') {
+        throw new Error(`Unexpected run status: ${runStatus.status}`);
+      }
+
+      console.log(`[OpenAI Provider] Run ${run.id} completed successfully`);
+
+      // Step 5: Retrieve messages from thread
+      const messages = await this.client.beta.threads.messages.list(threadId);
+      console.log(`[OpenAI Provider] Retrieved ${messages.data.length} messages from thread`);
+      
+      // Find the assistant message for this run
+      const assistantMessage = messages.data.find((msg: any) => msg.role === 'assistant' && msg.run_id === run.id);
+
+      if (!assistantMessage) {
+        console.error(`[OpenAI Provider] No assistant message found for run ${run.id}`);
+        console.error(`[OpenAI Provider] Available messages:`, messages.data.map((m: any) => ({
+          role: m.role,
+          run_id: m.run_id,
+          id: m.id,
+        })));
+        throw new Error('No assistant message found in thread');
+      }
+
+      console.log(`[OpenAI Provider] Found assistant message:`, {
+        messageId: assistantMessage.id,
+        role: assistantMessage.role,
+        runId: assistantMessage.run_id,
+        contentType: typeof assistantMessage.content,
+        contentLength: Array.isArray(assistantMessage.content) ? assistantMessage.content.length : 'not array',
+      });
+
+      // Extract text content from message
+      // Content is an array of content blocks
+      let content = '';
+      if (Array.isArray(assistantMessage.content)) {
+        console.log(`[OpenAI Provider] Content blocks structure:`, JSON.stringify(assistantMessage.content, null, 2));
+        
+        content = assistantMessage.content
+          .filter((block: any) => {
+            if (block.type === 'text') {
+              return true;
+            }
+            console.log(`[OpenAI Provider] Skipping non-text block:`, block.type);
+            return false;
+          })
+          .map((block: any) => {
+            // Handle different text block formats
+            // Format 1: block.text is a string
+            if (typeof block.text === 'string') {
+              return block.text;
+            }
+            // Format 2: block.text is an object with .value
+            if (block.text && typeof block.text === 'object' && typeof block.text.value === 'string') {
+              return block.text.value;
+            }
+            // Format 3: block has .text property that's an object
+            if (block.text && typeof block.text === 'object') {
+              console.warn(`[OpenAI Provider] Text block has object structure:`, JSON.stringify(block.text, null, 2));
+              // Try to extract any string value
+              const textValue = block.text.value || block.text.content || JSON.stringify(block.text);
+              if (typeof textValue === 'string') {
+                return textValue;
+              }
+            }
+            // Fallback: log and return empty
+            console.warn(`[OpenAI Provider] Unexpected text block format:`, JSON.stringify(block, null, 2));
+            return '';
+          })
+          .filter((text: string) => text && text.length > 0)
+          .join('\n');
+      } else {
+        console.error(`[OpenAI Provider] Content is not an array:`, typeof assistantMessage.content);
+        console.error(`[OpenAI Provider] Content value:`, JSON.stringify(assistantMessage.content, null, 2));
+        throw new Error('Assistant message content is not in expected format');
+      }
+
+      if (!content || content.trim().length === 0) {
+        console.error(`[OpenAI Provider] Empty content extracted from assistant message`);
+        console.error(`[OpenAI Provider] Full message structure:`, JSON.stringify(assistantMessage, null, 2));
+        throw new Error('Assistant returned empty response');
+      }
+
+      console.log(`[OpenAI Provider] ✅ Retrieved response from assistant (${content.length} chars)`);
+      console.log(`[OpenAI Provider] Response preview: "${content.substring(0, 200)}..."`);
+      console.log(`[OpenAI Provider] ========== ASSISTANTS API FLOW COMPLETE ==========`);
+
+      // Get usage from run if available
+      const usage = runStatus.usage ? {
+        promptTokens: runStatus.usage.prompt_tokens,
+        completionTokens: runStatus.usage.completion_tokens,
+        totalTokens: runStatus.usage.total_tokens,
+      } : undefined;
+
+      return {
+        content,
+        usage,
+      };
+    } catch (error: any) {
+      console.error('[OpenAI Provider] Assistants API error:', error);
+      throw error;
     }
   }
 
@@ -77,6 +262,16 @@ export class OpenAIProvider extends BaseAiProvider {
         }
       }
 
+      // Log instructions being sent to OpenAI (for debugging)
+      console.log(`[OpenAI Provider] Creating assistant "${request.name}" with instructions (${request.instructions.length} chars)`);
+      if (request.instructions.length > 0) {
+        console.log(`[OpenAI Provider] ========== FULL INSTRUCTIONS BEING SENT TO OPENAI ==========`);
+        console.log(request.instructions);
+        console.log(`[OpenAI Provider] ========== END OF INSTRUCTIONS ==========`);
+      } else {
+        console.warn(`[OpenAI Provider] ⚠️ WARNING: Instructions are empty!`);
+      }
+
       // Create assistant using OpenAI Assistants API
       const assistant = await this.client.beta.assistants.create({
         name: request.name,
@@ -86,6 +281,39 @@ export class OpenAIProvider extends BaseAiProvider {
         metadata: request.metadata,
       });
 
+      console.log(`[OpenAI Provider] ✅ Assistant created successfully: ${assistant.id}`);
+
+      // VERIFICATION: Retrieve the assistant immediately to verify instructions were stored correctly
+      let retrievedAssistant: any = null;
+      try {
+        retrievedAssistant = await this.client.beta.assistants.retrieve(assistant.id);
+        console.log(`[OpenAI Provider] ========== VERIFICATION: RETRIEVED ASSISTANT FROM OPENAI ==========`);
+        console.log(`[OpenAI Provider] Assistant ID: ${retrievedAssistant.id}`);
+        console.log(`[OpenAI Provider] Assistant Name: ${retrievedAssistant.name}`);
+        console.log(`[OpenAI Provider] Instructions Length: ${retrievedAssistant.instructions?.length || 0} chars`);
+        console.log(`[OpenAI Provider] Instructions (as stored by OpenAI):`);
+        console.log(retrievedAssistant.instructions || '(empty)');
+        console.log(`[OpenAI Provider] Model: ${retrievedAssistant.model}`);
+        console.log(`[OpenAI Provider] Tools Count: ${retrievedAssistant.tools?.length || 0}`);
+        console.log(`[OpenAI Provider] ========== END VERIFICATION ==========`);
+        
+        // Compare sent vs stored
+        if (retrievedAssistant.instructions !== request.instructions) {
+          console.warn(`[OpenAI Provider] ⚠️ WARNING: Instructions mismatch!`);
+          console.warn(`[OpenAI Provider] Sent length: ${request.instructions.length}, Stored length: ${retrievedAssistant.instructions?.length || 0}`);
+          if (retrievedAssistant.instructions) {
+            const sentPreview = request.instructions.substring(0, 200);
+            const storedPreview = retrievedAssistant.instructions.substring(0, 200);
+            console.warn(`[OpenAI Provider] Sent preview: ${sentPreview}...`);
+            console.warn(`[OpenAI Provider] Stored preview: ${storedPreview}...`);
+          }
+        } else {
+          console.log(`[OpenAI Provider] ✅ Instructions match perfectly!`);
+        }
+      } catch (verifyError: any) {
+        console.error(`[OpenAI Provider] ⚠️ Failed to verify assistant: ${verifyError.message}`);
+      }
+
       return {
         providerAgentId: assistant.id,
         metadata: {
@@ -93,6 +321,7 @@ export class OpenAIProvider extends BaseAiProvider {
           object: assistant.object,
           description: assistant.description,
           toolCount: assistant.tools?.length || 0,
+          verifiedInstructions: retrievedAssistant?.instructions || null,
         },
       };
     } catch (error: any) {

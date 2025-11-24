@@ -152,5 +152,11 @@ export const createAgentStyles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
 });
 

@@ -26,12 +26,14 @@ router.get('/api/debug/rooms/:roomId/participants/:participantId', extractJWTPay
         participantType: participant.participantType,
         role: participant.role,
         joinedAt: participant.joinedAt,
-        leftAt: participant.leftAt
+        leftAt: participant.leftAt,
+        invitedByUserId: participant.invitedByUserId
       } : null,
       allParticipantsInRoom: allParticipants.map(p => ({
         participantId: p.participantId,
         role: p.role,
-        joinedAt: p.joinedAt
+        joinedAt: p.joinedAt,
+        invitedByUserId: p.invitedByUserId
       }))
     });
   } catch (error: any) {

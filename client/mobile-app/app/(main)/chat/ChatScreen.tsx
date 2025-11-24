@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, ActivityIndicator, Platform, Keyboard } from 'react-native';
+import { View, Text, ActivityIndicator, Platform, Keyboard, TouchableOpacity } from 'react-native';
 import { FlashList, FlashListRef } from '@shopify/flash-list';
 import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useWebSocket } from '../../../hooks/useWebSocket';
 import { useChatStore } from '../../../store/chatStore';
 import { MessageBubble } from '../../../components/chat/MessageBubble';
@@ -12,21 +13,25 @@ import { useAuthStore } from '../../../store/authStore';
 import { ErrorBanner } from '../../../components/chat/ErrorBanner';
 import { SetupBanner } from '../../../components/chat/SetupBanner';
 import { chatScreenStyles as styles } from '../../../styles/chat/chatScreenStyles';
+import { InviteParticipantsModal } from '../../../components/chat/InviteParticipantsModal';
 
 export default function ChatScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
-  const { messages, setMessages, addMessage, currentRoomId, setCurrentRoom } = useChatStore();
+  const { messages, setMessages, addMessage, currentRoomId, setCurrentRoom, rooms, roomMembers } = useChatStore();
   const { sendMessage, isConnected, connectionError } = useWebSocket(roomId || null);
   const { user } = useAuthStore();
   const [loading, setLoading] = React.useState(true);
   const [settingUp, setSettingUp] = React.useState(false);
   const [setupError, setSetupError] = React.useState(false);
   const [keyboardHeight, setKeyboardHeight] = React.useState(0);
+  const [inviteModalVisible, setInviteModalVisible] = React.useState(false);
   const setupStartTimeRef = useRef<number | null>(null);
   const listRef = useRef<FlashListRef<any>>(null);
   const insets = useSafeAreaInsets();
 
   const roomMessages = roomId ? messages[roomId] || [] : [];
+  const memberIds = roomId ? roomMembers[roomId] || [] : [];
+  const room = rooms.find((r) => r.id === roomId);
 
   useEffect(() => {
     if (roomId) {
@@ -223,6 +228,22 @@ export default function ChatScreen() {
       )}
 
       <View style={styles.listContainer}>
+        <View style={styles.headerBar}>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.headerTitle}>{room?.name || 'Conversation'}</Text>
+            <Text style={styles.headerSubtitle}>
+              {memberIds.length ? `${memberIds.length} participants` : 'No participants yet'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.inviteButton}
+            onPress={() => setInviteModalVisible(true)}
+            disabled={!roomId}
+          >
+            <Ionicons name="person-add" size={18} color="#FFFFFF" />
+            <Text style={styles.inviteButtonText}>Invite</Text>
+          </TouchableOpacity>
+        </View>
         <FlashList
           ref={listRef}
           data={roomMessages}
@@ -267,6 +288,16 @@ export default function ChatScreen() {
         >
           <MessageInput onSend={handleSend} disabled={!isConnected} />
         </View>
+      )}
+
+      {roomId && (
+        <InviteParticipantsModal
+          visible={inviteModalVisible}
+          roomId={roomId}
+          roomName={room?.name}
+          existingMemberIds={memberIds}
+          onClose={() => setInviteModalVisible(false)}
+        />
       )}
     </View>
   );

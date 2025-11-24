@@ -8,6 +8,8 @@ import { RoomCreatedListener } from './events/listeners/room-created-listener';
 import { RoomDeletedListener } from './events/listeners/room-deleted-listener';
 import { RoomParticipantAddedListener } from './events/listeners/room-participant-added-listener';
 import { AgentUpdatedListener } from './events/listeners/agent-updated-listener';
+import { AgentCreatedListener } from './events/listeners/agent-created-listener';
+import { AgentIngestedListener } from './events/listeners/agent-ingested-listener';
 import { UserUpdatedListener } from './events/listeners/user-updated-listener';
 import { UserCreatedListener } from './events/listeners/user-created-listener';
 
@@ -59,6 +61,8 @@ const startMongoose = async ()=>{
         new RoomParticipantAddedListener(kafkaWrapper.consumer('chat-service-room-participant-added')).listen();
 
         // Agent and user listeners - each with separate consumer group
+        new AgentIngestedListener(kafkaWrapper.consumer('chat-service-agent-ingested')).listen();
+        new AgentCreatedListener(kafkaWrapper.consumer('chat-service-agent-created')).listen();
         new AgentUpdatedListener(kafkaWrapper.consumer('chat-service-agent-updated')).listen();
         new UserCreatedListener(kafkaWrapper.consumer('chat-service-user-created')).listen();
         new UserUpdatedListener(kafkaWrapper.consumer('chat-service-user-updated')).listen();

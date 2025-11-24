@@ -3,10 +3,12 @@ import { Listener } from '@aichatwar/shared';
 import { AiMessageCreatedEvent } from '@aichatwar/shared';
 import { Subjects } from '@aichatwar/shared';
 import { AgentProfile, AgentProfileStatus } from '../../models/agent-profile';
+import { AssistantThread } from '../../models/assistant-thread';
 import { ProviderFactory } from '../../providers/provider-factory';
 import { AiMessageReplyPublisher } from '../publishers/ai-message-reply-publisher';
 import { kafkaWrapper } from '../../kafka-client';
 import { PromptBuilder, CharacterAttributes } from '../../prompt-engineering';
+import OpenAI from 'openai';
 
 export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
   readonly topic = Subjects.AiMessageCreated;
@@ -109,6 +111,21 @@ export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
     const apiKey = agentProfile.apiKey || this.getApiKeyFromEnv(agentProfile.modelProvider);
     const endpoint = agentProfile.endpoint || this.getEndpointFromEnv(agentProfile.modelProvider);
 
+    // For OpenAI Assistants API: Get or create thread for this room+agent combination
+    let threadId: string | undefined = undefined;
+    if (agentProfile.modelProvider === 'openai' && agentProfile.providerAgentId) {
+      console.log(`[AI Message] Agent ${agentId} is OpenAI, providerAgentId: ${agentProfile.providerAgentId}`);
+      const thread = await this.getOrCreateThread(roomId, agentId, agentProfile.providerAgentId, apiKey);
+      if (!thread) {
+        console.error(`[AI Message] ❌ Failed to get or create thread for agent ${agentId} in room ${roomId}`);
+        return;
+      }
+      threadId = thread;
+      console.log(`[AI Message] ✅ Thread ID for agent ${agentId} in room ${roomId}: ${threadId}`);
+    } else {
+      console.log(`[AI Message] Agent ${agentId} is NOT using OpenAI Assistants API (provider: ${agentProfile.modelProvider}, providerAgentId: ${agentProfile.providerAgentId})`);
+    }
+
     // Create provider instance
     let provider;
     try {
@@ -123,6 +140,17 @@ export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
     }
 
     // Generate response using the provider with optimized prompts
+    // For OpenAI, pass the assistant ID (providerAgentId) and thread ID to use Assistants API
+    const assistantId = agentProfile.modelProvider === 'openai' ? agentProfile.providerAgentId : undefined;
+    console.log(`[AI Message] Calling provider.generateResponse for agent ${agentId}:`, {
+      modelProvider: agentProfile.modelProvider,
+      assistantId: assistantId,
+      threadId: threadId,
+      hasAssistantId: !!assistantId,
+      hasThreadId: !!threadId,
+      willUseAssistantsAPI: agentProfile.modelProvider === 'openai' && !!assistantId && !!threadId,
+    });
+    
     const response = await provider.generateResponse({
       message: messageWithContext,
       systemPrompt: systemPrompt,
@@ -130,6 +158,8 @@ export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
       temperature: 0.7,
       maxTokens: 1000,
       tools: agentProfile.tools,
+      assistantId: assistantId,
+      threadId: threadId,
     });
 
     if (response.error || !response.content) {
@@ -147,6 +177,53 @@ export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
     });
 
     console.log(`Published ai.message.reply for agent ${agentId} (message ${originalMessageId})`);
+  }
+
+  private async getOrCreateThread(
+    roomId: string,
+    agentId: string,
+    assistantId: string,
+    apiKey?: string
+  ): Promise<string | undefined> {
+    try {
+      // Check if thread already exists for this room+agent
+      const existingThread = await AssistantThread.findByRoomAndAgent(roomId, agentId);
+      if (existingThread) {
+        // Update last used timestamp
+        existingThread.lastUsedAt = new Date();
+        await existingThread.save();
+        console.log(`[Thread] Using existing thread ${existingThread.threadId} for agent ${agentId} in room ${roomId}`);
+        return existingThread.threadId;
+      }
+
+      // Create new thread via OpenAI API
+      if (!apiKey) {
+        apiKey = this.getApiKeyFromEnv('openai');
+      }
+      if (!apiKey) {
+        throw new Error('OpenAI API key is required to create thread');
+      }
+
+      const openaiClient = new OpenAI({ apiKey });
+      const thread = await openaiClient.beta.threads.create();
+      console.log(`[Thread] ✅ Created new thread ${thread.id} for agent ${agentId} in room ${roomId} with assistant ${assistantId}`);
+
+      // Store thread mapping in database
+      const threadRecord = AssistantThread.build({
+        roomId,
+        agentId,
+        threadId: thread.id,
+        assistantId,
+        createdAt: new Date(),
+        lastUsedAt: new Date(),
+      });
+      await threadRecord.save();
+
+      return thread.id;
+    } catch (error: any) {
+      console.error(`[Thread] Failed to get or create thread for agent ${agentId} in room ${roomId}:`, error);
+      return undefined;
+    }
   }
 
   private getApiKeyFromEnv(provider: string): string | undefined {

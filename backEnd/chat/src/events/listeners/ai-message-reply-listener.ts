@@ -8,6 +8,7 @@ import { Agent } from '../../models/agent';
 import { AiReplyCount } from '../../models/ai-reply-count';
 import { MessageCreatedPublisher } from '../publishers/message-created-publisher';
 import { kafkaWrapper } from '../../kafka-client';
+import { AI_MAX_REPLIES_PER_MESSAGE } from '../../constants';
 import crypto from 'crypto';
 
 export class AiMessageReplyListener extends Listener<AiMessageReplyEvent> {
@@ -55,9 +56,24 @@ export class AiMessageReplyListener extends Listener<AiMessageReplyEvent> {
 
     await message.save();
 
+    // Verify message was saved
+    const savedMessage = await Message.findOne({ _id: messageId }).lean();
+    if (!savedMessage) {
+      console.error(`❌ [AI Message Reply] Failed to save message ${messageId} - message not found after save!`);
+    } else {
+      console.log(`✅ [AI Message Reply] Message ${messageId} confirmed saved in database:`, {
+        roomId: savedMessage.roomId,
+        senderType: savedMessage.senderType,
+        senderId: savedMessage.senderId,
+        senderName: savedMessage.senderName,
+        contentLength: savedMessage.content?.length || 0,
+        createdAt: savedMessage.createdAt,
+      });
+    }
+
     // Increment reply count for this agent's reply to the original message
     const replyCount = await AiReplyCount.incrementReplyCount(originalMessageId, agentId);
-    console.log(`AI message reply saved in chat service: ${messageId} from agent ${agentId} in room ${roomId}. Reply count for original message ${originalMessageId}: ${replyCount.replyCount}`);
+    console.log(`[AI Message Reply] Reply count for original message ${originalMessageId}: ${replyCount.replyCount}/${AI_MAX_REPLIES_PER_MESSAGE}`);
 
     // Publish message created event (for other services like realtime-gateway)
     await new MessageCreatedPublisher(kafkaWrapper.producer).publish({

@@ -10,61 +10,131 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BreedType, Gender, ModelProvider, formatBreedLabel, formatGenderLabel } from '../../constants/agentConstants';
 import { AgentFormData } from '../../types/agentTypes';
 import { validateAgentForm } from '../../utils/agentValidation';
-import { submitAgentForm } from '../../utils/agentFormHelpers';
+import { updateAgentForm } from '../../utils/agentFormHelpers';
+import { agentsApi } from '../../utils/api';
 import { PickerModal } from '../../components/agents/PickerModal';
 import { FormField } from '../../components/agents/FormField';
 import { ProfessionChips } from '../../components/agents/ProfessionChips';
 import { createAgentStyles as styles } from '../../styles/agent/createAgentStyles';
 
-const getInitialFormData = (): AgentFormData => ({
-  name: '',
-  profession: '',
-  breed: '',
-  gender: '',
-  age: '',
-  displayName: '',
-  title: '',
-  ageRange: '',
-  nationality: '',
-  ethnicity: '',
-  specialization: '',
-  organization: '',
-  role: '',
-  communicationStyle: '',
-  speechPattern: '',
-  backstory: '',
-  personality: [],
-  modelProvider: ModelProvider.OPENAI,
-  modelName: 'gpt-4o',
-  systemPrompt: '',
-  apiKey: '',
-  endpoint: '',
-  voiceId: '',
-  rateLimits: {
-    rpm: 60,
-    tpm: 1000,
-  },
-});
-
-export default function CreateAgentScreen() {
+export default function EditAgentScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ agentId: string }>();
   const insets = useSafeAreaInsets();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
   const [showBreedPicker, setShowBreedPicker] = useState(false);
   const [showGenderPicker, setShowGenderPicker] = useState(false);
   const [showProviderPicker, setShowProviderPicker] = useState(false);
   const [customBreed, setCustomBreed] = useState('');
   const [customGender, setCustomGender] = useState('');
   const [customProfession, setCustomProfession] = useState('');
-  const [formData, setFormData] = useState<AgentFormData>(getInitialFormData());
+  const [formData, setFormData] = useState<AgentFormData>({
+    name: '',
+    profession: '',
+    breed: '',
+    gender: '',
+    age: '',
+    displayName: '',
+    title: '',
+    ageRange: '',
+    nationality: '',
+    ethnicity: '',
+    specialization: '',
+    organization: '',
+    role: '',
+    communicationStyle: '',
+    speechPattern: '',
+    backstory: '',
+    personality: [],
+    modelProvider: ModelProvider.OPENAI,
+    modelName: 'gpt-4o',
+    systemPrompt: '',
+    apiKey: '',
+    endpoint: '',
+    voiceId: '',
+    rateLimits: {
+      rpm: 60,
+      tpm: 1000,
+    },
+  });
+  const [agentId, setAgentId] = useState<string>('');
+  const [profileId, setProfileId] = useState<string>('');
   const [isMounted, setIsMounted] = useState(false);
+
+  // Load agent data
+  useEffect(() => {
+    const loadAgentData = async () => {
+      if (!params.agentId) {
+        Alert.alert('Error', 'Agent ID is required');
+        router.back();
+        return;
+      }
+
+      try {
+        setLoadingData(true);
+        const data = await agentsApi.getAgentWithProfile(params.agentId);
+        const agent = data.agent;
+        const profile = data.agentProfile;
+
+        setAgentId(agent.id);
+        setProfileId(profile.id);
+
+        // Populate form with existing data
+        setFormData({
+          name: profile.name || '',
+          profession: profile.profession || '',
+          breed: profile.breed || '',
+          gender: profile.gender || '',
+          age: profile.age?.toString() || '',
+          displayName: profile.displayName || '',
+          title: profile.title || '',
+          ageRange: profile.ageRange || '',
+          nationality: profile.nationality || '',
+          ethnicity: profile.ethnicity || '',
+          specialization: profile.specialization || '',
+          organization: profile.organization || '',
+          role: profile.role || '',
+          communicationStyle: profile.communicationStyle || '',
+          speechPattern: profile.speechPattern || '',
+          backstory: profile.backstory || '',
+          personality: profile.personality || [],
+          modelProvider: agent.modelProvider as ModelProvider,
+          modelName: agent.modelName || 'gpt-4o',
+          systemPrompt: agent.systemPrompt || '',
+          apiKey: '', // Don't show API key for security
+          endpoint: agent.endpoint || '',
+          voiceId: agent.voiceId || '',
+          rateLimits: agent.rateLimits || { rpm: 60, tpm: 1000 },
+        });
+
+        // Set custom values if breed/gender/profession are "other"
+        if (profile.breed && !Object.values(BreedType).includes(profile.breed as BreedType)) {
+          setCustomBreed(profile.breed);
+          setFormData(prev => ({ ...prev, breed: BreedType.OTHER }));
+        }
+        if (profile.gender && !Object.values(Gender).includes(profile.gender as Gender)) {
+          setCustomGender(profile.gender);
+          setFormData(prev => ({ ...prev, gender: Gender.OTHER }));
+        }
+      } catch (error: any) {
+        console.error('Error loading agent:', error);
+        Alert.alert('Error', error?.message || 'Failed to load agent data.');
+        router.back();
+      } finally {
+        setLoadingData(false);
+      }
+    };
+
+    loadAgentData();
+  }, [params.agentId, router]);
 
   // On iOS, ensure component is fully mounted before allowing input
   useEffect(() => {
@@ -89,13 +159,13 @@ export default function CreateAgentScreen() {
 
     setLoading(true);
     try {
-      await submitAgentForm(formData, customBreed, customGender, customProfession);
-      Alert.alert('Success', 'Agent created successfully!', [
+      await updateAgentForm(agentId, profileId, formData, customBreed, customGender, customProfession);
+      Alert.alert('Success', 'Agent updated successfully!', [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (error: any) {
-      console.error('Error creating agent:', error);
-      Alert.alert('Error', error?.message || 'Failed to create agent. Please try again.');
+      console.error('Error updating agent:', error);
+      Alert.alert('Error', error?.message || 'Failed to update agent. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -136,13 +206,30 @@ export default function CreateAgentScreen() {
     return 'Select gender';
   };
 
+  if (loadingData) {
+    return (
+      <SafeAreaView style={[styles.container, { paddingTop: Math.max(insets.top, 12) }]}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#007AFF" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Edit Agent</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.container, { paddingTop: Math.max(insets.top, 12) }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#007AFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Agent</Text>
+        <Text style={styles.headerTitle}>Edit Agent</Text>
         <View style={styles.placeholder} />
       </View>
 
@@ -162,6 +249,7 @@ export default function CreateAgentScreen() {
             value={formData.name}
             onChangeText={(value) => updateField('name', value)}
             maxLength={50}
+            editable={isMounted}
           />
 
           <View style={styles.fieldContainer}>
@@ -418,7 +506,7 @@ export default function CreateAgentScreen() {
           {loading ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.submitButtonText}>Create Agent</Text>
+            <Text style={styles.submitButtonText}>Update Agent</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
@@ -452,3 +540,4 @@ export default function CreateAgentScreen() {
     </SafeAreaView>
   );
 }
+

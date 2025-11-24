@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  InteractionManager,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
@@ -51,7 +52,17 @@ export default function RegisterScreen() {
     setFormError(null);
     const result = await signUp(trimmedEmail, trimmedPassword);
     if (result.success) {
-      router.replace('/(main)/HomeScreen');
+      // On iOS, wait for interactions to complete before navigating
+      // This ensures TextInputs in the next screen are properly initialized
+      if (Platform.OS === 'ios') {
+        InteractionManager.runAfterInteractions(() => {
+          setTimeout(() => {
+            router.replace('/(main)/HomeScreen');
+          }, 100);
+        });
+      } else {
+        router.replace('/(main)/HomeScreen');
+      }
       return;
     }
 

@@ -27,15 +27,30 @@ export class PromptBuilder {
 
     const sections: string[] = [];
 
-    // Base prompt first
-    if (basePrompt.trim()) {
-      sections.push(basePrompt);
+    // Character identity section FIRST - this is critical for OpenAI Assistants API
+    // The name and identity must be at the very beginning
+    const identitySection = this.buildIdentitySection(character);
+    if (identitySection && identitySection.trim()) {
+      sections.push(identitySection);
+    } else {
+      // Fallback: ensure name is always included in the exact format that works
+      const name = character.name || character.displayName || 'this character';
+      const fullName = [character.title, name].filter(Boolean).join(' ');
+      // Use lowercase format that matches working example
+      sections.push(`your name is ${fullName}.`);
+    }
+    
+    // Double-check: if name is not in the identity section, add it explicitly
+    const name = character.name || character.displayName;
+    if (name && identitySection && !identitySection.toLowerCase().includes(name.toLowerCase())) {
+      const fullName = [character.title, name].filter(Boolean).join(' ');
+      // Prepend name explicitly if it's missing
+      sections[0] = `your name is ${fullName}. ${sections[0]}`;
     }
 
-    // Character identity section
-    const identitySection = this.buildIdentitySection(character);
-    if (identitySection) {
-      sections.push(identitySection);
+    // Base prompt after identity (if provided)
+    if (basePrompt.trim()) {
+      sections.push(basePrompt);
     }
 
     // Physical appearance (if enabled)
@@ -70,7 +85,11 @@ export class PromptBuilder {
       }
     }
 
-    return sections.join('\n\n').trim();
+    // Join sections with double newlines, but ensure identity comes first
+    // For OpenAI Assistants API, a more natural flow works better
+    // Join sections with single newline for better flow
+    // The identity section should be the first line and most prominent
+    return sections.join('\n').trim();
   }
 
   /**
@@ -112,48 +131,79 @@ export class PromptBuilder {
   }
 
   private static buildIdentitySection(character: CharacterAttributes, concise = false): string {
+    // Always include name prominently - use name, displayName, or a fallback
+    const name = character.name || character.displayName || 'this character';
+    const fullName = [character.title, name].filter(Boolean).join(' ');
+    
+    // Build a single, natural, flowing sentence matching the user's working format:
+    // "you are an engineer from Brazil your name is Helen and you are 30 years old"
+    // Use lowercase for natural flow, name must be prominent
+    
     const parts: string[] = [];
-
-    if (character.name) {
-      const fullName = [character.title, character.name].filter(Boolean).join(' ');
-      parts.push(`You are ${fullName}${character.displayName ? ` (also known as ${character.displayName})` : ''}.`);
-    }
-
-    if (!concise) {
-      if (character.age || character.ageRange) {
-        const ageInfo = character.age ? `${character.age} years old` : character.ageRange;
-        parts.push(`Age: ${ageInfo}`);
-      }
-
-      if (character.gender) {
-        parts.push(`Gender: ${character.gender}`);
-      }
-
-      if (character.breed) {
-        const breedInfo = [character.breed, character.subtype].filter(Boolean).join(' - ');
-        parts.push(`Type: ${breedInfo}`);
-      }
-
-      if (character.nationality || character.ethnicity) {
-        const originInfo = [character.nationality, character.ethnicity].filter(Boolean).join(', ');
-        parts.push(`Origin: ${originInfo}`);
-      }
-    }
-
+    
+    // Start with profession/role if available
     if (character.profession || character.role) {
-      const roleInfo = [character.profession, character.role].filter(Boolean).join(' / ');
-      parts.push(`Role: ${roleInfo}`);
+      const roleInfo = character.profession || character.role;
+      parts.push(`you are ${roleInfo}`);
+      if (character.specialization) {
+        parts.push(`specializing in ${character.specialization}`);
+      }
     }
-
-    if (character.specialization) {
-      parts.push(`Specialization: ${character.specialization}`);
+    
+    // CRITICAL: Name must be very clear and prominent
+    // Use lowercase "your name is" to match natural flow
+    if (character.profession || character.role) {
+      parts.push(`your name is ${fullName}`);
+    } else {
+      // If no profession, start with name
+      parts.push(`your name is ${fullName}`);
     }
-
+    
+    // Add origin/nationality
+    if (character.nationality || character.ethnicity) {
+      const originInfo = [character.nationality, character.ethnicity].filter(Boolean).join(', ');
+      parts.push(`from ${originInfo}`);
+    }
+    
+    // Add age
+    if (character.age || character.ageRange) {
+      const ageInfo = character.age ? `${character.age} years old` : character.ageRange;
+      parts.push(`you are ${ageInfo}`);
+    }
+    
+    // Add gender if provided
+    if (character.gender) {
+      parts.push(`you are ${character.gender}`);
+    }
+    
+    // Add breed/type if provided
+    if (character.breed) {
+      const breedInfo = [character.breed, character.subtype].filter(Boolean).join(' - ');
+      parts.push(`you are a ${breedInfo}`);
+    }
+    
+    // Join all parts into a single flowing sentence (lowercase, natural)
+    let identitySentence = parts.join(' ');
+    
+    // Capitalize first letter only
+    if (identitySentence.length > 0) {
+      identitySentence = identitySentence.charAt(0).toUpperCase() + identitySentence.slice(1);
+    }
+    
+    // Add display name if different from name (as a separate note)
+    if (character.displayName && character.name && character.displayName !== character.name) {
+      identitySentence += `. You are also known as ${character.displayName}`;
+    }
+    
+    // Add organization if provided
     if (character.organization) {
-      parts.push(`Organization: ${character.organization}`);
+      identitySentence += `. You work for ${character.organization}`;
     }
-
-    return parts.join('\n');
+    
+    // End with period
+    identitySentence += '.';
+    
+    return identitySentence;
   }
 
   private static buildAppearanceSection(

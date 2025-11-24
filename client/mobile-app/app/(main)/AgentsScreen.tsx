@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,6 +41,36 @@ export default function AgentsScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     loadAgents();
+  };
+
+  const handleEdit = (agent: AgentWithProfile) => {
+    router.push({
+      pathname: '/(main)/EditAgentScreen',
+      params: { agentId: agent.agent.id },
+    });
+  };
+
+  const handleDelete = (agent: AgentWithProfile) => {
+    const agentName = agent.agentProfile?.displayName || agent.agentProfile?.name || 'this agent';
+    Alert.alert(
+      'Delete Agent',
+      `Are you sure you want to delete ${agentName}? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await agentsApi.deleteAgent(agent.agent.id);
+              loadAgents(); // Reload the list
+            } catch (error: any) {
+              Alert.alert('Error', error?.message || 'Failed to delete agent. Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   if (loading) {
@@ -113,6 +143,8 @@ export default function AgentsScreen() {
                 // TODO: Navigate to agent detail screen
                 console.log('Agent pressed:', item.agent.id);
               }}
+              onEdit={() => handleEdit(item)}
+              onDelete={() => handleDelete(item)}
             />
           ))}
         </ScrollView>

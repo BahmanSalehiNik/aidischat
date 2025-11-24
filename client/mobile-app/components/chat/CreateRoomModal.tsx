@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -40,13 +40,21 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   onSubmit,
 }) => {
   const roomNameInputRef = useRef<TextInput>(null);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    if (visible && roomNameInputRef.current) {
-      // Small delay to ensure modal is fully rendered
-      setTimeout(() => {
-        roomNameInputRef.current?.focus();
-      }, 100);
+    if (visible) {
+      // On iOS, ensure modal is fully rendered and ready before allowing input
+      const delay = Platform.OS === 'ios' ? 150 : 100;
+      const timer = setTimeout(() => {
+        setIsReady(true);
+        if (roomNameInputRef.current) {
+          roomNameInputRef.current.focus();
+        }
+      }, delay);
+      return () => clearTimeout(timer);
+    } else {
+      setIsReady(false);
     }
   }, [visible]);
 
@@ -90,7 +98,8 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                 placeholderTextColor="#999"
                 value={roomName}
                 onChangeText={onRoomNameChange}
-                autoFocus
+                editable={isReady}
+                autoFocus={isReady}
                 onFocus={() => {
                   if (showTypeDropdown) {
                     onToggleDropdown();

@@ -68,7 +68,20 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
 
     await message.save();
 
-    console.log(`Message ingested and saved in chat service: ${messageId} for room ${roomId}`);
+    // Verify message was saved
+    const savedMessage = await Message.findOne({ _id: messageId }).lean();
+    if (!savedMessage) {
+      console.error(`❌ [Message Ingest] Failed to save message ${messageId} - message not found after save!`);
+    } else {
+      console.log(`✅ [Message Ingest] Message ${messageId} confirmed saved in database:`, {
+        roomId: savedMessage.roomId,
+        senderType: savedMessage.senderType,
+        senderId: savedMessage.senderId,
+        senderName: savedMessage.senderName,
+        contentLength: savedMessage.content?.length || 0,
+        createdAt: savedMessage.createdAt,
+      });
+    }
 
     // Publish message created event (for other services like realtime-gateway)
     await new MessageCreatedPublisher(kafkaWrapper.producer).publish({
@@ -95,12 +108,23 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
       if (aiParticipants.length > 0) {
         // Get agentIds from participants
         const participantAgentIds = aiParticipants.map(p => p.participantId);
+        console.log(`[MessageIngest] Found ${aiParticipants.length} agent participants in room ${roomId}: ${participantAgentIds.join(', ')}`);
 
         // Get agent information to get ownerUserId (using createdBy field which should be ownerUserId)
         const agents = await Agent.find({
           _id: { $in: participantAgentIds },
           isActive: true
         });
+        console.log(`[MessageIngest] Found ${agents.length} active agents in chat service (out of ${participantAgentIds.length} participants)`);
+        
+        if (agents.length === 0 && participantAgentIds.length > 0) {
+          // Check if agents exist but are not active
+          const allAgents = await Agent.find({ _id: { $in: participantAgentIds } });
+          console.log(`[MessageIngest] Total agents found (including inactive): ${allAgents.length}`);
+          allAgents.forEach(a => {
+            console.log(`[MessageIngest] Agent ${a.id}: isActive=${a.isActive}, name=${a.name}`);
+          });
+        }
 
         // Check reply counts for all agents in a single query and filter out those that have reached the limit
         const agentIds = agents.map(a => a.id);

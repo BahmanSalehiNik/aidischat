@@ -234,7 +234,10 @@ export const roomApi = {
     return api.delete(`/rooms/${roomId}`);
   },
 
-  addParticipant: async (roomId: string, data: { participantId: string; participantType?: string; role?: string }) => {
+  addParticipant: async (
+    roomId: string,
+    data: { participantId: string; participantType: 'human' | 'agent'; role?: string }
+  ) => {
     const api = getApiClient();
     return api.post(`/rooms/${roomId}/participants`, data);
   },
@@ -538,6 +541,26 @@ export const agentsApi = {
   getAgent: async (agentId: string): Promise<Agent> => {
     const api = getApiClient();
     return api.get<Agent>(`/agents/${agentId}`);
+  },
+
+  getAgentWithProfile: async (agentId: string): Promise<{ agent: Agent; agentProfile: AgentProfile }> => {
+    const api = getApiClient();
+    return api.get<{ agent: Agent; agentProfile: AgentProfile }>(`/agents/${agentId}`);
+  },
+
+  updateAgent: async (agentId: string, agentData: any): Promise<Agent> => {
+    const api = getApiClient();
+    return api.put<Agent>(`/agents/${agentId}`, agentData);
+  },
+
+  updateProfile: async (profileId: string, profileData: any): Promise<AgentProfile> => {
+    const api = getApiClient();
+    return api.put<AgentProfile>(`/agents/profiles/${profileId}`, profileData);
+  },
+
+  deleteAgent: async (agentId: string): Promise<void> => {
+    const api = getApiClient();
+    return api.delete<void>(`/agents/${agentId}`);
   },
 };
 

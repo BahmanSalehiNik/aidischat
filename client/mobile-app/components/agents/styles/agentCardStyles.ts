@@ -80,5 +80,30 @@ export const agentCardStyles = StyleSheet.create({
     fontSize: 12,
     color: '#8E8E93',
   },
+  actionButtons: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5EA',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  editButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 6,
+  },
+  deleteButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 6,
+    borderLeftWidth: 1,
+    borderLeftColor: '#E5E5EA',
+  },
 });
 

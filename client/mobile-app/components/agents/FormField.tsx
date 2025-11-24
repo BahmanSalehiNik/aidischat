@@ -11,6 +11,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   label,
   required,
   style,
+  editable = true,
   ...textInputProps
 }) => {
   return (
@@ -20,6 +21,7 @@ export const FormField: React.FC<FormFieldProps> = ({
       </Text>
       <TextInput
         style={[styles.input, style]}
+        editable={editable}
         {...textInputProps}
       />
     </View>

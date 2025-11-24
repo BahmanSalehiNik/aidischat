@@ -8,6 +8,8 @@ import { agentCardStyles as styles } from './styles/agentCardStyles';
 interface AgentCardProps {
   agent: AgentWithProfile;
   onPress: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
 const getStatusColor = (status: string) => {
@@ -36,7 +38,7 @@ const getStatusLabel = (status: string) => {
   }
 };
 
-export const AgentCard: React.FC<AgentCardProps> = ({ agent, onPress }) => {
+export const AgentCard: React.FC<AgentCardProps> = ({ agent, onPress, onEdit, onDelete }) => {
   const profile = agent.agentProfile;
   const displayName = profile?.displayName || profile?.name || 'Unnamed Agent';
   const profession = profile?.profession || 'No profession';
@@ -44,8 +46,8 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, onPress }) => {
   const statusColor = getStatusColor(agent.agent.status);
 
   return (
-    <TouchableOpacity style={styles.agentCard} onPress={onPress}>
-      <View style={styles.agentCardContent}>
+    <View style={styles.agentCard}>
+      <TouchableOpacity style={styles.agentCardContent} onPress={onPress}>
         {profile?.avatarUrl ? (
           <Image source={{ uri: profile.avatarUrl }} style={styles.agentAvatar} />
         ) : (
@@ -72,8 +74,22 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, onPress }) => {
           </View>
         </View>
         <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+      {(onEdit || onDelete) && (
+        <View style={styles.actionButtons}>
+          {onEdit && (
+            <TouchableOpacity style={styles.editButton} onPress={onEdit}>
+              <Ionicons name="create-outline" size={18} color="#007AFF" />
+            </TouchableOpacity>
+          )}
+          {onDelete && (
+            <TouchableOpacity style={styles.deleteButton} onPress={onDelete}>
+              <Ionicons name="trash-outline" size={18} color="#FF3B30" />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </View>
   );
 };
 

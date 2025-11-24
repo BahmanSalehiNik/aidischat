@@ -6,6 +6,7 @@ interface ParticipantAttrs {
   participantId: string;           // userId or agentId
   participantType: 'human' | 'agent';
   role?: 'member' | 'moderator' | 'owner';
+  invitedByUserId?: string;
 }
 
 interface ParticipantDoc extends mongoose.Document {
@@ -15,6 +16,7 @@ interface ParticipantDoc extends mongoose.Document {
   role: string;
   joinedAt: Date;
   leftAt?: Date;
+  invitedByUserId?: string;
 }
 
 interface ParticipantModel extends mongoose.Model<ParticipantDoc> {
@@ -28,6 +30,7 @@ const participantSchema = new mongoose.Schema({
   role: { type: String, enum: ['member', 'moderator', 'owner'], default: 'member' },
   joinedAt: { type: Date, default: Date.now },
   leftAt: { type: Date },
+  invitedByUserId: { type: String },
 });
 
 participantSchema.index({ roomId: 1, participantId: 1 }, { unique: true });

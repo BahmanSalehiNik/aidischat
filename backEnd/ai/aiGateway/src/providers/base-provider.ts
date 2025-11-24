@@ -16,6 +16,8 @@ export interface AiProviderRequest {
   temperature?: number;
   maxTokens?: number;
   tools?: Array<{ name: string; config: any }>;
+  assistantId?: string; // For OpenAI Assistants API - the providerAgentId
+  threadId?: string; // For OpenAI Assistants API - the thread ID (one per room+agent)
 }
 
 export interface AgentCreationRequest {
