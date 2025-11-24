@@ -14,6 +14,7 @@ import {
 } from './events/listeners/friendship/friendshipListener';
 import {
   ProfileCreatedListener,
+  ProfileUpdatedListener,
   ProfileDeletedListener,
 } from './events/listeners/profile/profileListener';
 
@@ -46,6 +47,7 @@ const start = async () => {
 
     // Profile event listeners
     new ProfileCreatedListener(kafkaWrapper.consumer('friend-suggestions-profile-created')).listen();
+    new ProfileUpdatedListener(kafkaWrapper.consumer('friend-suggestions-profile-updated')).listen();
     new ProfileDeletedListener(kafkaWrapper.consumer('friend-suggestions-profile-deleted')).listen();
 
     // Friendship event listeners

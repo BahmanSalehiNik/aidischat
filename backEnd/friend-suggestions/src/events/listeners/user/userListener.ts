@@ -19,12 +19,19 @@ class UserCreatedListener extends Listener<UserCreatedEvent> {
   groupId = 'friend-suggestions-user-created';
 
   async onMessage(processedMessage: UserCreatedEvent['data'], msg: EachMessagePayload) {
+    // Extract username from email (part before @) as fallback
+    const emailUsername = processedMessage.email.split('@')[0];
+
     await NewUser.updateOne(
       { userId: processedMessage.id },
       {
         $setOnInsert: {
           userId: processedMessage.id,
           createdAtMs: Date.now(),
+        },
+        // Set username from email as fallback (will be overwritten by profile if created)
+        $set: {
+          username: emailUsername,
         },
       },
       { upsert: true }

@@ -11,7 +11,7 @@ router.post('/', async (req, res) => {
 
   // TODO: persist feedback for ranking experiments.
   console.log('Friend suggestion feedback', {
-    userId: req.currentUser!.id,
+    userId: req.jwtPayload!.id,
     candidateId,
     action,
   });

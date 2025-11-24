@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { useAuthStore } from '../store/authStore';
-import { Message } from '../store/chatStore';
+import { useAuthStore } from '../../store/authStore';
+import { Message } from '../../store/chatStore';
 
 interface MessageBubbleProps {
   message: Message;

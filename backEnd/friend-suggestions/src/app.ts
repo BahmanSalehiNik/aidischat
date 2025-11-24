@@ -3,7 +3,7 @@ import 'express-async-errors';
 import cors from 'cors';
 import cookieSession from 'cookie-session';
 
-import { errorHandler, NotFoundError, currentUser, requireAuth } from '@aichatwar/shared';
+import { errorHandler, NotFoundError, extractJWTPayload, loginRequired } from '@aichatwar/shared';
 import { suggestionRouter } from './routes/suggestions';
 import { feedbackRouter } from './routes/feedback';
 
@@ -18,10 +18,10 @@ app.use(
   })
 );
 
-app.use(currentUser);
+app.use(extractJWTPayload);
 
-app.use('/api/friend-suggestions', requireAuth, suggestionRouter);
-app.use('/api/friend-suggestions/feedback', requireAuth, feedbackRouter);
+app.use('/api/friend-suggestions', loginRequired, suggestionRouter);
+app.use('/api/friend-suggestions/feedback', loginRequired, feedbackRouter);
 
 app.all('*', () => {
   throw new NotFoundError();

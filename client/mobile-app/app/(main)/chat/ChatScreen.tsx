@@ -1,14 +1,17 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { View, Text, ActivityIndicator, Platform, Keyboard } from 'react-native';
 import { FlashList, FlashListRef } from '@shopify/flash-list';
 import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWebSocket } from '../../../hooks/useWebSocket';
 import { useChatStore } from '../../../store/chatStore';
-import { MessageBubble } from '../../../components/MessageBubble';
-import { MessageInput } from '../../../components/MessageInput';
+import { MessageBubble } from '../../../components/chat/MessageBubble';
+import { MessageInput } from '../../../components/chat/MessageInput';
 import { messageApi, debugApi } from '../../../utils/api';
 import { useAuthStore } from '../../../store/authStore';
+import { ErrorBanner } from '../../../components/chat/ErrorBanner';
+import { SetupBanner } from '../../../components/chat/SetupBanner';
+import { chatScreenStyles as styles } from '../../../styles/chat/chatScreenStyles';
 
 export default function ChatScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
@@ -41,22 +44,15 @@ export default function ChatScreen() {
       (e) => {
         const height = e.endCoordinates.height;
         
-        // On Android, delay setting the height slightly to let keyboard fully appear
-        // This prevents the input from jumping too high initially
         if (Platform.OS === 'android') {
-          // Clear any pending timeout
           if (keyboardTimeout) clearTimeout(keyboardTimeout);
-          
-          // Wait for keyboard to fully appear before setting margin
           keyboardTimeout = setTimeout(() => {
             setKeyboardHeight(height);
-          }, 100); // Small delay to let keyboard settle
+          }, 100);
         } else {
-          // iOS: set immediately
           setKeyboardHeight(height);
         }
         
-        // Scroll to bottom when keyboard appears to ensure messages are visible
         setTimeout(() => {
           if (listRef.current && roomMessages.length > 0) {
             listRef.current.scrollToEnd({ animated: true });
@@ -67,9 +63,7 @@ export default function ChatScreen() {
     const hideSubscription = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
       () => {
-        // Clear any pending timeout
         if (keyboardTimeout) clearTimeout(keyboardTimeout);
-        
         setKeyboardHeight(0);
       }
     );
@@ -82,10 +76,7 @@ export default function ChatScreen() {
   }, [roomMessages.length]);
 
   useEffect(() => {
-    // Scroll to bottom when new messages arrive
-    // This ensures new messages are visible even when keyboard is open
     if (roomMessages.length > 0 && listRef.current) {
-      // Use longer delay when keyboard is open to ensure proper scroll
       const delay = keyboardHeight > 0 ? 400 : 150;
       setTimeout(() => {
         listRef.current?.scrollToEnd({ animated: true });
@@ -97,7 +88,6 @@ export default function ChatScreen() {
     if (!roomId) return;
 
     try {
-      // Only show loading on first attempt
       if (retryCount === 0) {
         setLoading(true);
         setSettingUp(false);
@@ -113,14 +103,12 @@ export default function ChatScreen() {
       setSetupError(false);
       setupStartTimeRef.current = null;
       
-      // Scroll to bottom after loading messages
       if (messagesData.length > 0 && listRef.current) {
         setTimeout(() => {
           listRef.current?.scrollToEnd({ animated: false });
         }, 100);
       }
     } catch (error: any) {
-      // Always log errors to console for debugging
       console.error('Error loading messages:', error);
       console.error('Error details:', {
         message: error?.message,
@@ -129,18 +117,13 @@ export default function ChatScreen() {
         elapsedTime: setupStartTimeRef.current ? Date.now() - setupStartTimeRef.current : 0,
       });
       
-      // If 403 error and we haven't retried too many times, retry after a delay
-      // This handles race condition where participant hasn't been synced to chat service yet
-      // Kafka event processing can take a few seconds
       const is403Error = error?.message?.includes('403') || 
                         error?.message?.includes('Not authorized');
       
       if (is403Error) {
-        // Track when we started setting up
         if (!setupStartTimeRef.current) {
           setupStartTimeRef.current = Date.now();
           
-          // Debug: Check if participant exists in chat service
           if (roomId && user?.id) {
             debugApi.checkParticipant(roomId, user.id)
               .then((result: any) => {
@@ -157,13 +140,11 @@ export default function ChatScreen() {
         }
         
         const elapsedTime = Date.now() - setupStartTimeRef.current;
-        const maxRetryTime = 20000; // 20 seconds
+        const maxRetryTime = 20000;
         
-        // If we've been retrying for more than 20 seconds, show error
         if (elapsedTime >= maxRetryTime) {
           console.error('Failed to load messages after 20 seconds of retries');
           
-          // Final debug check
           if (roomId && user?.id) {
             debugApi.checkParticipant(roomId, user.id)
               .then((result: any) => {
@@ -184,12 +165,10 @@ export default function ChatScreen() {
           return;
         }
         
-        // Continue retrying with exponential backoff
-        if (retryCount < 10) { // Allow more retries within 20 seconds
+        if (retryCount < 10) {
           const delay = retryCount === 0 ? 500 : Math.min(retryCount * 1000, 3000);
           console.log(`Retrying loadMessages (attempt ${retryCount + 1}) after ${delay}ms... (elapsed: ${Math.round(elapsedTime / 1000)}s)`);
           
-          // Show friendly setup message
           setSettingUp(true);
           setLoading(false);
           
@@ -200,7 +179,6 @@ export default function ChatScreen() {
         }
       }
       
-      // If still failing after retries, show error but don't block the UI
       console.error('Failed to load messages after retries');
       setLoading(false);
       setSettingUp(false);
@@ -214,8 +192,6 @@ export default function ChatScreen() {
     const tempId = `temp-${Date.now()}-${Math.random()}`;
     sendMessage(content, tempId);
     
-    // Scroll to bottom after message is rendered
-    // Use longer delay to account for message rendering and keyboard animation
     setTimeout(() => {
       if (listRef.current) {
         listRef.current.scrollToEnd({ animated: true });
@@ -234,26 +210,16 @@ export default function ChatScreen() {
   return (
     <View style={styles.container}>
       {connectionError && (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>
-            {isConnected ? 'Connected' : `Connection Error: ${connectionError}`}
-          </Text>
-        </View>
+        <ErrorBanner
+          message={isConnected ? 'Connected' : `Connection Error: ${connectionError}`}
+          isConnected={isConnected}
+        />
       )}
 
-      {settingUp && (
-        <View style={styles.setupBanner}>
-          <ActivityIndicator size="small" color="#007AFF" style={{ marginRight: 8 }} />
-          <Text style={styles.setupText}>Setting up the room...</Text>
-        </View>
-      )}
+      {settingUp && <SetupBanner />}
 
       {setupError && (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>
-            Something went wrong. Please try again later.
-          </Text>
-        </View>
+        <ErrorBanner message="Something went wrong. Please try again later." />
       )}
 
       <View style={styles.listContainer}>
@@ -274,26 +240,21 @@ export default function ChatScreen() {
           ]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
-          estimatedItemSize={80}
         />
       </View>
 
       {Platform.OS === 'ios' ? (
-        <KeyboardAvoidingView
-          behavior="padding"
-          keyboardVerticalOffset={0}
+        <View 
+          style={[
+            styles.inputContainer, 
+            { 
+              paddingBottom: Math.max(insets.bottom, 0),
+              marginBottom: keyboardHeight > 0 ? keyboardHeight - 35 : 0,
+            }
+          ]}
         >
-          <View 
-            style={[
-              styles.inputContainer, 
-              { 
-                paddingBottom: Math.max(insets.bottom, 0),
-              }
-            ]}
-          >
-            <MessageInput onSend={handleSend} disabled={!isConnected} />
-          </View>
-        </KeyboardAvoidingView>
+          <MessageInput onSend={handleSend} disabled={!isConnected} />
+        </View>
       ) : (
         <View 
           style={[
@@ -310,67 +271,3 @@ export default function ChatScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-  },
-  errorBanner: {
-    backgroundColor: '#FFE5E5',
-    padding: 8,
-    alignItems: 'center',
-  },
-  errorText: {
-    color: '#D32F2F',
-    fontSize: 12,
-  },
-  setupBanner: {
-    backgroundColor: '#E3F2FD',
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  setupText: {
-    color: '#1976D2',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  listContainer: {
-    flex: 1,
-  },
-  listContent: {
-    paddingVertical: 4,
-    paddingBottom: 0,
-  },
-  inputContainer: {
-    backgroundColor: '#F5F5F5',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    paddingTop: 0,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#666',
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
-  },
-});
-

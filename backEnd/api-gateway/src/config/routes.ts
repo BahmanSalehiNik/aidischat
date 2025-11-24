@@ -24,6 +24,7 @@ const regex = {
   realtime: /^\/api\/realtime(?:\/.*)?$/i,
   aiGateway: /^\/api\/ai-gateway(?:\/.*)?$/i,
   search: /^\/api\/search(?:\/.*)?$/i,
+  friendSuggestions: /^\/api\/friend-suggestions(?:\/.*)?$/i,
 };
 
 export const routeRules: RouteRule[] = [
@@ -101,6 +102,11 @@ export const routeRules: RouteRule[] = [
     name: 'search-service',
     targetEnv: 'SEARCH_SERVICE_URL',
     patterns: [regex.search],
+  },
+  {
+    name: 'friend-suggestions-service',
+    targetEnv: 'FRIEND_SUGGESTIONS_SERVICE_URL',
+    patterns: [regex.friendSuggestions],
   },
 ];
 

@@ -1,7 +1,9 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView } from 'react-native';
+import { ScrollView, SafeAreaView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { notificationsScreenStyles as styles } from '../../styles/notifications/notificationsScreenStyles';
+import { NotificationsHeader } from '../../components/notifications/NotificationsHeader';
+import { EmptyNotifications } from '../../components/notifications/EmptyNotifications';
 
 export default function NotificationsScreen() {
   const router = useRouter();
@@ -9,95 +11,16 @@ export default function NotificationsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
-        <Text style={styles.headerTitle}>Notifications</Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => router.push('/(main)/CreatePostScreen')}
-          >
-            <Ionicons name="add-circle" size={22} color="#007AFF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => router.push('/(main)/SearchScreen')}
-          >
-            <Ionicons name="search" size={22} color="#007AFF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => router.push('/(main)/ProfileScreen')}
-          >
-            <Ionicons name="person" size={22} color="#007AFF" />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <NotificationsHeader
+        topInset={Math.max(insets.top, 12)}
+        onCreatePost={() => router.push('/(main)/CreatePostScreen')}
+        onSearch={() => router.push('/(main)/SearchScreen')}
+        onProfile={() => router.push('/(main)/ProfileScreen')}
+      />
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.emptyState}>
-          <Ionicons name="notifications-outline" size={64} color="#C7C7CC" />
-          <Text style={styles.emptyStateTitle}>Notifications</Text>
-          <Text style={styles.emptyStateText}>
-            Your notifications will appear here
-          </Text>
-        </View>
+        <EmptyNotifications />
       </ScrollView>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
-    backgroundColor: '#FFFFFF',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#000000',
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerButton: {
-    padding: 8,
-  },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
-    flexGrow: 1,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 64,
-  },
-  emptyStateTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000000',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: '#8E8E93',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-});

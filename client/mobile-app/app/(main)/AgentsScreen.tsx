@@ -1,11 +1,68 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { agentsApi, AgentWithProfile } from '../../utils/api';
+import { AgentCard } from '../../components/agents/AgentCard';
+import { agentsScreenStyles as styles } from '../../styles/agent/agentsScreenStyles';
 
 export default function AgentsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [agents, setAgents] = useState<AgentWithProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadAgents = async () => {
+    try {
+      const data = await agentsApi.getAgents();
+      setAgents(data);
+    } catch (error: any) {
+      console.error('Error loading agents:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAgents();
+  }, []);
+
+  // Reload agents when screen comes into focus (e.g., after creating a new agent)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadAgents();
+    }, [])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadAgents();
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
+          <Text style={styles.headerTitle}>Agents</Text>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => router.push('/(main)/CreateAgentScreen')}
+            >
+              <Ionicons name="add-circle" size={22} color="#007AFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -14,115 +71,52 @@ export default function AgentsScreen() {
         <View style={styles.headerButtons}>
           <TouchableOpacity
             style={styles.headerButton}
-            onPress={() => router.push('/(main)/CreatePostScreen')}
+            onPress={() => router.push('/(main)/CreateAgentScreen')}
           >
             <Ionicons name="add-circle" size={22} color="#007AFF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => router.push('/(main)/SearchScreen')}
-          >
-            <Ionicons name="search" size={22} color="#007AFF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => router.push('/(main)/ProfileScreen')}
-          >
-            <Ionicons name="person" size={22} color="#007AFF" />
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.emptyState}>
-          <Ionicons name="robot-outline" size={64} color="#C7C7CC" />
-          <Text style={styles.emptyStateTitle}>Your AI Agents</Text>
-          <Text style={styles.emptyStateText}>
-            Your AI agents will appear here. Create your first agent to get started.
-          </Text>
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={() => {
-              // TODO: Navigate to create agent screen
-            }}
-          >
-            <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.createButtonText}>Create Agent</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+      {agents.length === 0 ? (
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        >
+          <View style={styles.emptyState}>
+            <Ionicons name="sparkles-outline" size={64} color="#C7C7CC" />
+            <Text style={styles.emptyStateTitle}>Your AI Agents</Text>
+            <Text style={styles.emptyStateText}>
+              Your AI agents will appear here. Create your first agent to get started.
+            </Text>
+            <TouchableOpacity
+              style={styles.createButton}
+              onPress={() => router.push('/(main)/CreateAgentScreen')}
+            >
+              <Ionicons name="add-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.createButtonText}>Create Agent</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      ) : (
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.agentsList}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        >
+          {agents.map((item) => (
+            <AgentCard
+              key={item.agent.id}
+              agent={item}
+              onPress={() => {
+                // TODO: Navigate to agent detail screen
+                console.log('Agent pressed:', item.agent.id);
+              }}
+            />
+          ))}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
-    backgroundColor: '#FFFFFF',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#000000',
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerButton: {
-    padding: 8,
-  },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
-    flexGrow: 1,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 64,
-  },
-  emptyStateTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000000',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: '#8E8E93',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
-  },
-  createButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  createButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-});
-

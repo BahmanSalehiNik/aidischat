@@ -4,7 +4,7 @@ import { rankingEngine } from '../services/rankingEngine';
 const router = express.Router();
 
 router.get('/', async (req, res) => {
-  const userId = req.currentUser!.id;
+  const userId = req.jwtPayload!.id;
 
   const suggestions = await rankingEngine.getSuggestions(userId, {
     includeNewUsers: true,

@@ -1,12 +1,14 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, TextInput, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import { Image as ExpoImage } from 'expo-image';
 import { postApi, mediaApi } from '../../utils/api';
 import { StorageContainers } from '../../utils/storageContainers';
+import { createPostScreenStyles as styles } from '../../styles/createPost/createPostScreenStyles';
+import { CreatePostHeader } from '../../components/createPost/CreatePostHeader';
+import { VisibilityPicker, VisibilityOption } from '../../components/createPost/VisibilityPicker';
+import { MediaSelector, SelectedImage } from '../../components/createPost/MediaSelector';
 
 type Visibility = 'public' | 'friends' | 'private';
 
@@ -15,12 +17,11 @@ export default function CreatePostScreen() {
   const insets = useSafeAreaInsets();
   const [content, setContent] = useState('');
   const [visibility, setVisibility] = useState<Visibility>('public');
-  const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedImages, setSelectedImages] = useState<Array<{ uri: string; type: string; name?: string }>>([]);
+  const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [uploadingImages, setUploadingImages] = useState(false);
 
-  const visibilityOptions: { label: string; value: Visibility; icon: string }[] = [
+  const visibilityOptions: VisibilityOption[] = [
     { label: 'Public', value: 'public', icon: 'globe-outline' },
     { label: 'Friends', value: 'friends', icon: 'people-outline' },
     { label: 'Private', value: 'private', icon: 'lock-closed-outline' },
@@ -171,31 +172,15 @@ export default function CreatePostScreen() {
     }
   };
 
-  const selectedVisibility = visibilityOptions.find(opt => opt.value === visibility);
-
   return (
     <SafeAreaView style={styles.container}>
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          disabled={isSubmitting}
-        >
-          <Ionicons name="arrow-back" size={24} color="#000000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Post</Text>
-        <TouchableOpacity
-          style={[styles.postButton, ((!content.trim() && selectedImages.length === 0) || isSubmitting) && styles.postButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={(!content.trim() && selectedImages.length === 0) || isSubmitting}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Text style={styles.postButtonText}>Post</Text>
-          )}
-        </TouchableOpacity>
-      </View>
+      <CreatePostHeader
+        topInset={Math.max(insets.top, 12)}
+        onBack={() => router.back()}
+        onSubmit={handleSubmit}
+        isSubmitting={isSubmitting}
+        disabled={!content.trim() && selectedImages.length === 0}
+      />
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {/* Content Input */}
@@ -217,264 +202,22 @@ export default function CreatePostScreen() {
         </View>
 
         {/* Visibility Selector */}
-        <View style={styles.visibilitySection}>
-          <Text style={styles.sectionLabel}>Visibility</Text>
-          <TouchableOpacity
-            style={styles.visibilityButton}
-            onPress={() => setShowVisibilityDropdown(!showVisibilityDropdown)}
-            disabled={isSubmitting}
-          >
-            <View style={styles.visibilityButtonContent}>
-              <Ionicons name={selectedVisibility?.icon as any} size={20} color="#007AFF" />
-              <Text style={styles.visibilityButtonText}>{selectedVisibility?.label}</Text>
-            </View>
-            <Ionicons
-              name={showVisibilityDropdown ? 'chevron-up' : 'chevron-down'}
-              size={20}
-              color="#8E8E93"
-            />
-          </TouchableOpacity>
-
-          {showVisibilityDropdown && (
-            <View style={styles.visibilityDropdown}>
-              {visibilityOptions.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.visibilityOption,
-                    visibility === option.value && styles.visibilityOptionActive
-                  ]}
-                  onPress={() => {
-                    setVisibility(option.value);
-                    setShowVisibilityDropdown(false);
-                  }}
-                >
-                  <Ionicons
-                    name={option.icon as any}
-                    size={20}
-                    color={visibility === option.value ? '#007AFF' : '#8E8E93'}
-                  />
-                  <Text
-                    style={[
-                      styles.visibilityOptionText,
-                      visibility === option.value && styles.visibilityOptionTextActive
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                  {visibility === option.value && (
-                    <Ionicons name="checkmark" size={20} color="#007AFF" style={styles.checkIcon} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
+        <VisibilityPicker
+          value={visibility}
+          options={visibilityOptions}
+          disabled={isSubmitting}
+          onChange={(value) => setVisibility(value as Visibility)}
+        />
 
         {/* Media Section */}
-        <View style={styles.mediaSection}>
-          <Text style={styles.sectionLabel}>Media</Text>
-          <TouchableOpacity
-            style={styles.mediaButton}
-            onPress={pickImage}
-            disabled={isSubmitting || uploadingImages}
-          >
-            <Ionicons name="image-outline" size={24} color="#007AFF" />
-            <Text style={styles.mediaButtonText}>
-              {uploadingImages ? 'Uploading...' : 'Add Photo'}
-            </Text>
-          </TouchableOpacity>
-
-          {selectedImages.length > 0 && (
-            <View style={styles.selectedImagesContainer}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {selectedImages.map((image, index) => (
-                  <View key={index} style={styles.imagePreview}>
-                    <ExpoImage
-                      source={{ uri: image.uri }}
-                      style={styles.previewImage}
-                      contentFit="cover"
-                    />
-                    <TouchableOpacity
-                      style={styles.removeImageButton}
-                      onPress={() => removeImage(index)}
-                      disabled={isSubmitting}
-                    >
-                      <Ionicons name="close-circle" size={24} color="#FF3B30" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-        </View>
+        <MediaSelector
+          images={selectedImages}
+          onAdd={pickImage}
+          onRemove={removeImage}
+          disabled={isSubmitting}
+          uploading={uploadingImages}
+        />
       </ScrollView>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
-    backgroundColor: '#FFFFFF',
-  },
-  backButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000000',
-  },
-  postButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    minWidth: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  postButtonDisabled: {
-    backgroundColor: '#C7C7CC',
-  },
-  postButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: 16,
-  },
-  inputSection: {
-    marginBottom: 24,
-  },
-  textInput: {
-    fontSize: 16,
-    color: '#000000',
-    minHeight: 150,
-    padding: 12,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  characterCount: {
-    fontSize: 12,
-    color: '#8E8E93',
-    textAlign: 'right',
-    marginTop: 8,
-  },
-  visibilitySection: {
-    marginBottom: 24,
-  },
-  sectionLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000000',
-    marginBottom: 12,
-  },
-  visibilityButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 12,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  visibilityButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  visibilityButtonText: {
-    fontSize: 16,
-    color: '#000000',
-    fontWeight: '500',
-  },
-  visibilityDropdown: {
-    marginTop: 8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    overflow: 'hidden',
-  },
-  visibilityOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E5EA',
-  },
-  visibilityOptionActive: {
-    backgroundColor: '#F2F2F7',
-  },
-  visibilityOptionText: {
-    flex: 1,
-    fontSize: 16,
-    color: '#8E8E93',
-  },
-  visibilityOptionTextActive: {
-    color: '#007AFF',
-    fontWeight: '500',
-  },
-  checkIcon: {
-    marginLeft: 'auto',
-  },
-  mediaSection: {
-    marginBottom: 24,
-  },
-  mediaButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 16,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    borderStyle: 'dashed',
-  },
-  mediaButtonText: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '500',
-  },
-  selectedImagesContainer: {
-    marginTop: 12,
-  },
-  imagePreview: {
-    position: 'relative',
-    marginRight: 12,
-  },
-  previewImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 8,
-    backgroundColor: '#F5F5F5',
-  },
-  removeImageButton: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-  },
-});

@@ -2,6 +2,7 @@ import {
   Listener,
   Subjects,
   ProfileCreatedEvent,
+  ProfileUpdatedEvent,
   ProfileDeletedEvent,
 } from '@aichatwar/shared';
 import { EachMessagePayload } from 'kafkajs';
@@ -15,12 +16,21 @@ class ProfileCreatedListener extends Listener<ProfileCreatedEvent> {
   groupId = 'friend-suggestions-profile-created';
 
   async onMessage(processedMessage: ProfileCreatedEvent['data'], msg: EachMessagePayload) {
+    const userId = processedMessage.user;
+    const profilePicture = processedMessage.profilePicture?.url;
+
+    console.log('[FriendSuggestions] ProfileCreated event received:', {
+      userId,
+      username: processedMessage.username,
+      fullName: processedMessage.fullName,
+    });
+
     // Initialize profile status as suggestible
     await ProfileStatus.updateOne(
-      { userId: processedMessage.user },
+      { userId },
       {
         $setOnInsert: {
-          userId: processedMessage.user,
+          userId,
           profileId: processedMessage.id,
           isDeleted: false,
           isSuggestible: true,
@@ -28,6 +38,105 @@ class ProfileCreatedListener extends Listener<ProfileCreatedEvent> {
         },
       },
       { upsert: true }
+    );
+
+    // Update NewUser projection with profile data (create if doesn't exist)
+    await NewUser.updateOne(
+      { userId },
+      {
+        $set: {
+          username: processedMessage.username,
+          fullName: processedMessage.fullName,
+        },
+        $setOnInsert: {
+          userId,
+          createdAtMs: Date.now(),
+        },
+      },
+      { upsert: true }
+    );
+
+    // Update PopularUser projection with profile data if it exists
+    await PopularUser.updateOne(
+      { userId },
+      {
+        $set: {
+          username: processedMessage.username,
+          fullName: processedMessage.fullName,
+          profilePicture,
+        },
+      },
+      { upsert: false }
+    );
+
+    await this.ack();
+  }
+}
+
+class ProfileUpdatedListener extends Listener<ProfileUpdatedEvent> {
+  readonly topic: Subjects.ProfileUpdated = Subjects.ProfileUpdated;
+  groupId = 'friend-suggestions-profile-updated';
+
+  async onMessage(processedMessage: ProfileUpdatedEvent['data'], msg: EachMessagePayload) {
+    const userId = processedMessage.user;
+    const profilePicture = processedMessage.profilePicture?.url;
+
+    console.log('[FriendSuggestions] ProfileUpdated event received:', {
+      userId,
+      username: processedMessage.username,
+      fullName: processedMessage.fullName,
+    });
+
+    // Update profile status
+    await ProfileStatus.updateOne(
+      { userId },
+      {
+        $set: {
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true }
+    );
+
+    // Update NewUser projection with profile data (create if doesn't exist)
+    await NewUser.updateOne(
+      { userId },
+      {
+        $set: {
+          username: processedMessage.username,
+          fullName: processedMessage.fullName,
+        },
+        $setOnInsert: {
+          userId,
+          createdAtMs: Date.now(),
+        },
+      },
+      { upsert: true }
+    );
+
+    // Update PopularUser projection with profile data if it exists
+    await PopularUser.updateOne(
+      { userId },
+      {
+        $set: {
+          username: processedMessage.username,
+          fullName: processedMessage.fullName,
+          profilePicture,
+        },
+      },
+      { upsert: false }
+    );
+
+    // Update MutualSuggestion projections
+    await MutualSuggestion.updateMany(
+      { candidateId: userId },
+      {
+        $set: {
+          username: processedMessage.username,
+          fullName: processedMessage.fullName,
+          profilePicture,
+        },
+      }
     );
 
     await this.ack();
@@ -68,5 +177,5 @@ class ProfileDeletedListener extends Listener<ProfileDeletedEvent> {
   }
 }
 
-export { ProfileCreatedListener, ProfileDeletedListener };
+export { ProfileCreatedListener, ProfileUpdatedListener, ProfileDeletedListener };
 

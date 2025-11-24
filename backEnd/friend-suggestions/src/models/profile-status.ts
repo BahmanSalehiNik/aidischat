@@ -20,7 +20,7 @@ const profileStatusSchema = new mongoose.Schema(
     userId: { type: String, required: true, unique: true, index: true },
     profileId: { type: String, required: true },
     isDeleted: { type: Boolean, default: false, index: true },
-    isSuggestible: { type: Boolean, default: true, index: true },
+    isSuggestible: { type: Boolean, default: true },
     deletedAt: { type: Date, default: undefined },
     updatedAt: { type: Date, default: Date.now },
   },

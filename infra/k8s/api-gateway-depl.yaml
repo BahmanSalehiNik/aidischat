@@ -48,6 +48,8 @@ spec:
               value: "http://ai-gateway-srv:3000"
             - name: SEARCH_SERVICE_URL
               value: "http://search-srv:3000"
+            - name: FRIEND_SUGGESTIONS_SERVICE_URL
+              value: "http://friend-suggestions-srv:3000"
 ---
 apiVersion: v1
 kind: Service

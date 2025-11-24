@@ -14,8 +14,8 @@ interface BlockListModel extends mongoose.Model<BlockListDoc> {
 
 const blockListSchema = new mongoose.Schema(
   {
-    userId: { type: String, required: true, index: true },
-    blockedUserId: { type: String, required: true, index: true },
+    userId: { type: String, required: true },
+    blockedUserId: { type: String, required: true },
     blockedAt: { type: Date, default: Date.now },
   },
   { timestamps: true }

@@ -24,7 +24,7 @@ const userStatusSchema = new mongoose.Schema(
       default: 'active',
     },
     isDeleted: { type: Boolean, default: false, index: true },
-    isSuggestible: { type: Boolean, default: true, index: true },
+    isSuggestible: { type: Boolean, default: true },
     deletedAt: { type: Date, default: undefined },
     updatedAt: { type: Date, default: Date.now },
   },

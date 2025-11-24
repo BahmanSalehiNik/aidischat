@@ -47,6 +47,14 @@ build:
       sync:
         manual:
           - dest: .
+            src: 'src/**/*.ts'
+    - image: bahmansalehinic4/friend-suggestions
+      context: backEnd/friend-suggestions
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
             src: 'src/**/*.ts' 
     - image: bahmansalehinic4/media
       context: backEnd/media
@@ -149,6 +157,7 @@ manifests:
     - ./infra/k8s/auth-depl.yaml
     - ./infra/k8s/user*.yaml
     - ./infra/k8s/friendship-depl.yaml
+    - ./infra/k8s/friend-suggestions-depl.yaml
     - ./infra/k8s/media-depl.yaml
     - ./infra/k8s/post-depl.yaml
     - ./infra/k8s/feed-depl.yaml

@@ -425,11 +425,119 @@ export const searchApi = {
   },
 };
 
+// Friend Suggestions API
+export interface FriendSuggestion {
+  userId: string;
+  reason: 'popular' | 'new' | 'mutual';
+  mutualCount?: number;
+  username?: string;
+  fullName?: string;
+  profilePicture?: string;
+  profileId?: string; // Profile ID if available from backend
+}
+
+export interface FriendSuggestionsResponse {
+  userId: string;
+  suggestions: FriendSuggestion[];
+}
+
+export const friendSuggestionsApi = {
+  getSuggestions: async (): Promise<FriendSuggestionsResponse> => {
+    const api = getApiClient();
+    return api.get<FriendSuggestionsResponse>('/friend-suggestions');
+  },
+
+  sendFeedback: async (suggestionId: string, action: 'accept' | 'dismiss') => {
+    const api = getApiClient();
+    return api.post('/friend-suggestions/feedback', {
+      suggestionId,
+      action,
+    });
+  },
+};
+
+// Friendship API
+export interface FriendshipRequest {
+  recipient: string;
+  recipientProfile: string;
+}
+
+export const friendshipApi = {
+  sendFriendRequest: async (recipient: string, recipientProfile: string) => {
+    const api = getApiClient();
+    return api.post<FriendshipRequest>('/friends', {
+      recipient,
+      recipientProfile,
+    });
+  },
+
+  getFriendRequests: async () => {
+    const api = getApiClient();
+    return api.get('/friends');
+  },
+
+  updateFriendship: async (friendshipId: string, status: 'accepted' | 'declined' | 'blocked') => {
+    const api = getApiClient();
+    return api.put(`/friends/${friendshipId}`, { status });
+  },
+};
+
 // Debug API
 export const debugApi = {
   checkParticipant: async (roomId: string, participantId: string) => {
     const api = getApiClient();
     return api.get(`/debug/rooms/${roomId}/participants/${participantId}`);
+  },
+};
+
+// Agents API
+export interface AgentProfile {
+  id: string;
+  name: string;
+  profession?: string;
+  breed?: string;
+  gender?: string;
+  age?: number;
+  displayName?: string;
+  title?: string;
+  avatarUrl?: string;
+  [key: string]: any;
+}
+
+export interface Agent {
+  id: string;
+  agentProfileId: string;
+  modelProvider: string;
+  modelName: string;
+  status: string;
+  ownerUserId: string;
+  [key: string]: any;
+}
+
+export interface AgentWithProfile {
+  agent: Agent;
+  agentProfile: AgentProfile | null;
+}
+
+export const agentsApi = {
+  createProfile: async (profileData: any): Promise<AgentProfile> => {
+    const api = getApiClient();
+    return api.post<AgentProfile>('/agents/profiles', profileData);
+  },
+
+  createAgent: async (agentData: any): Promise<Agent> => {
+    const api = getApiClient();
+    return api.post<Agent>('/agents', agentData);
+  },
+
+  getAgents: async (): Promise<AgentWithProfile[]> => {
+    const api = getApiClient();
+    return api.get<AgentWithProfile[]>('/agents');
+  },
+
+  getAgent: async (agentId: string): Promise<Agent> => {
+    const api = getApiClient();
+    return api.get<Agent>(`/agents/${agentId}`);
   },
 };
 

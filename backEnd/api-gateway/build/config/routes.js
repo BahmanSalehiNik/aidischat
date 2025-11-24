@@ -20,6 +20,8 @@ const regex = {
     rooms: /^\/api\/rooms(?:\/.*)?$/i,
     realtime: /^\/api\/realtime(?:\/.*)?$/i,
     aiGateway: /^\/api\/ai-gateway(?:\/.*)?$/i,
+    search: /^\/api\/search(?:\/.*)?$/i,
+    friendSuggestions: /^\/api\/friend-suggestions(?:\/.*)?$/i,
 };
 exports.routeRules = [
     {
@@ -91,6 +93,16 @@ exports.routeRules = [
         name: 'ai-gateway',
         targetEnv: 'AI_GATEWAY_URL',
         patterns: [regex.aiGateway],
+    },
+    {
+        name: 'search-service',
+        targetEnv: 'SEARCH_SERVICE_URL',
+        patterns: [regex.search],
+    },
+    {
+        name: 'friend-suggestions-service',
+        targetEnv: 'FRIEND_SUGGESTIONS_SERVICE_URL',
+        patterns: [regex.friendSuggestions],
     },
 ];
 exports.requiredServiceEnvVars = Array.from(new Set(exports.routeRules.map((rule) => rule.targetEnv)));

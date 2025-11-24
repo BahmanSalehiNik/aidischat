@@ -1,11 +1,13 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, SafeAreaView, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useCallback } from 'react';
 import { postApi } from '../../utils/api';
-import { PostCard, Post } from '../../components/PostCard';
+import { PostCard, Post } from '../../components/feed/PostCard';
 import { useAuthStore } from '../../store/authStore';
+import { homeScreenStyles as styles } from '../../styles/home/homeScreenStyles';
+import { HomeHeader } from '../../components/home/HomeHeader';
+import { EmptyFeedState } from '../../components/home/EmptyFeedState';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -56,29 +58,12 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
-        <Text style={styles.headerTitle}>Home</Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => router.push('/(main)/CreatePostScreen')}
-          >
-            <Ionicons name="add-circle" size={22} color="#007AFF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => router.push('/(main)/SearchScreen')}
-          >
-            <Ionicons name="search" size={22} color="#007AFF" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => router.push('/(main)/ProfileScreen')}
-          >
-            <Ionicons name="person" size={22} color="#007AFF" />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <HomeHeader
+        topInset={Math.max(insets.top, 12)}
+        onCreatePost={() => router.push('/(main)/CreatePostScreen')}
+        onSearch={() => router.push('/(main)/SearchScreen')}
+        onProfile={() => router.push('/(main)/ProfileScreen')}
+      />
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -90,13 +75,7 @@ export default function HomeScreen() {
           contentContainerStyle={styles.contentContainer}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
-          <View style={styles.emptyState}>
-            <Ionicons name="newspaper-outline" size={64} color="#C7C7CC" />
-            <Text style={styles.emptyStateTitle}>Your Feed</Text>
-            <Text style={styles.emptyStateText}>
-              Posts from your friends and followed users will appear here
-            </Text>
-          </View>
+          <EmptyFeedState />
         </ScrollView>
       ) : (
         <ScrollView
@@ -111,64 +90,3 @@ export default function HomeScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
-    backgroundColor: '#FFFFFF',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#000000',
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerButton: {
-    padding: 8,
-  },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
-    flexGrow: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 64,
-  },
-  emptyStateTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000000',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: '#8E8E93',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-});

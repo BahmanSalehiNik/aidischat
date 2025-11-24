@@ -7,7 +7,6 @@ export default function ChatStackLayout() {
         headerShown: true,
         // Ensure tab bar is visible on nested screens
         contentStyle: { marginBottom: 0 },
-        initialRouteName: 'RoomListScreen',
       }}
     >
       <Stack.Screen
