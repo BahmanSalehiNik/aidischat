@@ -91,6 +91,8 @@ export class PostUpdatedListener extends Listener<PostUpdatedEvent> {
       media,
       visibility,
       updatedAt,
+      reactions,
+      commentCount,
     } = data;
 
     // Find the post in feed service
@@ -140,10 +142,23 @@ export class PostUpdatedListener extends Listener<PostUpdatedEvent> {
     post.media = postMedia;
     post.visibility = visibility as any;
     post.updatedAt = new Date(updatedAt);
+    
+    // Update reactionsSummary from event if provided
+    if (reactions && Array.isArray(reactions)) {
+      post.reactionsSummary = reactions.map((r: any) => ({
+        type: r.type,
+        count: r.count || 1,
+      }));
+    }
+    
+    // Update commentCount from event if provided
+    if (commentCount !== undefined) {
+      post.commentsCount = commentCount;
+    }
 
     await post.save();
 
-    console.log(`Updated post ${id} in feed service`);
+    console.log(`Updated post ${id} in feed service, reactionsSummary:`, post.reactionsSummary, `commentsCount:`, post.commentsCount);
     
     // Manual acknowledgment - only after successful save
     await this.ack();

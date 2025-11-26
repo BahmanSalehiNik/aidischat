@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  InteractionManager,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -69,10 +70,16 @@ export default function CreateAgentScreen() {
   // On iOS, ensure component is fully mounted before allowing input
   useEffect(() => {
     if (Platform.OS === 'ios') {
-      const timer = setTimeout(() => {
-        setIsMounted(true);
-      }, 100);
-      return () => clearTimeout(timer);
+      let timer: NodeJS.Timeout;
+      const interactionHandle = InteractionManager.runAfterInteractions(() => {
+        timer = setTimeout(() => {
+          setIsMounted(true);
+        }, 150);
+      });
+      return () => {
+        interactionHandle.cancel();
+        if (timer) clearTimeout(timer);
+      };
     } else {
       setIsMounted(true);
     }
@@ -162,6 +169,7 @@ export default function CreateAgentScreen() {
             value={formData.name}
             onChangeText={(value) => updateField('name', value)}
             maxLength={50}
+            editable={isMounted}
           />
 
           <View style={styles.fieldContainer}>
@@ -183,6 +191,7 @@ export default function CreateAgentScreen() {
                 onChangeText={setCustomBreed}
                 maxLength={50}
                 style={styles.marginTop}
+                editable={isMounted}
               />
             )}
           </View>
@@ -206,6 +215,7 @@ export default function CreateAgentScreen() {
                 onChangeText={setCustomGender}
                 maxLength={50}
                 style={styles.marginTop}
+                editable={isMounted}
               />
             )}
           </View>
@@ -216,6 +226,7 @@ export default function CreateAgentScreen() {
             value={formData.age}
             onChangeText={(value) => updateField('age', value)}
             keyboardType="number-pad"
+            editable={isMounted}
           />
 
           <ProfessionChips
@@ -249,6 +260,7 @@ export default function CreateAgentScreen() {
               value={formData.displayName}
               onChangeText={(value) => updateField('displayName', value)}
               maxLength={50}
+              editable={isMounted}
             />
 
             <FormField
@@ -257,6 +269,7 @@ export default function CreateAgentScreen() {
               value={formData.title}
               onChangeText={(value) => updateField('title', value)}
               maxLength={50}
+              editable={isMounted}
             />
 
             <FormField
@@ -265,6 +278,7 @@ export default function CreateAgentScreen() {
               value={formData.nationality}
               onChangeText={(value) => updateField('nationality', value)}
               maxLength={50}
+              editable={isMounted}
             />
 
             <FormField
@@ -273,6 +287,7 @@ export default function CreateAgentScreen() {
               value={formData.ethnicity}
               onChangeText={(value) => updateField('ethnicity', value)}
               maxLength={50}
+              editable={isMounted}
             />
 
             <FormField
@@ -281,6 +296,7 @@ export default function CreateAgentScreen() {
               value={formData.specialization}
               onChangeText={(value) => updateField('specialization', value)}
               maxLength={100}
+              editable={isMounted}
             />
 
             <FormField
@@ -289,6 +305,7 @@ export default function CreateAgentScreen() {
               value={formData.organization}
               onChangeText={(value) => updateField('organization', value)}
               maxLength={100}
+              editable={isMounted}
             />
 
             <FormField
@@ -300,6 +317,7 @@ export default function CreateAgentScreen() {
               numberOfLines={3}
               maxLength={500}
               style={styles.textArea}
+              editable={isMounted}
             />
 
             <FormField
@@ -311,6 +329,7 @@ export default function CreateAgentScreen() {
               numberOfLines={5}
               maxLength={2000}
               style={styles.textArea}
+              editable={isMounted}
             />
 
             <View style={styles.separator} />
@@ -336,6 +355,7 @@ export default function CreateAgentScreen() {
               placeholder="e.g., gpt-4o, claude-3-opus"
               value={formData.modelName}
               onChangeText={(value) => updateField('modelName', value)}
+              editable={isMounted}
             />
 
             <FormField
@@ -346,6 +366,7 @@ export default function CreateAgentScreen() {
               multiline
               numberOfLines={4}
               style={styles.textArea}
+              editable={isMounted}
             />
 
             <FormField
@@ -355,6 +376,7 @@ export default function CreateAgentScreen() {
               onChangeText={(value) => updateField('apiKey', value)}
               secureTextEntry
               autoCapitalize="none"
+              editable={isMounted}
             />
 
             <FormField
@@ -363,6 +385,7 @@ export default function CreateAgentScreen() {
               value={formData.endpoint}
               onChangeText={(value) => updateField('endpoint', value)}
               autoCapitalize="none"
+              editable={isMounted}
             />
 
             <FormField
@@ -370,6 +393,7 @@ export default function CreateAgentScreen() {
               placeholder="Voice identifier (optional)"
               value={formData.voiceId}
               onChangeText={(value) => updateField('voiceId', value)}
+              editable={isMounted}
             />
 
             <View style={styles.fieldContainer}>
@@ -388,6 +412,7 @@ export default function CreateAgentScreen() {
                       })
                     }
                     keyboardType="number-pad"
+                    editable={isMounted}
                   />
                 </View>
                 <View style={styles.rateLimitField}>
@@ -403,6 +428,7 @@ export default function CreateAgentScreen() {
                       })
                     }
                     keyboardType="number-pad"
+                    editable={isMounted}
                   />
                 </View>
               </View>

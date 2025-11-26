@@ -10,6 +10,7 @@ import {
   Keyboard,
   ScrollView,
   ActivityIndicator,
+  InteractionManager,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createRoomModalStyles as styles } from './styles/createRoomModalStyles';
@@ -45,14 +46,29 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   useEffect(() => {
     if (visible) {
       // On iOS, ensure modal is fully rendered and ready before allowing input
-      const delay = Platform.OS === 'ios' ? 150 : 100;
-      const timer = setTimeout(() => {
-        setIsReady(true);
-        if (roomNameInputRef.current) {
-          roomNameInputRef.current.focus();
-        }
-      }, delay);
-      return () => clearTimeout(timer);
+      if (Platform.OS === 'ios') {
+        let timer: NodeJS.Timeout;
+        const interactionHandle = InteractionManager.runAfterInteractions(() => {
+          timer = setTimeout(() => {
+            setIsReady(true);
+            if (roomNameInputRef.current) {
+              roomNameInputRef.current.focus();
+            }
+          }, 150);
+        });
+        return () => {
+          interactionHandle.cancel();
+          if (timer) clearTimeout(timer);
+        };
+      } else {
+        const timer = setTimeout(() => {
+          setIsReady(true);
+          if (roomNameInputRef.current) {
+            roomNameInputRef.current.focus();
+          }
+        }, 100);
+        return () => clearTimeout(timer);
+      }
     } else {
       setIsReady(false);
     }

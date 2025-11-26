@@ -9,7 +9,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useRootNavigationState } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import { useAuthStore } from '../../store/authStore';
 
@@ -20,12 +20,17 @@ export default function LoginScreen() {
   const { signIn, loading, error } = useAuth();
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
 
   React.useEffect(() => {
+    if (!rootNavigationState?.key) {
+      return;
+    }
+
     if (isAuthenticated) {
       router.replace('/(main)/HomeScreen');
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, rootNavigationState?.key]);
 
   const handleLogin = async () => {
     const trimmedEmail = email.trim();

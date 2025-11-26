@@ -161,6 +161,13 @@ export class ApiClient {
     });
   }
 
+  async patch<T>(endpoint: string, body?: any): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'PATCH',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+
   async delete<T>(endpoint: string): Promise<T> {
     return this.request<T>(endpoint, { method: 'DELETE' });
   }
@@ -319,7 +326,27 @@ export const postApi = {
 
   getPost: async (postId: string) => {
     const api = getApiClient();
-    return api.get(`/posts/${postId}`);
+    const post = await api.get<any>(`/posts/${postId}`);
+    // Transform to Post format
+    return {
+      id: post.id || post._id,
+      userId: post.userId || '',
+      content: post.content || '',
+      mediaIds: post.mediaIds || [],
+      media: post.media || [],
+      visibility: post.visibility || 'public',
+      createdAt: post.createdAt || new Date().toISOString(),
+      reactions: post.reactions || [],
+      reactionsSummary: post.reactionsSummary,
+      currentUserReaction: post.currentUserReaction,
+      commentsCount: post.commentsCount || 0,
+      author: post.author || {
+        userId: post.userId || '',
+        name: undefined,
+        email: undefined,
+        avatarUrl: undefined,
+      },
+    };
   },
 
   getUserPosts: async (userId?: string) => {
@@ -339,10 +366,13 @@ export const postApi = {
         visibility: post.visibility || 'public',
         createdAt: post.createdAt || new Date().toISOString(),
         reactions: post.reactions || [],
-        commentsCount: 0, // Will be populated if available
+        reactionsSummary: post.reactionsSummary,
+        currentUserReaction: post.currentUserReaction,
+        commentsCount: post.commentsCount || 0,
         author: post.author || {
           userId: post.userId || '',
           name: undefined,
+          email: undefined,
           avatarUrl: undefined,
         },
       }));
@@ -364,9 +394,22 @@ export const postApi = {
       media: item.media || [],
       visibility: item.visibility || 'public',
       createdAt: item.createdAt || new Date().toISOString(),
-      reactions: item.reactionsSummary?.map((r: any) => ({ type: r.type, count: r.count })) || [],
+      reactions: [], // Feed doesn't return individual reactions
+      reactionsSummary: item.reactionsSummary || [],
+      currentUserReaction: item.currentUserReaction,
       commentsCount: item.commentsCount || 0,
-      author: item.author || null,
+      // Preserve author object from backend, it already has name, email, etc.
+      author: item.author ? {
+        userId: item.author.userId || '',
+        name: item.author.name,
+        email: item.author.email,
+        avatarUrl: item.author.avatarUrl,
+      } : {
+        userId: '',
+        name: undefined,
+        email: undefined,
+        avatarUrl: undefined,
+      },
     }));
   },
 
@@ -378,6 +421,101 @@ export const postApi = {
   deletePost: async (postId: string) => {
     const api = getApiClient();
     return api.delete(`/posts/${postId}`);
+  },
+};
+
+// Comment API
+export interface Comment {
+  id: string;
+  postId: string;
+  userId: string;
+  text: string;
+  parentCommentId?: string;
+  createdAt: string;
+  updatedAt?: string;
+  author?: {
+    userId: string;
+    name?: string;
+    email?: string;
+    avatarUrl?: string;
+  };
+  reactions?: { type: string; count: number }[];
+  currentUserReaction?: { userId: string; type: string };
+}
+
+export interface CommentsResponse {
+  comments: Comment[];
+  pagination: {
+    page: number;
+    limit: number;
+    totalCount: number;
+    totalPages: number;
+  };
+}
+
+export const commentApi = {
+  getComments: async (postId: string, page: number = 1, limit: number = 10, parentCommentId?: string): Promise<CommentsResponse> => {
+    const api = getApiClient();
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    });
+    if (parentCommentId) {
+      params.append('parentCommentId', parentCommentId);
+    }
+    return api.get<CommentsResponse>(`/posts/${postId}/comments?${params.toString()}`);
+  },
+
+  createComment: async (postId: string, text: string, parentCommentId?: string): Promise<Comment> => {
+    const api = getApiClient();
+    return api.post<Comment>(`/posts/${postId}/comments`, {
+      text,
+      parentCommentId,
+    });
+  },
+
+  updateComment: async (postId: string, commentId: string, text: string): Promise<Comment> => {
+    const api = getApiClient();
+    return api.patch<Comment>(`/posts/${postId}/comments/${commentId}`, { text });
+  },
+
+  deleteComment: async (postId: string, commentId: string): Promise<void> => {
+    const api = getApiClient();
+    return api.delete<void>(`/posts/${postId}/comments/${commentId}`);
+  },
+};
+
+// Reaction API
+export type ReactionType = 'like' | 'love' | 'haha' | 'sad' | 'angry';
+
+export interface Reaction {
+  id: string;
+  userId: string;
+  postId?: string;
+  commentId?: string;
+  type: ReactionType;
+  createdAt: string;
+}
+
+export const reactionApi = {
+  addPostReaction: async (postId: string, type: ReactionType): Promise<Reaction> => {
+    const api = getApiClient();
+    return api.post<Reaction>(`/posts/${postId}/reactions`, { type });
+  },
+
+  removePostReaction: async (postId: string): Promise<void> => {
+    const api = getApiClient();
+    return api.delete<void>(`/posts/${postId}/reactions`);
+  },
+
+  addCommentReaction: async (commentId: string, type: ReactionType): Promise<Reaction> => {
+    const api = getApiClient();
+    return api.post<Reaction>(`/comments/${commentId}/reactions`, { type });
+  },
+
+  removeCommentReaction: async (commentId: string): Promise<void> => {
+    const api = getApiClient();
+    return api.delete<void>(`/comments/${commentId}/reactions`);
   },
 };
 

@@ -8,6 +8,7 @@ import { useAuthStore } from '../../store/authStore';
 import { homeScreenStyles as styles } from '../../styles/home/homeScreenStyles';
 import { HomeHeader } from '../../components/home/HomeHeader';
 import { EmptyFeedState } from '../../components/home/EmptyFeedState';
+import { PostDetailModal } from './PostDetailModal';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -16,6 +17,8 @@ export default function HomeScreen() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [showPostModal, setShowPostModal] = useState(false);
 
   const loadFeed = useCallback(async () => {
     try {
@@ -56,6 +59,27 @@ export default function HomeScreen() {
     loadFeed();
   }, [loadFeed]);
 
+  const handlePostPress = useCallback((post: Post) => {
+    setSelectedPost(post);
+    setShowPostModal(true);
+  }, []);
+
+  const handlePostUpdated = useCallback(() => {
+    loadFeed();
+    setShowPostModal(false);
+  }, [loadFeed]);
+
+  const handlePostDeleted = useCallback(() => {
+    setPosts(prev => prev.filter(p => p.id !== selectedPost?.id));
+    setShowPostModal(false);
+    setSelectedPost(null);
+  }, [selectedPost]);
+
+  const handlePostReactionChange = useCallback(() => {
+    // Refresh feed to show updated reactions
+    loadFeed();
+  }, [loadFeed]);
+
   return (
     <SafeAreaView style={styles.container}>
       <HomeHeader
@@ -83,10 +107,28 @@ export default function HomeScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
           {posts.map((post) => (
-            <PostCard key={post.id} post={post} />
+            <PostCard
+              key={post.id}
+              post={post}
+              onPress={() => handlePostPress(post)}
+              onCommentPress={() => handlePostPress(post)}
+              onPostUpdated={handlePostReactionChange}
+              onPostDeleted={handlePostDeleted}
+            />
           ))}
         </ScrollView>
       )}
+
+      <PostDetailModal
+        visible={showPostModal}
+        post={selectedPost}
+        onClose={() => {
+          setShowPostModal(false);
+          setSelectedPost(null);
+        }}
+        onPostUpdated={handlePostUpdated}
+        onPostDeleted={handlePostDeleted}
+      />
     </SafeAreaView>
   );
 }

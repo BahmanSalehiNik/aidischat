@@ -1,6 +1,7 @@
 // routes/get-posts.ts
 import express, { Request, Response } from 'express';
 import { Post, PostStatus } from '../../models/post';
+import { Reaction } from '../../models/reaction';
 import { Profile } from '../../models/user/profile';
 import { User } from '../../models/user/user';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
@@ -97,8 +98,45 @@ router.get(
       return [userId, u];
     }));
 
-    // Enrich posts with author information
+    // Fetch all reactions for all posts in one query
+    const postIds = filteredPosts.map((p: any) => p._id?.toString() || p.id);
+    const allReactions = await Reaction.find({ 
+      postId: { $in: postIds },
+      commentId: { $exists: false }
+    }).lean();
+
+    // Group reactions by postId
+    const reactionsByPost = new Map<string, any[]>();
+    allReactions.forEach((r: any) => {
+      const postId = r.postId?.toString();
+      if (postId) {
+        if (!reactionsByPost.has(postId)) {
+          reactionsByPost.set(postId, []);
+        }
+        reactionsByPost.get(postId)!.push(r);
+      }
+    });
+
+    // Enrich posts with author information and reactions
     const enrichedPosts = await Promise.all(filteredPosts.map(async (post: any) => {
+      const postId = post._id?.toString() || post.id;
+      const postReactions = reactionsByPost.get(postId) || [];
+      
+      // Aggregate reactions by type
+      const reactionMap = new Map<string, number>();
+      postReactions.forEach((r: any) => {
+        const type = r.type || 'like';
+        reactionMap.set(type, (reactionMap.get(type) || 0) + 1);
+      });
+
+      const reactionsSummary = Array.from(reactionMap.entries()).map(([type, count]) => ({
+        type,
+        count,
+      }));
+
+      // Get current user's reaction
+      const userReaction = postReactions.find((r: any) => r.userId === currentUserId);
+      const currentUserReaction = userReaction ? { userId: userReaction.userId, type: userReaction.type } : undefined;
       const postUserId = post.userId?.toString();
       const profile = profileMap.get(postUserId);
       const user = userMap.get(postUserId);
@@ -228,9 +266,14 @@ router.get(
       return {
         ...post,
         media: mediaWithSignedUrls,
+        reactions: postReactions.map((r: any) => ({ userId: r.userId, type: r.type })), // Include all reactions with userId
+        reactionsSummary, // Include summary for easy display
+        currentUserReaction, // Include current user's reaction
+        commentsCount: post.commentsCount ?? 0,
         author: {
           userId: post.userId,
           name: displayName,
+          email: user?.email,
           avatarUrl: profile?.avatarUrl,
         },
       };

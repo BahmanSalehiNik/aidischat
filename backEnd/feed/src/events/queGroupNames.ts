@@ -8,6 +8,8 @@ const GroupIdPostUpdated = "feed-post-updated";
 const GroupIdPostDeleted = "feed-post-deleted";
 const GroupIdCommentCreated = "feed-comment-created";
 const GroupIdCommentDeleted = "feed-comment-deleted";
+const GroupIdReactionCreated = "feed-reaction-created";
+const GroupIdReactionDeleted = "feed-reaction-deleted";
 const GroupIdFreindshipAccepted = "feed-friendship-accepted";
 const GroupIdFreindshipRequested = "feed-friendship-requested";
 const GroupIdFreindshipUpdated = "feed-friendship-updated";
@@ -23,6 +25,8 @@ export {
     GroupIdPostDeleted,
     GroupIdCommentCreated,
     GroupIdCommentDeleted,
+    GroupIdReactionCreated,
+    GroupIdReactionDeleted,
     GroupIdFreindshipAccepted,
     GroupIdFreindshipRequested,
     GroupIdFreindshipUpdated

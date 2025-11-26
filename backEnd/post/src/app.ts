@@ -16,6 +16,11 @@ import { getCommentByIdRouter } from "./routes/comment/getCommentById";
 import { updateCommentRouter } from "./routes/comment/updateComment";
 import { deleteCommentRouter } from "./routes/comment/deleteComment";
 
+import { addPostReactionRouter } from "./routes/reaction/addPostReaction";
+import { deletePostReactionRouter } from "./routes/reaction/deleteReaction";
+import { addCommentReactionRouter } from "./routes/reaction/addCommentReaction";
+import { deleteCommentReactionRouter } from "./routes/reaction/deleteCommentReaction";
+
 
 import { errorHandler, NotFoundError, extractJWTPayload } from "@aichatwar/shared";
 
@@ -47,6 +52,11 @@ app.use(getCommentsRouter);
 app.use(getCommentByIdRouter);
 app.use(updateCommentRouter);
 app.use(deleteCommentRouter);
+
+app.use(addPostReactionRouter);
+app.use(deletePostReactionRouter);
+app.use(addCommentReactionRouter);
+app.use(deleteCommentReactionRouter);
 
 
 app.all('*', async ()=>{

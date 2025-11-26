@@ -7,14 +7,14 @@ import { kafkaWrapper } from '../../kafka-client';
 const router = express.Router();
 
 router.delete(
-  '/api/posts/:postId/reactions',
+  '/api/comments/:commentId/reactions',
   extractJWTPayload,
   loginRequired,
   async (req: Request, res: Response) => {
     const userId = req.jwtPayload!.id;
-    const postId = req.params.postId;
+    const commentId = req.params.commentId;
 
-    const reaction = await Reaction.findOne({ userId, postId, commentId: { $exists: false } });
+    const reaction = await Reaction.findOne({ userId, commentId });
     if (!reaction) {
       throw new NotFoundError();
     }
@@ -23,13 +23,12 @@ router.delete(
       throw new NotAuthorizedError(['not authorized']);
     }
 
-    // Publish reaction deleted event before deleting (include type for feed service)
+    // Publish reaction deleted event before deleting
     await new ReactionDeletedPublisher(kafkaWrapper.producer).publish({
       id: reaction.id,
       userId: reaction.userId,
       postId: reaction.postId,
       commentId: reaction.commentId,
-      type: reaction.type as 'like' | 'love' | 'haha' | 'sad' | 'angry',
     });
 
     await reaction.deleteOne();
@@ -38,4 +37,5 @@ router.delete(
   }
 );
 
-export { router as deletePostReactionRouter };
+export { router as deleteCommentReactionRouter };
+

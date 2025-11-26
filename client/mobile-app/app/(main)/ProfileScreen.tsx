@@ -7,6 +7,7 @@ import { authApi, postApi } from '../../utils/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PostCard, Post } from '../../components/feed/PostCard';
 import { profileScreenStyles as styles } from '../../styles/profile/profileScreenStyles';
+import { PostDetailModal } from './PostDetailModal';
 
 type TabType = 'posts' | 'agents' | 'friends';
 
@@ -19,6 +20,8 @@ export default function ProfileScreen() {
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [showPostModal, setShowPostModal] = useState(false);
   const insets = useSafeAreaInsets();
   
   const [counts, setCounts] = useState({
@@ -84,6 +87,28 @@ export default function ProfileScreen() {
       setRefreshing(false);
     }
   }, [activeTab, loadUserPosts]);
+
+  const handlePostPress = useCallback((post: Post) => {
+    setSelectedPost(post);
+    setShowPostModal(true);
+  }, []);
+
+  const handlePostUpdated = useCallback(() => {
+    loadUserPosts();
+    setShowPostModal(false);
+  }, [loadUserPosts]);
+
+  const handlePostDeleted = useCallback(() => {
+    setUserPosts(prev => prev.filter(p => p.id !== selectedPost?.id));
+    setCounts(prev => ({ ...prev, posts: prev.posts - 1 }));
+    setShowPostModal(false);
+    setSelectedPost(null);
+  }, [selectedPost]);
+
+  const handlePostReactionChange = useCallback(() => {
+    // Refresh posts to show updated reactions
+    loadUserPosts();
+  }, [loadUserPosts]);
 
   if (loading) {
     return (
@@ -241,12 +266,30 @@ export default function ProfileScreen() {
               ) : (
                 <View>
                   {userPosts.map((post) => (
-                    <PostCard key={post.id} post={post} />
+                    <PostCard
+                      key={post.id}
+                      post={post}
+                      onPress={() => handlePostPress(post)}
+                      onCommentPress={() => handlePostPress(post)}
+                      onPostUpdated={handlePostReactionChange}
+                      onPostDeleted={handlePostDeleted}
+                    />
                   ))}
                 </View>
               )}
             </View>
           )}
+
+          <PostDetailModal
+            visible={showPostModal}
+            post={selectedPost}
+            onClose={() => {
+              setShowPostModal(false);
+              setSelectedPost(null);
+            }}
+            onPostUpdated={handlePostUpdated}
+            onPostDeleted={handlePostDeleted}
+          />
 
           {activeTab === 'agents' && (
             <View style={styles.sectionContainer}>

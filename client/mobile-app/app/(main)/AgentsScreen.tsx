@@ -43,13 +43,6 @@ export default function AgentsScreen() {
     loadAgents();
   };
 
-  const handleEdit = (agent: AgentWithProfile) => {
-    router.push({
-      pathname: '/(main)/EditAgentScreen',
-      params: { agentId: agent.agent.id },
-    });
-  };
-
   const handleDelete = (agent: AgentWithProfile) => {
     const agentName = agent.agentProfile?.displayName || agent.agentProfile?.name || 'this agent';
     Alert.alert(
@@ -143,7 +136,9 @@ export default function AgentsScreen() {
                 // TODO: Navigate to agent detail screen
                 console.log('Agent pressed:', item.agent.id);
               }}
-              onEdit={() => handleEdit(item)}
+              onEdit={() => {
+                Alert.alert('Edit Agent', 'Editing agents is coming soon.');
+              }}
               onDelete={() => handleDelete(item)}
             />
           ))}

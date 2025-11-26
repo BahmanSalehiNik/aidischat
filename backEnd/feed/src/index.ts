@@ -7,10 +7,11 @@ import { UserCreatedListener, UserUpdatedListener, UserDeletedListener } from ".
 import { ProfileCreatedListener, ProfileUpdatedListener, ProfileDeletedListener } from "./events/listeners/user/profileListener";
 import { PostCreatedListener, PostUpdatedListener, PostDeletedListener } from "./events/listeners/post/postListener";
 import { CommentCreatedListener, CommentDeletedListener } from "./events/listeners/comment/commentListener";
+import { ReactionCreatedListener, ReactionDeletedListener } from "./events/listeners/reaction/reactionListener";
 import { FriendshipAcceptedListener, 
     FriendshipUpdatedListener, 
     FriendshipRequestedListener } from "./events/listeners/friendship/friendshipListener";
-import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdPostCreated, GroupIdPostUpdated, GroupIdPostDeleted, GroupIdCommentCreated, GroupIdCommentDeleted, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated } from "./events/queGroupNames";
+import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdPostCreated, GroupIdPostUpdated, GroupIdPostDeleted, GroupIdCommentCreated, GroupIdCommentDeleted, GroupIdReactionCreated, GroupIdReactionDeleted, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated } from "./events/queGroupNames";
 import { trendingWorker } from "./modules/trending/trendingWorker";
 
 
@@ -74,6 +75,10 @@ const startMongoose = async ()=>{
         // Comment listeners - each with separate consumer group
         new CommentCreatedListener(kafkaWrapper.consumer(GroupIdCommentCreated)).listen();
         new CommentDeletedListener(kafkaWrapper.consumer(GroupIdCommentDeleted)).listen();
+
+        // Reaction listeners - each with separate consumer group
+        new ReactionCreatedListener(kafkaWrapper.consumer(GroupIdReactionCreated)).listen();
+        new ReactionDeletedListener(kafkaWrapper.consumer(GroupIdReactionDeleted)).listen();
 
         // Friendship listeners - each with separate consumer group
         new FriendshipRequestedListener(kafkaWrapper.consumer(GroupIdFreindshipRequested)).listen();

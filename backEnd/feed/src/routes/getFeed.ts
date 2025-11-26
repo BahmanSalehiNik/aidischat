@@ -123,6 +123,16 @@ async function buildTrendingItems(
     return [id, u];
   }));
 
+  // Fetch post projections to get reactionsSummary and commentsCount
+  const postIds = trending.map(t => t.postId);
+  const posts = await Post.find({ _id: { $in: postIds } })
+    .select('_id reactionsSummary commentsCount')
+    .lean();
+  const postMap = new Map(posts.map((p: any) => [p._id, p]));
+
+  // Note: We don't fetch current user's reactions for trending posts (same reason as above)
+  const userReactionMap = new Map();
+
   return Promise.all(
     trending.map(async (entry) => {
       const profile = profileMap.get(entry.authorId);
@@ -136,6 +146,13 @@ async function buildTrendingItems(
       }
 
       const mediaWithSignedUrls = await buildSignedMedia(entry.media);
+      
+      // Get reactionsSummary and commentsCount from post projection
+      const post = postMap.get(entry.postId);
+      
+      // Get current user's reaction
+      const userReaction = userReactionMap.get(entry.postId);
+      const currentUserReaction = userReaction ? { userId: userReaction.userId, type: userReaction.type } : undefined;
 
       return {
         feedId: null,
@@ -143,13 +160,15 @@ async function buildTrendingItems(
         author: {
           userId: entry.authorId,
           name: displayName,
+          email: user?.email,
           avatarUrl: profile?.avatarUrl,
         },
         content: entry.content,
         media: mediaWithSignedUrls,
         visibility: 'public',
-        reactionsSummary: [],
-        commentsCount: undefined,
+        reactionsSummary: post?.reactionsSummary || [],
+        currentUserReaction,
+        commentsCount: post?.commentsCount || 0,
         createdAt: entry.createdAt,
         source: 'trending',
         status: FeedStatus.Unseen,
@@ -263,8 +282,8 @@ router.get('/api/feeds',
   }
 
   // Extract postIds and fetch posts
-  const postIds = feeds.map(f => f.postId);
-  const posts = await Post.find({ _id: { $in: postIds } })
+  const feedPostIds = feeds.map(f => f.postId);
+  const posts = await Post.find({ _id: { $in: feedPostIds } })
     .sort({ createdAt: -1 })
     .lean()
     .exec();
@@ -288,6 +307,15 @@ router.get('/api/feeds',
 
   const postMap = new Map(posts.map(p => [p._id, p]));
   const feedMap = new Map(feeds.map(f => [f.postId, f]));
+
+  // Note: We don't fetch current user's reactions here because they're not stored in feed database
+  // The feed service maintains reactionsSummary in its Post projection, but not individual user reactions
+  // For currentUserReaction, we'd need to either:
+  // 1. Store it in the feed database (add userId to reactionsSummary), OR
+  // 2. Query post service (which we don't want), OR
+  // 3. Have post service include it in PostUpdated event
+  // For now, we'll leave currentUserReaction undefined and let the frontend handle it
+  const userReactionMap = new Map();
 
   // Build feed items with status, sorted by priority
   const feedItems = await Promise.all(feeds.map(async (feed) => {
@@ -314,23 +342,30 @@ router.get('/api/feeds',
     
     const mediaWithSignedUrls = await buildSignedMedia(post.media);
     
-    return {
-      feedId: feed._id,
-      postId: post._id,
-      author: {
-        userId: post.userId,
-        name: displayName,
-        avatarUrl: profile?.avatarUrl,
-      },
-      content: post.content,
-      media: mediaWithSignedUrls,
-      visibility: post.visibility,
-      reactionsSummary: post.reactionsSummary,
-      commentsCount: post.commentsCount,
-      createdAt: post.createdAt || post.originalCreation,
-      status: feed.status,
-      source: 'feed',
-    };
+    // Get current user's reaction
+    const postIdStr = post._id?.toString() || post.id?.toString() || String(post._id || post.id);
+    const userReaction = userReactionMap.get(postIdStr);
+    const currentUserReaction = userReaction ? { userId: userReaction.userId, type: userReaction.type } : undefined;
+    
+      return {
+        feedId: feed._id,
+        postId: post._id,
+        author: {
+          userId: post.userId,
+          name: displayName,
+          email: user?.email,
+          avatarUrl: profile?.avatarUrl,
+        },
+        content: post.content,
+        media: mediaWithSignedUrls,
+        visibility: post.visibility,
+        reactionsSummary: post.reactionsSummary || [],
+        currentUserReaction,
+        commentsCount: post.commentsCount || 0,
+        createdAt: post.createdAt || post.originalCreation,
+        status: feed.status,
+        source: 'feed',
+      };
   }));
 
   const validFeedItems = feedItems.filter(Boolean);
