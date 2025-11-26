@@ -63,6 +63,8 @@ export const InviteParticipantsModal: React.FC<InviteParticipantsModalProps> = (
     setActiveTab('people');
     setSearchQuery('');
     setSearchResults([]);
+    setMyAgents([]); // Reset agents list when modal closes
+    setMyAgentsLoading(false);
     setErrorMessage(null);
     setInvitingId(null);
     setInvitedMap({});
@@ -75,25 +77,38 @@ export const InviteParticipantsModal: React.FC<InviteParticipantsModalProps> = (
   }, [visible, resetState]);
 
   useEffect(() => {
-    if (!visible || activeTab !== 'myAgents' || myAgents.length > 0 || myAgentsLoading) {
+    // Only load agents when:
+    // 1. Modal is visible
+    // 2. "My Agents" tab is active
+    // 3. Agents haven't been loaded yet (or were reset)
+    // 4. Not currently loading
+    if (!visible || activeTab !== 'myAgents' || myAgentsLoading) {
+      return;
+    }
+
+    // If agents are already loaded, don't reload (unless we explicitly want to refresh)
+    if (myAgents.length > 0) {
       return;
     }
 
     const loadAgents = async () => {
       try {
         setMyAgentsLoading(true);
+        setErrorMessage(null); // Clear any previous errors
         const response = await agentsApi.getAgents();
         const mapped = response.map(mapAgentToOption);
         setMyAgents(mapped);
       } catch (error: any) {
+        console.error('Error loading agents:', error);
         setErrorMessage(error?.message || 'Failed to load your agents');
+        setMyAgents([]); // Ensure empty array on error
       } finally {
         setMyAgentsLoading(false);
       }
     };
 
     loadAgents();
-  }, [visible, activeTab, myAgents.length, myAgentsLoading]);
+  }, [visible, activeTab]); // Removed myAgents.length and myAgentsLoading from deps to allow reload when tab changes
 
   useEffect(() => {
     if (!visible || activeTab === 'myAgents') {
@@ -240,7 +255,18 @@ export const InviteParticipantsModal: React.FC<InviteParticipantsModalProps> = (
               <TouchableOpacity
                 key={tab.key}
                 style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]}
-                onPress={() => setActiveTab(tab.key)}
+                onPress={() => {
+                  setActiveTab(tab.key);
+                  // Reset search when switching tabs
+                  if (tab.key !== 'myAgents') {
+                    setSearchQuery('');
+                    setSearchResults([]);
+                  }
+                  // Reset agents list when switching away from "My Agents" to allow reload
+                  if (tab.key !== 'myAgents') {
+                    setMyAgents([]);
+                  }
+                }}
               >
                 <Text
                   style={[

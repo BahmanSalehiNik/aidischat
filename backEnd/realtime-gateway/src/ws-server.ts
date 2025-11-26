@@ -2,6 +2,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
 import { redisPublisher, redisSubscriber, redisRoom, redisRoomSubscriber, redisRoomPublisher, RedisRoomKeys, RedisChannels } from './redis';
 import { MessageIngestPublisher } from './events/publishers/message-ingest-publisher';
+import { MessageReactionIngestPublisher } from './events/publishers/message-reaction-ingest-publisher';
+import { MessageReplyIngestPublisher } from './events/publishers/message-reply-ingest-publisher';
 import { Producer } from 'kafkajs';
 import { verifyJWT, extractJWTFromHandshake } from './auth';
 
@@ -59,7 +61,7 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
    * ✅ Efficient filtering (pod only checks its own sockets)
    * ✅ Horizontal scaling (each pod handles its own clients)
    */
-  redisSubscriber.on('message', (channel: string, raw: string) => {
+    redisSubscriber.on('message', (channel: string, raw: string) => {
     const roomId = channel.replace('room:', '');
     const sockets = roomMembers.get(roomId);
     
@@ -69,13 +71,62 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
       return;
     }
     
-    const msg = JSON.parse(raw);
+    let msg: any;
+    try {
+      msg = JSON.parse(raw);
+    } catch (error) {
+      console.error(`❌ [Redis→WS] Failed to parse message from Redis channel ${channel}:`, error);
+      return;
+    }
+    
     let sentCount = 0;
+    
+    // Determine message type based on event structure
+    let wsMessageType = 'message';
+    if (msg.type === 'message.reaction.created') {
+      wsMessageType = 'message.reaction.created';
+    } else if (msg.type === 'message.reaction.removed') {
+      wsMessageType = 'message.reaction.removed';
+    } else if (msg.type === 'message.reply.created') {
+      wsMessageType = 'message.reply.created';
+    }
+    
+    // Validate message data before sending
+    // For regular messages, ensure required fields are present
+    // Note: content can be empty (e.g., messages with only attachments)
+    if (wsMessageType === 'message' && (!msg.id || !msg.senderId)) {
+      console.warn(`⚠️ [Redis→WS] Invalid message data, skipping:`, {
+        hasId: !!msg.id,
+        hasContent: !!msg.content,
+        hasSenderId: !!msg.senderId,
+        roomId: msg.roomId,
+      });
+      return;
+    }
+    
+    // For reaction events, validate required fields
+    if (wsMessageType === 'message.reaction.created' || wsMessageType === 'message.reaction.removed') {
+      if (!msg.messageId || !msg.roomId) {
+        console.warn(`⚠️ [Redis→WS] Invalid reaction event data, skipping:`, {
+          hasMessageId: !!msg.messageId,
+          hasRoomId: !!msg.roomId,
+          type: msg.type,
+          roomId: channel,
+        });
+        return;
+      }
+      console.log(`📡 [Redis→WS] Broadcasting ${wsMessageType} for message ${msg.messageId} in room ${msg.roomId} to ${sockets.size} socket(s)`);
+    }
     
     // Send only to sockets on THIS pod
     for (const ws of sockets) {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'message', data: msg }));
+        // For reaction events, send the data structure expected by the client
+        const payload = wsMessageType === 'message.reaction.created' || wsMessageType === 'message.reaction.removed'
+          ? { type: wsMessageType, data: msg } // Client expects { type, data: { messageId, roomId, reaction, reactionsSummary } }
+          : { type: wsMessageType, data: msg }; // Regular messages also use same structure
+        
+        ws.send(JSON.stringify(payload));
         sentCount++;
       } else {
         console.log(`⚠️ [Redis→WS] Socket in room ${roomId} is not OPEN (state: ${ws.readyState})`);
@@ -83,7 +134,7 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
     }
     
     if (sentCount > 0) {
-      console.log(`📡 [Redis→WS] Broadcast to ${sentCount} socket(s) in room ${roomId} on this pod`);
+      console.log(`📡 [Redis→WS] Broadcast ${wsMessageType} to ${sentCount} socket(s) in room ${roomId} on this pod`);
     } else {
       console.warn(`⚠️ [Redis→WS] No sockets sent message in room ${roomId} (${sockets.size} sockets but none OPEN)`);
     }
@@ -319,9 +370,53 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
           senderId: ws.user?.id || '',
           senderType: ws.user?.type || 'human',
           tempId: msg.tempId,
+          replyToMessageId: msg.replyToMessageId, // Support replies
         });
         
         // Refresh TTL when user is active (sending messages)
+        if (ws.user?.id) {
+          try {
+            await redisRoom.expire(RedisRoomKeys.userRooms(ws.user.id), 300);
+          } catch (error) {
+            // Silently fail
+          }
+        }
+      }
+
+      if (msg.type === 'message.reaction') {
+        const publisher = new MessageReactionIngestPublisher(kafkaProducer);
+        await publisher.publish({
+          roomId: msg.roomId,
+          messageId: msg.messageId,
+          userId: ws.user?.id || '',
+          emoji: msg.emoji,
+          action: msg.action, // 'add' or 'remove'
+        });
+        
+        // Refresh TTL when user is active
+        if (ws.user?.id) {
+          try {
+            await redisRoom.expire(RedisRoomKeys.userRooms(ws.user.id), 300);
+          } catch (error) {
+            // Silently fail
+          }
+        }
+      }
+
+      if (msg.type === 'message.reply') {
+        const publisher = new MessageReplyIngestPublisher(kafkaProducer);
+        await publisher.publish({
+          roomId: msg.roomId,
+          senderId: ws.user?.id || '',
+          senderType: (ws.user?.type || 'human') as 'human' | 'agent',
+          content: msg.content,
+          replyToMessageId: msg.replyToMessageId,
+          attachments: msg.attachments,
+          senderName: msg.senderName,
+          dedupeKey: msg.tempId,
+        });
+        
+        // Refresh TTL when user is active
         if (ws.user?.id) {
           try {
             await redisRoom.expire(RedisRoomKeys.userRooms(ws.user.id), 300);

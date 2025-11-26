@@ -18,12 +18,24 @@ router.get('/api/rooms/:roomId', extractJWTPayload, loginRequired, async (req: R
   });
 
   if (!participant) {
+    console.warn(`[getRoom] User ${userId} is not a participant in room ${roomId}`);
     return res.status(403).send({ error: 'Not authorized to access this room' });
   }
+  
+  console.log(`[getRoom] User ${userId} is a participant in room ${roomId}, fetching room details`);
 
-  const room = await Room.findOne({ _id: roomId, deletedAt: { $exists: false } });
+  // Check if room exists and is not deleted
+  // Note: deletedAt has default: null in schema, so we check for null or not existing
+  const room = await Room.findOne({
+    _id: roomId,
+    $or: [
+      { deletedAt: null },
+      { deletedAt: { $exists: false } }
+    ]
+  });
 
   if (!room) {
+    console.error(`[getRoom] Room ${roomId} not found or deleted for user ${userId}`);
     return res.status(404).send({ error: 'Room not found' });
   }
 

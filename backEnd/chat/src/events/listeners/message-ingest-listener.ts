@@ -54,6 +54,20 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
       }
     }
 
+    // Check if this is a reply (replyToMessageId in data)
+    const replyToMessageId = (data as any).replyToMessageId || null;
+    let originalMessage = null;
+    
+    // If it's a reply, validate the original message exists and fetch it
+    if (replyToMessageId) {
+      originalMessage = await Message.findOne({ _id: replyToMessageId, roomId }).lean();
+      if (!originalMessage) {
+        console.log(`[Message Ingest] Rejected: Original message ${replyToMessageId} not found in room ${roomId}`);
+        await this.ack();
+        return;
+      }
+    }
+
     // Create and save message to database
     const message = Message.build({
       id: messageId,
@@ -63,6 +77,8 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
       senderName, // Store denormalized sender name
       content,
       attachments: [],
+      replyToMessageId: replyToMessageId || null, // Set reply reference if provided
+      reactions: [], // Initialize empty reactions array
       dedupeKey
     });
 
@@ -92,6 +108,22 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
       senderName: message.senderName, // Include sender name in event (denormalized)
       content: message.content,
       attachments: message.attachments,
+      replyToMessageId: message.replyToMessageId || null, // Include reply reference
+      // Include replyTo data directly in message.created if this is a reply
+      replyTo: originalMessage ? {
+        id: originalMessage._id?.toString() || originalMessage.id,
+        senderId: originalMessage.senderId,
+        senderName: originalMessage.senderName || undefined,
+        senderType: originalMessage.senderType,
+        content: originalMessage.content,
+        // Exclude attachments - not needed for preview card, user can jump to message to see full content
+        createdAt: originalMessage.createdAt?.toISOString() || new Date().toISOString(),
+      } : undefined,
+      reactions: message.reactions.map((r: any) => ({
+        userId: r.userId,
+        emoji: r.emoji,
+        createdAt: r.createdAt.toISOString(),
+      })),
       createdAt: message.createdAt.toISOString(),
       dedupeKey: message.dedupeKey,
     });

@@ -1,11 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useLayoutEffect } from 'react';
 import { View, Text, ActivityIndicator, Platform, Keyboard, TouchableOpacity } from 'react-native';
 import { FlashList, FlashListRef } from '@shopify/flash-list';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useWebSocket } from '../../../hooks/useWebSocket';
-import { useChatStore } from '../../../store/chatStore';
+import { useChatStore, Message } from '../../../store/chatStore';
 import { MessageBubble } from '../../../components/chat/MessageBubble';
 import { MessageInput } from '../../../components/chat/MessageInput';
 import { messageApi, debugApi } from '../../../utils/api';
@@ -14,24 +14,91 @@ import { ErrorBanner } from '../../../components/chat/ErrorBanner';
 import { SetupBanner } from '../../../components/chat/SetupBanner';
 import { chatScreenStyles as styles } from '../../../styles/chat/chatScreenStyles';
 import { InviteParticipantsModal } from '../../../components/chat/InviteParticipantsModal';
+import { ParticipantsModal } from '../../../components/chat/ParticipantsModal';
 
 export default function ChatScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
-  const { messages, setMessages, addMessage, currentRoomId, setCurrentRoom, rooms, roomMembers } = useChatStore();
-  const { sendMessage, isConnected, connectionError } = useWebSocket(roomId || null);
+  // Use Zustand selector to subscribe only to messages for this room - this ensures re-renders when messages change
+  // Zustand will automatically detect when state.messages[roomId] changes (new array reference)
+  const roomMessages = useChatStore((state) => {
+    const messages = roomId ? (state.messages[roomId] || []) : [];
+    // Log when selector runs to debug re-render issues
+    if (messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      console.log(`[ChatScreen] Selector ran for room ${roomId}, messages: ${messages.length}, last msg reactions:`, lastMsg.reactionsSummary);
+    }
+    return messages;
+  });
+  const { setMessages, addMessage, currentRoomId, setCurrentRoom, rooms, roomMembers, updateMessage } = useChatStore();
+  const { sendMessage, sendReaction, isConnected, connectionError } = useWebSocket(roomId || null);
   const { user } = useAuthStore();
   const [loading, setLoading] = React.useState(true);
   const [settingUp, setSettingUp] = React.useState(false);
   const [setupError, setSetupError] = React.useState(false);
   const [keyboardHeight, setKeyboardHeight] = React.useState(0);
   const [inviteModalVisible, setInviteModalVisible] = React.useState(false);
+  const [participantsModalVisible, setParticipantsModalVisible] = React.useState(false);
+  const [replyingTo, setReplyingTo] = React.useState<Message | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = React.useState<string | null>(null);
   const setupStartTimeRef = useRef<number | null>(null);
   const listRef = useRef<FlashListRef<any>>(null);
   const insets = useSafeAreaInsets();
-
-  const roomMessages = roomId ? messages[roomId] || [] : [];
   const memberIds = roomId ? roomMembers[roomId] || [] : [];
   const room = rooms.find((r) => r.id === roomId);
+  const router = useRouter();
+  const navigation = useNavigation();
+  
+  // Set header dynamically with room name and invite button
+  useLayoutEffect(() => {
+    const participantCount = memberIds.length;
+    navigation.setOptions({
+      headerTitle: () => (
+        <TouchableOpacity
+          onPress={() => setParticipantsModalVisible(true)}
+          style={{ alignItems: 'center' }}
+        >
+          <Text style={{ fontSize: 17, fontWeight: '600', color: '#000' }}>
+            {room?.name || 'Conversation'}
+          </Text>
+          {participantCount > 0 && (
+            <Text style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+              {participantCount} {participantCount === 1 ? 'participant' : 'participants'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      ),
+      headerTitleAlign: 'center', // Center the title on both platforms
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() => setInviteModalVisible(true)}
+          disabled={!roomId}
+          style={{ marginRight: Platform.OS === 'ios' ? 0 : 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+        >
+          <Ionicons name="person-add" size={20} color="#007AFF" />
+          <Text style={{ color: '#007AFF', fontSize: 16 }}>Invite</Text>
+        </TouchableOpacity>
+      ),
+      headerBackTitle: '', // Remove back button text on iOS
+      // On Android, replace the default back button with iOS-style chevron and "Rooms" label
+      // On iOS, let the default back button work (don't override)
+      ...(Platform.OS === 'android' && {
+        headerLeft: () => (
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{ marginLeft: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+          >
+            <Ionicons name="chevron-back" size={24} color="#007AFF" />
+            <Text style={{ color: '#007AFF', fontSize: 17 }}>Rooms</Text>
+          </TouchableOpacity>
+        ),
+      }),
+    });
+  }, [navigation, room?.name, roomId, router, memberIds.length]);
+  
+  // Compute extraData for FlashList - this helps FlashList detect when items need to re-render
+  const extraData = React.useMemo(() => {
+    return roomMessages.map(m => `${m.id}-${JSON.stringify(m.reactionsSummary || [])}-${m.currentUserReaction || 'null'}`).join('|');
+  }, [roomMessages]);
 
   useEffect(() => {
     if (roomId) {
@@ -191,17 +258,52 @@ export default function ChatScreen() {
     }
   };
 
-  const handleSend = (content: string) => {
+  const handleSend = (content: string, replyToMessageId?: string) => {
     if (!roomId) return;
 
     const tempId = `temp-${Date.now()}-${Math.random()}`;
-    sendMessage(content, tempId);
+    sendMessage(content, tempId, replyToMessageId);
+    setReplyingTo(null);
     
     setTimeout(() => {
       if (listRef.current) {
         listRef.current.scrollToEnd({ animated: true });
       }
     }, 400);
+  };
+
+  const handleReactionPress = (messageId: string, emoji: string | null) => {
+    if (!roomId) return;
+    sendReaction(messageId, emoji);
+  };
+
+  const handleReplyPress = (message: Message) => {
+    setReplyingTo(message);
+  };
+
+  const handleQuotedMessagePress = (messageId: string) => {
+    // Scroll to the original message
+    const messageIndex = roomMessages.findIndex((m) => m.id === messageId);
+    if (messageIndex !== -1 && listRef.current) {
+      // Highlight the message briefly
+      setHighlightedMessageId(messageId);
+      
+      // Use viewPosition to center the message in the viewport
+      // viewPosition 0.5 = center, 0 = top, 1 = bottom
+      listRef.current.scrollToIndex({ 
+        index: messageIndex, 
+        animated: true,
+        viewPosition: 0.4, // Slightly above center for better visibility
+      });
+      
+      // Remove highlight after 2 seconds
+      setTimeout(() => {
+        setHighlightedMessageId(null);
+      }, 2000);
+    } else {
+      console.warn(`[ChatScreen] Message ${messageId} not found in current messages. It may not be loaded yet.`);
+      // TODO: Could implement pagination loading here if message is not in current view
+    }
   };
 
   if (loading) {
@@ -228,27 +330,24 @@ export default function ChatScreen() {
       )}
 
       <View style={styles.listContainer}>
-        <View style={styles.headerBar}>
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>{room?.name || 'Conversation'}</Text>
-            <Text style={styles.headerSubtitle}>
-              {memberIds.length ? `${memberIds.length} participants` : 'No participants yet'}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.inviteButton}
-            onPress={() => setInviteModalVisible(true)}
-            disabled={!roomId}
-          >
-            <Ionicons name="person-add" size={18} color="#FFFFFF" />
-            <Text style={styles.inviteButtonText}>Invite</Text>
-          </TouchableOpacity>
-        </View>
         <FlashList
           ref={listRef}
           data={roomMessages}
-          renderItem={({ item }) => <MessageBubble message={item} />}
-          keyExtractor={(item) => item.id || item.tempId || Math.random().toString()}
+          renderItem={({ item }) => (
+            <MessageBubble
+              message={item}
+              onReactionPress={handleReactionPress}
+              onReplyPress={handleReplyPress}
+              onQuotedMessagePress={handleQuotedMessagePress}
+              isHighlighted={highlightedMessageId === item.id}
+            />
+          )}
+          keyExtractor={(item) => {
+            // Include reactions in key to force re-render when reactions change
+            const reactionKey = JSON.stringify(item.reactionsSummary || []) + (item.currentUserReaction || '');
+            return `${item.id || item.tempId || Math.random().toString()}-${reactionKey}`;
+          }}
+          extraData={extraData}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No messages yet</Text>
@@ -274,7 +373,12 @@ export default function ChatScreen() {
             }
           ]}
         >
-          <MessageInput onSend={handleSend} disabled={!isConnected} />
+          <MessageInput
+            onSend={handleSend}
+            disabled={!isConnected}
+            replyingTo={replyingTo}
+            onCancelReply={() => setReplyingTo(null)}
+          />
         </View>
       ) : (
         <View 
@@ -286,7 +390,12 @@ export default function ChatScreen() {
             }
           ]}
         >
-          <MessageInput onSend={handleSend} disabled={!isConnected} />
+          <MessageInput
+            onSend={handleSend}
+            disabled={!isConnected}
+            replyingTo={replyingTo}
+            onCancelReply={() => setReplyingTo(null)}
+          />
         </View>
       )}
 
@@ -299,6 +408,20 @@ export default function ChatScreen() {
           onClose={() => setInviteModalVisible(false)}
         />
       )}
+      
+      <ParticipantsModal
+        visible={participantsModalVisible}
+        roomId={roomId}
+        roomName={room?.name}
+        participantIds={memberIds}
+        messages={roomMessages.map(m => ({
+          senderId: m.senderId,
+          senderName: m.senderName,
+          senderType: m.senderType,
+          sender: m.sender, // Include full sender object for name/email extraction
+        }))}
+        onClose={() => setParticipantsModalVisible(false)}
+      />
     </View>
   );
 }

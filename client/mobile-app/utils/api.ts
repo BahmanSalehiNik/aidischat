@@ -80,7 +80,11 @@ export class ApiClient {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error(`❌ API Error:`, data);
+        // Don't log 404 errors for agent lookups - they're expected when checking if an ID is an agent
+        const isAgentLookup = url.includes('/api/agents/') && response.status === 404;
+        if (!isAgentLookup) {
+          console.error(`❌ API Error:`, data);
+        }
         
         // Handle 401 Unauthorized - might indicate token issue
         if (response.status === 401) {
@@ -116,14 +120,23 @@ export class ApiClient {
 
       return data;
     } catch (error: any) {
-      console.error(`❌ Network Error for ${url}:`, error);
-      console.error(`❌ Error Details:`, {
-        message: error?.message,
-        name: error?.name,
-        code: error?.code,
-        errno: error?.errno,
-        stack: error?.stack,
-      });
+      // Don't log 404 errors for agent lookups - they're expected when checking if an ID is an agent
+      // Also don't log 404 errors for room lookups - rooms might be deleted
+      const isAgentLookup = url.includes('/api/agents/') && 
+                           (error?.message?.includes('404') || error?.message?.includes('not found'));
+      const isRoomLookup = url.includes('/api/rooms/') && 
+                          (error?.message?.includes('404') || error?.message?.includes('Room not found'));
+      
+      if (!isAgentLookup && !isRoomLookup) {
+        console.error(`❌ Network Error for ${url}:`, error);
+        console.error(`❌ Error Details:`, {
+          message: error?.message,
+          name: error?.name,
+          code: error?.code,
+          errno: error?.errno,
+          stack: error?.stack,
+        });
+      }
       
       if (error instanceof TypeError) {
         // Network-related errors

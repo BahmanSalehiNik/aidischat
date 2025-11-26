@@ -9,6 +9,7 @@ export class MessageIngestPublisher {
     senderId: string;
     senderType: string;
     tempId?: string;
+    replyToMessageId?: string | null;
   }) {
     await this.producer.send({
       topic: 'message.ingest',

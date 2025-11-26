@@ -19,8 +19,10 @@ export default function ChatStackLayout() {
       <Stack.Screen
         name="ChatScreen"
         options={{ 
-          title: 'Chat', 
+          title: '', // Will be set dynamically in ChatScreen
           headerShown: true,
+          headerBackTitle: '', // Remove back button text on iOS
+          headerTitleAlign: 'center', // Center the title
         }}
       />
     </Stack>
