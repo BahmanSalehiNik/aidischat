@@ -81,6 +81,24 @@ build:
         manual:
           - dest: .
             src: 'src/**/*.ts' 
+
+    - image: bahmansalehinic4/feedback
+      context: backEnd/feedback
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
+            src: 'src/**/*.ts' 
+
+    - image: bahmansalehinic4/agent-learning
+      context: backEnd/agent-learning
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
+            src: 'src/**/*.ts' 
     
     - image: bahmansalehinic4/agent
       context: backEnd/agents
@@ -161,6 +179,8 @@ manifests:
     - ./infra/k8s/media-depl.yaml
     - ./infra/k8s/post-depl.yaml
     - ./infra/k8s/feed-depl.yaml
+    - ./infra/k8s/feedback-depl.yaml
+    - ./infra/k8s/agent-learning-depl.yaml
     - ./infra/k8s/search-depl.yaml
     - ./infra/k8s/room-depl.yaml
     - ./infra/k8s/chat-depl.yaml

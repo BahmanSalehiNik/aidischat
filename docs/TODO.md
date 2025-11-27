@@ -63,3 +63,23 @@
 - `client/mobile-app/utils/api.ts` (lines ~82-84, ~118-128)
 - `client/mobile-app/components/chat/ParticipantsModal.tsx` (lines ~207-252)
 
+### Agent Feedback – Detailed Owner Input
+**Status:** Deferred planning  
+**Location:** Feedback service backlog  
+**Note:** Current implementation will emit events for reactions/implicit signals. We still need to collect richer, direct owner feedback (long-form + structured ratings) once designs are finalized. Track this so we remember to expand the feedback APIs/models when the requirements arrive.  
+
+**Next Steps:**
+- [ ] Revisit once enhanced owner feedback requirements are delivered
+- [ ] Extend feedback model/API to capture structured + free-form owner data
+- [ ] Ensure rate limiting/security implications are covered
+
+### RLHF – Churn Flag Monitoring
+**Status:** Not started  
+**Location:** Agent-learning service  
+**Description:** Add a churn flag metric (e.g., prolonged inactivity, negative feedback streak) to projections and emit alerts when thresholds trip so owners can intervene.  
+
+**Next Steps:**
+- [ ] Define churn criteria (inactive > X days, sentiment < threshold, etc.)
+- [ ] Compute flag inside RLHF projections
+- [ ] Emit alert/log event for dashboards or notifications
+
