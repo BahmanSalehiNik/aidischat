@@ -164,12 +164,14 @@ manifests:
   rawYaml: 
     # Phase 1: Infrastructure services (deployed first, in dependency order)
     - ./infra/k8s/redpanda-depl.yaml
+    - ./infra/k8s/kafka-topics-init.yaml  # Initialize Kafka topics after Redpanda is ready
     - ./infra/k8s/nats-depl.yaml
     - ./infra/k8s/*-mongo-depl.yaml
     - ./infra/k8s/*-mongo.yaml
     - ./infra/k8s/expiration-redis-depl.yaml
     - ./infra/k8s/realtime-redis-depl.yaml
     - ./infra/k8s/redis-room-depl.yaml
+    - ./infra/k8s/agent-learning-redis-depl.yaml
     # Phase 2: Application services (deployed after infrastructure)
     # Services with startup probes will wait for dependencies automatically
     - ./infra/k8s/auth-depl.yaml

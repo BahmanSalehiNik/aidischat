@@ -6,6 +6,7 @@ import { User } from '../../models/user';
 import { Agent } from '../../models/agent';
 import { MessageCreatedPublisher } from '../publishers/message-created-publisher';
 import { MessageReplyCreatedPublisher } from '../publishers/message-reply-publishers';
+import { FeedbackReplyReceivedPublisher } from '../publishers/feedback-reply-received-publisher';
 import { kafkaWrapper } from '../../kafka-client';
 import { EachMessagePayload } from 'kafkajs';
 import crypto from 'crypto';
@@ -123,6 +124,22 @@ export class MessageReplyIngestedListener extends Listener<MessageReplyIngestedE
         createdAt: originalMessage.createdAt.toISOString(),
       },
     });
+
+    // If the original message is from an agent, publish feedback event
+    if (originalMessage.senderType === 'agent') {
+      await new FeedbackReplyReceivedPublisher(kafkaWrapper.producer).publish({
+        roomId,
+        messageId: replyMessage.id,
+        replyToMessageId: originalMessage.id,
+        agentId: originalMessage.senderId,
+        agentMessageContent: originalMessage.content,
+        replySenderId: senderId,
+        replySenderType: senderType as 'human' | 'agent',
+        replyContent: content,
+        createdAt: replyMessage.createdAt.toISOString(),
+      });
+      console.log(`[Message Reply Ingested] Published feedback.reply.received for agent ${originalMessage.senderId}`);
+    }
 
     console.log(`[Message Reply Ingested] Published reply events for message ${messageId}`);
 

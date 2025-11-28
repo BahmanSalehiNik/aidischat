@@ -1,5 +1,5 @@
 import { redisPublisher } from '../../redis';
-import { Consumer, EachMessagePayload } from 'kafkajs';
+import { EachMessagePayload } from 'kafkajs';
 import { Listener, MessageReactionCreatedEvent, Subjects } from '@aichatwar/shared';
 
 /**
@@ -9,22 +9,12 @@ import { Listener, MessageReactionCreatedEvent, Subjects } from '@aichatwar/shar
  * This listener runs on ONE Gateway pod (thanks to Kafka consumer group).
  * It receives message.reaction.created events from Kafka and triggers Redis pub/sub fan-out.
  * 
- * Note: This listener extends the base Listener but uses a shared consumer pattern.
- * The listen() method is overridden to be a no-op since subscription/run is handled centrally in index.ts
+ * Note: All listeners use the same groupId 'realtime-gateway-group' to ensure
+ * only one pod processes each message, then fans out via Redis.
  */
 export class MessageReactionCreatedListener extends Listener<MessageReactionCreatedEvent> {
   readonly topic = Subjects.MessageReactionCreated;
   readonly groupId = 'realtime-gateway-group';
-
-  constructor(consumer: Consumer) {
-    super(consumer);
-  }
-
-  // Override listen() to be a no-op since we use shared consumer in index.ts
-  async listen() {
-    // No-op: subscription and run are handled centrally in index.ts
-    console.log(`✅ [MessageReactionCreatedListener] Listener initialized for topic: ${this.topic}`);
-  }
 
   async onMessage(data: MessageReactionCreatedEvent['data'], kafkaPayload: EachMessagePayload) {
     try {
@@ -36,13 +26,20 @@ export class MessageReactionCreatedListener extends Listener<MessageReactionCrea
         reactionsSummary: data.reactionsSummary,
       });
       
-      const channel = `room:${data.roomId}`;
+      // Normalize roomId to ensure consistency (trim whitespace)
+      const normalizedRoomId = data.roomId?.trim();
+      if (!normalizedRoomId) {
+        console.error(`❌ [MessageReactionCreatedListener] Invalid roomId:`, data.roomId);
+        throw new Error(`Invalid roomId: ${data.roomId}`);
+      }
+      
+      const channel = `room:${normalizedRoomId}`;
       
       // FAN-OUT TRIGGER: Publish to Redis (all Gateway pods will receive this)
       const redisPayload = {
         type: 'message.reaction.created',
         messageId: data.messageId,
-        roomId: data.roomId,
+        roomId: normalizedRoomId, // Use normalized roomId
         reaction: data.reaction,
         reactionsSummary: data.reactionsSummary,
       };
@@ -55,6 +52,9 @@ export class MessageReactionCreatedListener extends Listener<MessageReactionCrea
         roomId: data.roomId,
         payloadSize: JSON.stringify(redisPayload).length,
       });
+      
+      // Note: In the old pattern with shared consumer, ack is handled in index.ts
+      // This method is kept for compatibility but won't be called in the old pattern
     } catch (error) {
       console.error(`❌ [MessageReactionCreatedListener] Error processing message:`, error);
       throw error; // Re-throw so base class can handle retry logic if needed

@@ -7,13 +7,23 @@ import { RoomParticipant } from '../../models/room-participant';
 export class RoomParticipantAddedListener extends Listener<RoomParticipantAddedEvent> {
   readonly topic = Subjects.RoomParticipantAdded;
   readonly groupId = 'chat-service-room-participant-added';
+  protected fromBeginning: boolean = true; // Read from beginning to catch missed messages
 
   async onMessage(data: RoomParticipantAddedEvent['data'], payload: any) {
+    console.log(`📥 [RoomParticipantAddedListener] onMessage called with data:`, {
+      roomId: data.roomId,
+      participantId: data.participantId,
+      participantType: data.participantType,
+      role: data.role,
+      partition: payload.partition,
+      offset: payload.message.offset,
+    });
+    
     const payloadWithInvite = data as RoomParticipantAddedEvent['data'] & { invitedByUserId?: string };
     const { roomId, participantId, participantType, role, invitedByUserId } = payloadWithInvite;
 
     try {
-      console.log(`[RoomParticipantAdded] Received event: roomId=${roomId}, participantId=${participantId}, role=${role}`);
+      console.log(`[RoomParticipantAddedListener] ✅ Received event: roomId=${roomId}, participantId=${participantId}, role=${role}, offset=${payload.message.offset}`);
 
       // Check if participant already exists (idempotency)
       // Only check for active participants (not left)

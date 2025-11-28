@@ -9,7 +9,7 @@ interface RoomParticipantAttrs {
   invitedByUserId?: string;
 }
 
-interface RoomParticipantDoc extends mongoose.Document {
+export interface RoomParticipantDoc extends mongoose.Document {
   roomId: string;
   participantId: string;
   participantType: 'human' | 'agent';

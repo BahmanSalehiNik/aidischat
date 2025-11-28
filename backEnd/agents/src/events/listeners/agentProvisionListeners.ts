@@ -11,6 +11,7 @@ export class AgentCreationReplySuccessListener extends Listener<AgentCreationRep
 
   async onMessage(data: AgentCreationReplySuccessEvent["data"], _payload: EachMessagePayload): Promise<void> {
     const { agentId, provider, providerAgentId, correlationId, provisionedAt, metadata } = data;
+    console.log(`[AgentCreationReplySuccessListener] Received event for agent ${agentId}, correlationId: ${correlationId}`);
     const agent = await Agent.findById(agentId);
 
     if (!agent) {
@@ -37,6 +38,7 @@ export class AgentCreationReplySuccessListener extends Listener<AgentCreationRep
     agent.version += 1;
 
     await agent.save();
+    console.log(`[AgentCreationReplySuccessListener] Agent ${agentId} updated to Active status, publishing agent.created event`);
 
     await new AgentCreatedPublisher(kafkaWrapper.producer).publish({
       id: agent.id,
@@ -47,6 +49,7 @@ export class AgentCreationReplySuccessListener extends Listener<AgentCreationRep
       correlationId,
       metadata,
     });
+    console.log(`[AgentCreationReplySuccessListener] Published agent.created event for agent ${agentId}`);
 
     await this.ack();
   }

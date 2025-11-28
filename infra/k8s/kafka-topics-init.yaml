@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topics-init
+  labels:
+    app: kafka-topics-init
+spec:
+  # Don't restart on failure - we want to see if topics already exist
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: kafka-topics-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: topic-init
+        image: redpandadata/redpanda:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Waiting for Kafka broker to be ready..."
+          KAFKA_BROKER=${KAFKA_BROKER:-redpanda-srv:9092}
+          
+          # Wait for Kafka to be ready (max 60 seconds)
+          for i in {1..60}; do
+            if rpk cluster info --brokers $KAFKA_BROKER &>/dev/null; then
+              echo "✅ Kafka broker is ready"
+              break
+            fi
+            echo "Waiting for Kafka broker... (attempt $i/60)"
+            sleep 1
+          done
+          
+          echo "Initializing required Kafka topics..."
+          
+          # Function to create topic if it doesn't exist
+          create_topic_if_not_exists() {
+            local topic=$1
+            if rpk topic list --brokers $KAFKA_BROKER | grep -q "^$topic "; then
+              echo "✅ Topic '$topic' already exists, skipping"
+            else
+              echo "📝 Creating topic '$topic'..."
+              rpk topic create $topic --brokers $KAFKA_BROKER --partitions 1 --replicas 1
+              echo "✅ Topic '$topic' created successfully"
+            fi
+          }
+          
+          # Core message topics for realtime-gateway
+          create_topic_if_not_exists "message.created"
+          create_topic_if_not_exists "chat.message.reaction.created"
+          create_topic_if_not_exists "chat.message.reaction.removed"
+          create_topic_if_not_exists "chat.message.reply.created"
+          
+          # Additional topics that may be needed
+          create_topic_if_not_exists "ai.message.created"
+          create_topic_if_not_exists "ai.message.reply"
+          
+          echo "✅ Kafka topics initialization complete"
+          echo "📋 Current topics:"
+          rpk topic list --brokers $KAFKA_BROKER
+        env:
+        - name: KAFKA_BROKER
+          value: "redpanda-srv:9092"

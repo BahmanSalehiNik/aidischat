@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 import { app } from "./app";
 import { kafkaWrapper } from "./kafka-client";
+import { FeedbackReplyReceivedListener } from "./events/listeners/feedback-reply-received-listener";
+import { FeedbackReactionReceivedListener } from "./events/listeners/feedback-reaction-received-listener";
 
 const start = async () => {
     if (!process.env.JWT_DEV) {
@@ -30,6 +32,11 @@ const start = async () => {
 
         await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
         console.log("Kafka connected successfully");
+
+        // Register Kafka listeners
+        new FeedbackReplyReceivedListener(kafkaWrapper.consumer('feedback-service-reply-received')).listen();
+        new FeedbackReactionReceivedListener(kafkaWrapper.consumer('feedback-service-reaction-received')).listen();
+        console.log("Feedback service Kafka listeners started");
 
         process.on("SIGINT", async () => {
             console.log("SIGINT received - closing Feedback service connections");

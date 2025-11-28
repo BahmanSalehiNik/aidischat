@@ -73,15 +73,25 @@ router.post('/api/rooms', extractJWTPayload, loginRequired, async (req: Request,
   });
 
   // Publish participant added event to Kafka
-  await new RoomParticipantAddedPublisher(kafkaWrapper.producer).publish({
-    roomId: room.id,
-    participantId: userId,
-    participantType: 'human',
-    role: 'owner',
-    addedAt: participant.joinedAt.toISOString(),
-  });
-
-  console.log(`[createRoom] Participant ${userId} added to room ${room.id}, Kafka event published`);
+  try {
+    await new RoomParticipantAddedPublisher(kafkaWrapper.producer).publish({
+      roomId: room.id,
+      participantId: userId,
+      participantType: 'human',
+      role: 'owner',
+      addedAt: participant.joinedAt.toISOString(),
+    });
+    console.log(`[createRoom] ✅ Participant ${userId} added to room ${room.id}, Kafka event published successfully`);
+  } catch (error: any) {
+    console.error(`[createRoom] ❌ Failed to publish RoomParticipantAdded event:`, {
+      roomId: room.id,
+      participantId: userId,
+      error: error.message,
+      stack: error.stack
+    });
+    // Continue anyway - participant is saved in room service
+    // The chat service will eventually sync via the wait mechanism
+  }
 
   res.status(201).send(room);
 });

@@ -42,15 +42,47 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
     // Fetch sender name for denormalization (store in message for quick access)
     let senderName: string | undefined;
     if (senderType === 'human') {
-      const user = await User.findOne({ _id: senderId }).lean();
+      let user = await User.findOne({ _id: senderId }).lean();
       if (user) {
         // Use displayName -> username -> email prefix as fallback
         senderName = user.displayName || user.username || user.email?.split('@')[0];
+        console.log(`[Message Ingest] User lookup successful: senderId=${senderId}, senderName=${senderName}, displayName=${user.displayName}, username=${user.username}, email=${user.email}`);
+      } else {
+        // User doesn't exist in chat service DB - this can happen if UserCreated event was missed
+        // Try to create a minimal user record (will be updated when UserCreated/UserUpdated events arrive)
+        // For now, use a fallback name based on senderId
+        console.warn(`[Message Ingest] ⚠️ User not found in chat service DB: senderId=${senderId} - creating minimal user record and using fallback name`);
+        
+        // Create minimal user (will be updated by UserCreated/UserUpdated events)
+        try {
+          const minimalUser = User.build({
+            id: senderId,
+            email: `${senderId}@unknown.local`, // Placeholder email
+            isActive: true,
+          });
+          await minimalUser.save();
+          console.log(`[Message Ingest] Created minimal user record for ${senderId}`);
+          
+          // Use a readable fallback name (first 8 chars of ID)
+          senderName = `User ${senderId.slice(0, 8)}`;
+        } catch (error: any) {
+          // User might have been created by another process, try to fetch again
+          user = await User.findOne({ _id: senderId }).lean();
+          if (user) {
+            senderName = user.displayName || user.username || user.email?.split('@')[0] || `User ${senderId.slice(0, 8)}`;
+          } else {
+            // Still not found, use fallback
+            senderName = `User ${senderId.slice(0, 8)}`;
+          }
+        }
       }
     } else if (senderType === 'agent') {
       const agent = await Agent.findOne({ _id: senderId }).lean();
       if (agent) {
         senderName = agent.name;
+        console.log(`[Message Ingest] Agent lookup successful: senderId=${senderId}, senderName=${senderName}`);
+      } else {
+        console.warn(`[Message Ingest] ⚠️ Agent not found in chat service DB: senderId=${senderId} - senderName will be undefined`);
       }
     }
 
@@ -100,7 +132,7 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
     }
 
     // Publish message created event (for other services like realtime-gateway)
-    await new MessageCreatedPublisher(kafkaWrapper.producer).publish({
+    const messageCreatedEvent = {
       id: message.id,
       roomId: message.roomId,
       senderType: message.senderType,
@@ -126,7 +158,20 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
       })),
       createdAt: message.createdAt.toISOString(),
       dedupeKey: message.dedupeKey,
+    };
+    
+    console.log(`📤 [Chat Service] Publishing message.created event to Kafka:`, {
+      messageId: messageCreatedEvent.id,
+      roomId: messageCreatedEvent.roomId,
+      senderId: messageCreatedEvent.senderId,
+      senderName: messageCreatedEvent.senderName,
+      contentLength: messageCreatedEvent.content?.length || 0,
+      hasReplyTo: !!messageCreatedEvent.replyTo,
     });
+    
+    await new MessageCreatedPublisher(kafkaWrapper.producer).publish(messageCreatedEvent);
+    
+    console.log(`✅ [Chat Service] Successfully published message.created event to Kafka for message ${messageCreatedEvent.id}`);
 
     // If sender is not an AI agent, publish ai.message.created with AI receivers
     if (senderType !== 'agent') {

@@ -25,14 +25,14 @@ class KafkaWrapper {
     }
     return this._client.consumer({ 
       groupId,
-      // Configure consumer to handle missing topics more gracefully
-      allowAutoTopicCreation: false,
-      // Add retry configuration
-      retry: {
-        retries: 3,
-        initialRetryTime: 100,
-        maxRetryTime: 30000,
-      }
+      // Note: autoCommit is disabled in baseListener.ts consumer.run() call
+      // sessionTimeout: How long before Kafka considers consumer dead (triggers redelivery of uncommitted messages)
+      // heartbeatInterval: How often consumer sends heartbeats to stay alive
+      // These are CRITICAL for message redelivery when ack() is not called
+      sessionTimeout: 30000,      // 30s - if consumer doesn't heartbeat for 30s, Kafka marks it dead and redelivers uncommitted messages
+      heartbeatInterval: 3000,   // 3s - send heartbeat every 3s to stay alive
+      maxInFlightRequests: 5, // Higher throughput - feed posts are independent, order doesn't matter
+      allowAutoTopicCreation: false, // Don't auto-create topics
     });
   }
 

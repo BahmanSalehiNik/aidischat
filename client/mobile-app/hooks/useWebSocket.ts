@@ -10,6 +10,8 @@ const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 export const useWebSocket = (roomId: string | null) => {
   const { token } = useAuthStore();
   const { addMessage, setRoomMembers, removeRoom } = useChatStore();
+  // Normalize roomId to ensure consistency (trim whitespace)
+  const normalizedRoomId = roomId?.trim() || null;
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -21,7 +23,7 @@ export const useWebSocket = (roomId: string | null) => {
   const wsUrl = WS_URL || 'ws://localhost:3000';
 
   const connect = useCallback(() => {
-    if (!token || !roomId) {
+    if (!token || !normalizedRoomId) {
       console.log('⚠️ Cannot connect: missing token or roomId');
       return;
     }
@@ -46,12 +48,15 @@ export const useWebSocket = (roomId: string | null) => {
         setConnectionError(null);
         reconnectAttemptsRef.current = 0;
 
-        // Join the room
-        if (roomId) {
+        // Join the room immediately on connect
+        if (normalizedRoomId) {
+          console.log(`[WebSocket] Joining room ${normalizedRoomId} on connect`);
           ws.send(JSON.stringify({
             type: 'join',
-            roomId,
+            roomId: normalizedRoomId,
           }));
+        } else {
+          console.warn(`[WebSocket] ⚠️ No roomId provided, cannot join room`);
         }
 
         // Start heartbeat
@@ -108,9 +113,16 @@ export const useWebSocket = (roomId: string | null) => {
               }
               
               const { user } = useAuthStore.getState();
+              // Normalize roomId for comparison
+              const messageRoomIdNormalized = msg.data.roomId?.trim();
+              const roomIdMatch = messageRoomIdNormalized === normalizedRoomId;
+              
               console.log(`📨 Received message via WebSocket:`, {
                 id: msg.data.id,
                 roomId: msg.data.roomId,
+                roomIdNormalized: messageRoomIdNormalized,
+                roomIdFromHook: normalizedRoomId, // DEBUG: Compare roomId from hook param vs message
+                roomIdMatch, // DEBUG: Check if they match
                 senderId: msg.data.senderId,
                 content: msg.data.content?.substring(0, 50),
                 replyToMessageId: msg.data.replyToMessageId,
@@ -148,14 +160,33 @@ export const useWebSocket = (roomId: string | null) => {
                 // The addMessage function in the store will handle optimistic message replacement
                 // So we just call addMessage and let it handle deduplication
                 console.log(`[WebSocket] Adding/updating message ${message.id} with reactionsSummary:`, message.reactionsSummary);
-                addMessage(msg.data.roomId, message);
+                
+                // Normalize roomId from message data and compare with hook param
+                const messageRoomId = msg.data.roomId?.trim();
+                const targetRoomId = messageRoomId || normalizedRoomId;
+                
+                console.log(`[WebSocket] 🔍 DEBUG - Adding message to roomId: "${messageRoomId}", hook roomId: "${normalizedRoomId}", using: "${targetRoomId}"`);
+                
+                if (!targetRoomId) {
+                  console.error(`[WebSocket] ❌ Cannot add message: no roomId in message data or hook param`);
+                  break;
+                }
+                
+                // Log if there's a mismatch
+                if (messageRoomId && normalizedRoomId && messageRoomId !== normalizedRoomId) {
+                  console.warn(`[WebSocket] ⚠️ roomId mismatch - hook: "${normalizedRoomId}", message: "${messageRoomId}", using: "${targetRoomId}"`);
+                }
+                
+                // Ensure message.roomId matches targetRoomId
+                message.roomId = targetRoomId;
+                addMessage(targetRoomId, message);
                 
                 // After adding, check if there are any pending reaction updates for this message
                 // Use a small delay to ensure the message is in the store and optimistic replacement is complete
                 setTimeout(() => {
                   // Check if there are any pending reaction updates for this message
                   const { messages: currentMessages } = useChatStore.getState();
-                  const roomMessages = currentMessages[msg.data.roomId] || [];
+                  const roomMessages = currentMessages[targetRoomId] || [];
                   // Find the message - it might have been replaced (optimistic -> real), so check both id and tempId
                   const actualMessage = roomMessages.find(m => 
                     m.id === message.id || 
@@ -211,7 +242,7 @@ export const useWebSocket = (roomId: string | null) => {
                         updates.currentUserReaction = newCurrentUserReaction;
                       }
                       
-                      updateMessage(msg.data.roomId, actualMessage.id, updates);
+                      updateMessage(targetRoomId, actualMessage.id, updates);
                       console.log(`✅ [WebSocket] Applied pending ${isRemoval ? 'removal' : 'reaction'} update for message ${actualMessage.id}`);
                       
                       // Remove all processed updates for this message
@@ -227,11 +258,11 @@ export const useWebSocket = (roomId: string | null) => {
                 // (fallback in case replyTo wasn't included in message.created event)
                 if (message.replyToMessageId && !message.replyTo) {
                   const { messages } = useChatStore.getState();
-                  const roomMessages = messages[message.roomId] || [];
+                  const roomMessages = messages[targetRoomId] || [];
                   const originalMessage = roomMessages.find(m => m.id === message.replyToMessageId);
                   if (originalMessage) {
                     const { updateMessage } = useChatStore.getState();
-                    updateMessage(message.roomId, message.id, {
+                    updateMessage(targetRoomId, message.id, {
                       replyTo: {
                         id: originalMessage.id,
                         roomId: originalMessage.roomId,
@@ -253,9 +284,12 @@ export const useWebSocket = (roomId: string | null) => {
             case 'message.reaction.created':
               // Reaction added/updated
               if (msg.data) {
+                // Normalize roomId
+                const reactionRoomId = msg.data.roomId?.trim() || normalizedRoomId;
                 console.log(`❤️ Reaction created:`, {
                   messageId: msg.data.messageId,
                   roomId: msg.data.roomId,
+                  roomIdNormalized: reactionRoomId,
                   emoji: msg.data.reaction?.emoji,
                   userId: msg.data.reaction?.userId,
                   reactionsSummary: msg.data.reactionsSummary,
@@ -263,7 +297,7 @@ export const useWebSocket = (roomId: string | null) => {
                 const { updateMessage, messages, addMessage } = useChatStore.getState();
                 const { user } = useAuthStore.getState();
                 const messageId = msg.data.messageId;
-                const roomId = msg.data.roomId;
+                const roomId = reactionRoomId;
                 
                 // Get the existing message to preserve currentUserReaction if it's not from this event
                 // Use a retry mechanism in case the message was just added and store hasn't updated yet
@@ -381,11 +415,13 @@ export const useWebSocket = (roomId: string | null) => {
             case 'message.reaction.removed':
               // Reaction removed
               if (msg.data) {
+                // Normalize roomId
+                const reactionRoomId = msg.data.roomId?.trim() || normalizedRoomId;
                 console.log(`💔 Reaction removed:`, msg.data);
                 const { updateMessage, messages } = useChatStore.getState();
                 const { user } = useAuthStore.getState();
                 const messageId = msg.data.messageId;
-                const roomId = msg.data.roomId;
+                const roomId = reactionRoomId;
                 
                 // Get the existing message to preserve currentUserReaction if it's not from this event
                 const roomMessages = messages[roomId] || [];
@@ -446,13 +482,16 @@ export const useWebSocket = (roomId: string | null) => {
               // Reply message created - this event is now redundant since replyTo is included in message.created
               // But we keep it for backward compatibility and as a fallback
               if (msg.data) {
+                // Normalize roomId
+                const replyRoomId = msg.data.roomId?.trim() || normalizedRoomId;
                 console.log(`↩️ Reply created (fallback update):`, {
                   messageId: msg.data.messageId,
                   roomId: msg.data.roomId,
+                  roomIdNormalized: replyRoomId,
                 });
                 const { updateMessage, messages } = useChatStore.getState();
                 const messageId = msg.data.messageId;
-                const roomId = msg.data.roomId;
+                const roomId = replyRoomId;
                 
                 // Only update if replyTo isn't already set (message.created should have set it)
                 if (msg.data.replyTo) {
@@ -510,7 +549,7 @@ export const useWebSocket = (roomId: string | null) => {
         }
 
         // Attempt reconnect if not a normal closure
-        if (event.code !== 1000 && roomId) {
+        if (event.code !== 1000 && normalizedRoomId) {
           const delay = Math.min(
             RECONNECT_DELAY * Math.pow(2, reconnectAttemptsRef.current),
             MAX_RECONNECT_DELAY
@@ -555,7 +594,7 @@ export const useWebSocket = (roomId: string | null) => {
       return false;
     }
 
-    if (!roomId) {
+    if (!normalizedRoomId) {
       console.error('Cannot send message: no roomId');
       return false;
     }
@@ -564,7 +603,7 @@ export const useWebSocket = (roomId: string | null) => {
       // Optimistic update
       if (tempId) {
         const { messages } = useChatStore.getState();
-        const roomMessages = messages[roomId] || [];
+        const roomMessages = messages[normalizedRoomId] || [];
         let replyTo: Message | undefined;
         
         // If this is a reply, find the original message to populate replyTo
@@ -574,7 +613,7 @@ export const useWebSocket = (roomId: string | null) => {
         
         const optimisticMessage: Message = {
           id: tempId,
-          roomId,
+          roomId: normalizedRoomId,
           senderId: useAuthStore.getState().user?.id || '',
           senderType: 'human',
           content,
@@ -592,14 +631,14 @@ export const useWebSocket = (roomId: string | null) => {
             // Exclude attachments - not needed for preview card
           } : undefined,
         };
-        addMessage(roomId, optimisticMessage);
+        addMessage(normalizedRoomId, optimisticMessage);
       }
 
       if (replyToMessageId) {
         // Send as reply
         wsRef.current.send(JSON.stringify({
           type: 'message.reply',
-          roomId,
+          roomId: normalizedRoomId,
           content,
           replyToMessageId,
           tempId,
@@ -608,7 +647,7 @@ export const useWebSocket = (roomId: string | null) => {
         // Send as normal message
         wsRef.current.send(JSON.stringify({
           type: 'message.send',
-          roomId,
+          roomId: normalizedRoomId,
           content,
           tempId,
           replyToMessageId, // Include even if null for consistency
@@ -620,7 +659,7 @@ export const useWebSocket = (roomId: string | null) => {
       console.error('Error sending message:', error);
       return false;
     }
-  }, [roomId, addMessage]);
+  }, [normalizedRoomId, addMessage]);
 
   const sendReaction = useCallback((messageId: string, emoji: string | null) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {

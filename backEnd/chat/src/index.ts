@@ -14,6 +14,8 @@ import { AgentCreatedListener } from './events/listeners/agent-created-listener'
 import { AgentIngestedListener } from './events/listeners/agent-ingested-listener';
 import { UserUpdatedListener } from './events/listeners/user-updated-listener';
 import { UserCreatedListener } from './events/listeners/user-created-listener';
+import { ProfileCreatedListener } from './events/listeners/profile-created-listener';
+import { ProfileUpdatedListener } from './events/listeners/profile-updated-listener';
 
 
 
@@ -51,29 +53,76 @@ const startMongoose = async ()=>{
 
         // ------------- Event Listeners ------------
         // Each listener uses its own consumer group to avoid partition assignment conflicts
+        console.log("Starting Kafka listeners...");
+        
         // Message ingest listener (uses dedicated consumer group)
-        new MessageIngestListener(kafkaWrapper.consumer('chat-service-message-ingest')).listen();
+        console.log("Starting MessageIngestListener...");
+        new MessageIngestListener(kafkaWrapper.consumer('chat-service-message-ingest')).listen().catch(err => {
+            console.error("❌ Failed to start MessageIngestListener:", err);
+        });
 
         // Message reaction and reply listeners
-        new MessageReactionIngestedListener(kafkaWrapper.consumer('chat-service-message-reaction-ingested')).listen();
-        new MessageReplyIngestedListener(kafkaWrapper.consumer('chat-service-message-reply-ingested')).listen();
+        console.log("Starting MessageReactionIngestedListener...");
+        new MessageReactionIngestedListener(kafkaWrapper.consumer('chat-service-message-reaction-ingested')).listen().catch(err => {
+            console.error("❌ Failed to start MessageReactionIngestedListener:", err);
+        });
+        console.log("Starting MessageReplyIngestedListener...");
+        new MessageReplyIngestedListener(kafkaWrapper.consumer('chat-service-message-reply-ingested')).listen().catch(err => {
+            console.error("❌ Failed to start MessageReplyIngestedListener:", err);
+        });
 
         // AI message reply listener (uses dedicated consumer group)
-        new AiMessageReplyListener(kafkaWrapper.consumer('chat-service-ai-message-reply')).listen();
+        console.log("Starting AiMessageReplyListener...");
+        new AiMessageReplyListener(kafkaWrapper.consumer('chat-service-ai-message-reply')).listen().catch(err => {
+            console.error("❌ Failed to start AiMessageReplyListener:", err);
+        });
 
         // Room event listeners - each with separate consumer group
-        new RoomCreatedListener(kafkaWrapper.consumer('chat-service-room-created')).listen();
-        new RoomDeletedListener(kafkaWrapper.consumer('chat-service-room-deleted')).listen();
-        new RoomParticipantAddedListener(kafkaWrapper.consumer('chat-service-room-participant-added')).listen();
+        console.log("Starting RoomCreatedListener...");
+        new RoomCreatedListener(kafkaWrapper.consumer('chat-service-room-created')).listen().catch(err => {
+            console.error("❌ Failed to start RoomCreatedListener:", err);
+        });
+        console.log("Starting RoomDeletedListener...");
+        new RoomDeletedListener(kafkaWrapper.consumer('chat-service-room-deleted')).listen().catch(err => {
+            console.error("❌ Failed to start RoomDeletedListener:", err);
+        });
+        // RoomParticipantAdded is idempotent - use higher maxInFlightRequests to avoid blocking
+        console.log("Starting RoomParticipantAddedListener...");
+        new RoomParticipantAddedListener(kafkaWrapper.consumer('chat-service-room-participant-added', 5)).listen().catch(err => {
+            console.error("❌ Failed to start RoomParticipantAddedListener:", err);
+        });
 
         // Agent and user listeners - each with separate consumer group
-        new AgentIngestedListener(kafkaWrapper.consumer('chat-service-agent-ingested')).listen();
-        new AgentCreatedListener(kafkaWrapper.consumer('chat-service-agent-created')).listen();
-        new AgentUpdatedListener(kafkaWrapper.consumer('chat-service-agent-updated')).listen();
-        new UserCreatedListener(kafkaWrapper.consumer('chat-service-user-created')).listen();
-        new UserUpdatedListener(kafkaWrapper.consumer('chat-service-user-updated')).listen();
+        console.log("Starting AgentIngestedListener...");
+        new AgentIngestedListener(kafkaWrapper.consumer('chat-service-agent-ingested')).listen().catch(err => {
+            console.error("❌ Failed to start AgentIngestedListener:", err);
+        });
+        console.log("Starting AgentCreatedListener...");
+        new AgentCreatedListener(kafkaWrapper.consumer('chat-service-agent-created')).listen().catch(err => {
+            console.error("❌ Failed to start AgentCreatedListener:", err);
+        });
+        console.log("Starting AgentUpdatedListener...");
+        new AgentUpdatedListener(kafkaWrapper.consumer('chat-service-agent-updated')).listen().catch(err => {
+            console.error("❌ Failed to start AgentUpdatedListener:", err);
+        });
+        console.log("Starting UserCreatedListener...");
+        new UserCreatedListener(kafkaWrapper.consumer('chat-service-user-created')).listen().catch(err => {
+            console.error("❌ Failed to start UserCreatedListener:", err);
+        });
+        console.log("Starting UserUpdatedListener...");
+        new UserUpdatedListener(kafkaWrapper.consumer('chat-service-user-updated')).listen().catch(err => {
+            console.error("❌ Failed to start UserUpdatedListener:", err);
+        });
+        console.log("Starting ProfileCreatedListener...");
+        new ProfileCreatedListener(kafkaWrapper.consumer('chat-service-profile-created')).listen().catch(err => {
+            console.error("❌ Failed to start ProfileCreatedListener:", err);
+        });
+        console.log("Starting ProfileUpdatedListener...");
+        new ProfileUpdatedListener(kafkaWrapper.consumer('chat-service-profile-updated')).listen().catch(err => {
+            console.error("❌ Failed to start ProfileUpdatedListener:", err);
+        });
 
-        console.log("All Kafka listeners started successfully");
+        console.log("✅ All Kafka listeners initialization calls completed (check logs above for connection status)");
 
         app.listen(3000, ()=>{
             console.log("app listening on port 3000! chat service")

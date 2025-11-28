@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-learning-redis-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-learning-redis
+  template:
+    metadata:
+      labels:
+        app: agent-learning-redis
+    spec:
+      containers:
+        - name: agent-learning-redis
+          image: redis:7
+          ports:
+            - containerPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-learning-redis-srv
+spec:
+  selector:
+    app: agent-learning-redis
+  ports:
+    - name: redis
+      protocol: TCP
+      port: 6379
+      targetPort: 6379
+

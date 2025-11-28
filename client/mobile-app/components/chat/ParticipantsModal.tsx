@@ -51,7 +51,7 @@ export const ParticipantsModal: React.FC<ParticipantsModalProps> = ({
     } else {
       setParticipants([]);
     }
-  }, [visible, participantIds.length, messages.length]);
+  }, [visible, participantIds.length, participantIds.join(','), messages.length, JSON.stringify(messages.map(m => ({ id: m.senderId, name: m.senderName })))]);
 
   const loadParticipants = async () => {
     setLoading(true);
@@ -108,17 +108,25 @@ export const ParticipantsModal: React.FC<ParticipantsModalProps> = ({
         }
       }
 
-      // If room data has participants with details, use that
+      // If room data has participants with details, use that (PREFERRED - most reliable)
       if (roomData?.participants && Array.isArray(roomData.participants)) {
-        const participantList = roomData.participants.map((p: any) => {
-          const id = p.participantId || p.id;
-          const fromMessages = nameMap.get(id);
-          return {
-            id,
-            name: p.name || p.username || p.email?.split('@')[0] || fromMessages?.name,
-            type: p.participantType || p.type || fromMessages?.type || (p.id?.includes('agent') ? 'agent' : 'human'),
-          };
-        });
+        console.log('[ParticipantsModal] Using participants from room data:', roomData.participants.length);
+        const participantList = roomData.participants
+          .map((p: { participantId?: string; id?: string; name?: string; username?: string; email?: string; participantType?: string; type?: string }) => {
+            const id = p.participantId || p.id;
+            if (!id) return null; // Skip if no ID
+            const fromMessages = nameMap.get(id);
+            // Priority: p.name (from room service) > p.username > email prefix > fromMessages > fallback
+            const name = p.name || p.username || p.email?.split('@')[0] || fromMessages?.name || 
+                         (id.includes('@') ? id.split('@')[0] : `User ${id.slice(0, 8)}`);
+            return {
+              id,
+              name,
+              type: p.participantType || p.type || fromMessages?.type || (id.includes('agent') ? 'agent' : 'human'),
+            };
+          })
+          .filter((p: Participant | null): p is Participant => p !== null);
+        console.log('[ParticipantsModal] Participant list with names:', participantList.map((p: Participant) => ({ id: p.id, name: p.name })));
         setParticipants(participantList);
         setLoading(false);
         return;

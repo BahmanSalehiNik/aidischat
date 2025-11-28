@@ -30,7 +30,7 @@ spec:
                   name: jwt-secret
                   key: JWT_DEV
             - name: REDIS_HOST
-              value: "redis-srv"
+              value: "agent-learning-redis-srv"
             - name: REDIS_PORT
               value: "6379"
 ---

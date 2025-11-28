@@ -43,6 +43,11 @@ export class ApiClient {
     const url = `${this.baseUrl}${endpoint}`;
     console.log(`🌐 API Request: ${options.method || 'GET'} ${url}`);
     console.log(`🔑 Token available: ${token ? 'Yes' : 'No'}`, token ? `${token.substring(0, 20)}...` : '');
+    // DEBUG: Extract and log roomId from URL if present
+    const roomIdMatch = endpoint.match(/\/rooms\/([^\/]+)/);
+    if (roomIdMatch) {
+      console.log(`📋 [CLIENT DEBUG] roomId in request: "${roomIdMatch[1]}"`);
+    }
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',

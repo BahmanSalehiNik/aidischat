@@ -4,6 +4,7 @@ import { User } from '../../models/user';
 export class UserCreatedListener extends Listener<UserCreatedEvent> {
   readonly topic = Subjects.UserCreated;
   readonly groupId = 'chat-service-user-created';
+  protected fromBeginning: boolean = true; // Read from beginning to catch missed events on restart
 
   async onMessage(data: UserCreatedEvent['data']): Promise<void> {
     const { id, email, status } = data;

@@ -2,21 +2,107 @@
 import express, { Request, Response } from 'express';
 import { Message } from '../models/message';
 import { RoomParticipant } from '../models/room-participant';
+import { Room } from '../models/room';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
 
 const router = express.Router();
+
+/**
+ * Wait for participant to be synced via Kafka event
+ * This handles race conditions where the Kafka event hasn't been processed yet
+ */
+async function waitForParticipantSync(
+  roomId: string, 
+  userId: string,
+  maxWaitMs: number = 2000 // Increased to 2 seconds to handle Kafka processing delays
+) {
+  const startTime = Date.now();
+  const checkInterval = 100; // Check every 100ms (less frequent checks)
+  let checkCount = 0;
+  
+  while (Date.now() - startTime < maxWaitMs) {
+    checkCount++;
+    const participant = await RoomParticipant.findOne({ 
+      roomId, 
+      participantId: userId,
+      leftAt: { $exists: false }
+    });
+    
+    if (participant) {
+      const elapsed = Date.now() - startTime;
+      console.log(`[get-messages] ✅ Participant found after ${elapsed}ms (${checkCount} checks): ${userId} -> ${roomId}`);
+      return participant;
+    }
+    
+    // Wait before next check
+    await new Promise(resolve => setTimeout(resolve, checkInterval));
+  }
+  
+  const elapsed = Date.now() - startTime;
+  console.warn(`[get-messages] ⚠️ Participant not found after ${elapsed}ms (${checkCount} checks): ${userId} -> ${roomId} - Kafka event may be delayed or failed`);
+  return null;
+}
 
 router.get('/api/rooms/:roomId/messages', extractJWTPayload, loginRequired, async (req: Request, res: Response) => {
   const { roomId } = req.params;
   const { page = 1, limit = 50 } = req.query;
   const userId = req.jwtPayload!.id;
+  
+  // DEBUG: Log request details
+  console.log(`[get-messages] 📥 REQUEST RECEIVED:`, {
+    roomId: roomId,
+    userId: userId,
+    userEmail: req.jwtPayload?.email,
+    page: page,
+    limit: limit,
+    hasAuthHeader: !!req.headers.authorization,
+    authHeaderPreview: req.headers.authorization ? `${req.headers.authorization.substring(0, 20)}...` : 'none',
+  });
 
-  // Check if user is a participant in the room
-  const participant = await RoomParticipant.findOne({ 
+  // Check if user is a participant in the room (local check first)
+  let participant = await RoomParticipant.findOne({ 
     roomId, 
     participantId: userId,
     leftAt: { $exists: false }
   });
+
+  // If not found locally, wait briefly for Kafka event to sync (handles race condition)
+  if (!participant) {
+    console.log(`[get-messages] Participant not found locally, waiting for Kafka sync: ${userId} -> ${roomId}`);
+    participant = await waitForParticipantSync(roomId, userId, 2000); // Wait up to 2 seconds
+  }
+
+  // Last resort fallback: If user created the room, create participant locally
+  // This handles cases where Kafka event fails or is significantly delayed
+  if (!participant) {
+    console.log(`[get-messages] Participant still not found, checking if user is room creator: ${userId} -> ${roomId}`);
+    const room = await Room.findOne({ _id: roomId });
+    
+    if (!room) {
+      console.error(`[get-messages] ❌ Room ${roomId} not found in chat service DB - RoomCreated event may not have been processed`);
+    } else {
+      console.log(`[get-messages] Room found: id=${room.id}, createdBy=${room.createdBy}, type=${room.type}`);
+    }
+    
+    if (room && room.createdBy === userId) {
+      console.log(`[get-messages] ✅ User is room creator, creating participant locally as fallback: ${userId} -> ${roomId}`);
+      const fallbackParticipant = RoomParticipant.build({
+        roomId,
+        participantId: userId,
+        participantType: 'human',
+        role: 'owner',
+      });
+      await fallbackParticipant.save();
+      participant = await RoomParticipant.findOne({ 
+        roomId, 
+        participantId: userId,
+        leftAt: { $exists: false }
+      });
+      console.log(`[get-messages] ✅ Participant created locally as fallback`);
+    } else if (room) {
+      console.error(`[get-messages] ❌ User ${userId} is not the creator of room ${roomId} (creator: ${room.createdBy})`);
+    }
+  }
 
   if (!participant) {
     return res.status(403).send({ error: 'Not authorized to access messages in this room' });
@@ -24,11 +110,17 @@ router.get('/api/rooms/:roomId/messages', extractJWTPayload, loginRequired, asyn
 
   const skip = (Number(page) - 1) * Number(limit);
 
+  // Log query details for debugging
+  const totalMessages = await Message.countDocuments({ roomId });
+  console.log(`[get-messages] Querying messages for room ${roomId}: page=${page}, limit=${limit}, skip=${skip}, total=${totalMessages}`);
+
   const messages = await Message.find({ roomId })
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(Number(limit))
     .lean();
+
+  console.log(`[get-messages] Found ${messages.length} messages for room ${roomId} (requested ${limit}, total in DB: ${totalMessages})`);
 
   // Get all replyToMessageIds that need to be loaded
   const replyToMessageIds = messages
@@ -48,6 +140,18 @@ router.get('/api/rooms/:roomId/messages', extractJWTPayload, loginRequired, asyn
 
   // Enrich messages with sender information and replyTo
   const enrichedMessages = messages.map((msg: any) => {
+    // DEBUG: Log senderName for each message
+    if (!msg.senderName) {
+      console.warn(`[get-messages] ⚠️ Message ${msg._id || msg.id} has NO senderName:`, {
+        messageId: msg._id || msg.id,
+        senderId: msg.senderId,
+        senderType: msg.senderType,
+        roomId: msg.roomId,
+        hasSenderName: !!msg.senderName,
+        senderNameValue: msg.senderName,
+      });
+    }
+    
     const messageObj: any = {
       ...msg,
       id: msg._id || msg.id,

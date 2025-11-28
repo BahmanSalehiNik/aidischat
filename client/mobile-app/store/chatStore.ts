@@ -65,19 +65,39 @@ export const useChatStore = create<ChatState>((set) => ({
 
   addMessage: (roomId: string, message: Message) => {
     set((state) => {
-      const existingMessages = state.messages[roomId] || [];
+      // Normalize roomIds to ensure consistency
+      const normalizedRoomId = roomId?.trim();
+      const normalizedMessageRoomId = message.roomId?.trim() || normalizedRoomId;
+      
+      // Log if there's a mismatch
+      if (normalizedMessageRoomId !== normalizedRoomId) {
+        console.warn(`[ChatStore] ⚠️ addMessage: roomId mismatch - param: "${normalizedRoomId}", message.roomId: "${normalizedMessageRoomId}"`);
+      }
+      
+      // Use the normalized roomId from the message if available, otherwise use the param
+      const targetRoomId = normalizedMessageRoomId || normalizedRoomId;
+      
+      // Ensure message.roomId matches targetRoomId
+      const normalizedMessage = {
+        ...message,
+        roomId: targetRoomId,
+      };
+      
+      const existingMessages = state.messages[targetRoomId] || [];
+      let updatedMessages = existingMessages;
+      let shouldUpdateRoomMembers = false;
       
       // If this is a real message (has real id, no tempId), check if it should replace an optimistic message FIRST
       // This must happen BEFORE the duplicate check to ensure optimistic messages are replaced
       // Match by: same content, same sender, same replyToMessageId (if reply), within 5 seconds, and existing message has tempId
-      if (!message.tempId && message.id && !message.id.startsWith('temp-')) {
-        const messageTime = new Date(message.createdAt).getTime();
+      if (!normalizedMessage.tempId && normalizedMessage.id && !normalizedMessage.id.startsWith('temp-')) {
+        const messageTime = new Date(normalizedMessage.createdAt).getTime();
         const optimisticIndex = existingMessages.findIndex((m) => {
           if (!m.tempId) return false; // Only replace optimistic messages
           const timeDiff = Math.abs(new Date(m.createdAt).getTime() - messageTime);
-          const contentMatch = m.content === message.content;
-          const senderMatch = m.senderId === message.senderId;
-          const replyMatch = (m.replyToMessageId || null) === (message.replyToMessageId || null);
+          const contentMatch = m.content === normalizedMessage.content;
+          const senderMatch = m.senderId === normalizedMessage.senderId;
+          const replyMatch = (m.replyToMessageId || null) === (normalizedMessage.replyToMessageId || null);
           const shouldMatch = (
             contentMatch &&
             senderMatch &&
@@ -86,7 +106,7 @@ export const useChatStore = create<ChatState>((set) => ({
           );
           
           if (shouldMatch) {
-            console.log(`[ChatStore] Matching optimistic message ${m.tempId} with real message ${message.id}`, {
+            console.log(`[ChatStore] Matching optimistic message ${m.tempId} with real message ${normalizedMessage.id}`, {
               contentMatch,
               senderMatch,
               replyMatch,
@@ -100,48 +120,44 @@ export const useChatStore = create<ChatState>((set) => ({
         if (optimisticIndex !== -1) {
           // Replace the optimistic message with the real one, preserving replyTo if it was set
           const optimisticMsg = existingMessages[optimisticIndex];
-          console.log(`[ChatStore] Replacing optimistic message ${optimisticMsg.tempId} with real message ${message.id}`);
-          const updated = [...existingMessages];
-          updated[optimisticIndex] = {
-            ...message,
+          console.log(`[ChatStore] Replacing optimistic message ${optimisticMsg.tempId} with real message ${normalizedMessage.id}`);
+          updatedMessages = [...existingMessages];
+          updatedMessages[optimisticIndex] = {
+            ...normalizedMessage,
             // Preserve replyTo from optimistic message if real message doesn't have it yet
-            replyTo: message.replyTo || optimisticMsg.replyTo,
+            replyTo: normalizedMessage.replyTo || optimisticMsg.replyTo,
             // Preserve reactions from optimistic message if real message doesn't have them yet
-            reactionsSummary: message.reactionsSummary || optimisticMsg.reactionsSummary,
-            currentUserReaction: message.currentUserReaction !== undefined ? message.currentUserReaction : optimisticMsg.currentUserReaction,
+            reactionsSummary: normalizedMessage.reactionsSummary || optimisticMsg.reactionsSummary,
+            currentUserReaction: normalizedMessage.currentUserReaction !== undefined ? normalizedMessage.currentUserReaction : optimisticMsg.currentUserReaction,
           };
-          return {
-            messages: {
-              ...state.messages,
-              [roomId]: updated.sort(
-                (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-              ),
-            },
-          };
+          updatedMessages = updatedMessages.sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          );
+          shouldUpdateRoomMembers = true; // New message arrived, might have new sender
         } else {
           // Log why matching failed for debugging
-          if (message.replyToMessageId) {
+          if (normalizedMessage.replyToMessageId) {
             const optimisticReplies = existingMessages.filter(m => 
               m.tempId && 
-              (m.replyToMessageId || null) === (message.replyToMessageId || null) &&
-              m.senderId === message.senderId
+              (m.replyToMessageId || null) === (normalizedMessage.replyToMessageId || null) &&
+              m.senderId === normalizedMessage.senderId
             );
             if (optimisticReplies.length > 0) {
               console.warn(`[ChatStore] Failed to match optimistic reply message. Real message:`, {
-                id: message.id,
-                content: message.content ? message.content.substring(0, 50) : '(empty)',
-                senderId: message.senderId,
-                replyToMessageId: message.replyToMessageId,
-                createdAt: message.createdAt,
+                id: normalizedMessage.id,
+                content: normalizedMessage.content ? normalizedMessage.content.substring(0, 50) : '(empty)',
+                senderId: normalizedMessage.senderId,
+                replyToMessageId: normalizedMessage.replyToMessageId,
+                createdAt: normalizedMessage.createdAt,
               });
               optimisticReplies.forEach(m => {
                 const timeDiff = Math.abs(new Date(m.createdAt).getTime() - messageTime);
-                const contentMatch = m.content === message.content;
+                const contentMatch = m.content === normalizedMessage.content;
                 console.warn(`[ChatStore] Optimistic message ${m.tempId}:`, {
                   content: m.content ? m.content.substring(0, 50) : '(empty)',
                   contentMatch,
-                  senderMatch: m.senderId === message.senderId,
-                  replyMatch: (m.replyToMessageId || null) === (message.replyToMessageId || null),
+                  senderMatch: m.senderId === normalizedMessage.senderId,
+                  replyMatch: (m.replyToMessageId || null) === (normalizedMessage.replyToMessageId || null),
                   timeDiff,
                   withinWindow: timeDiff < 5000,
                 });
@@ -154,26 +170,26 @@ export const useChatStore = create<ChatState>((set) => ({
       // Also check for duplicate replies: same content, same sender, same replyToMessageId, within 5 seconds
       // This prevents duplicate replies when optimistic message matching fails
       // Check this AFTER optimistic message matching to catch any that slipped through
-      if (message.replyToMessageId) {
-        const messageTime = new Date(message.createdAt).getTime();
+      if (normalizedMessage.replyToMessageId) {
+        const messageTime = new Date(normalizedMessage.createdAt).getTime();
         const duplicateReply = existingMessages.find((m) => {
           // Skip if it's the same message (already checked above)
-          if (m.id === message.id || (message.tempId && m.tempId === message.tempId)) return false;
+          if (m.id === normalizedMessage.id || (normalizedMessage.tempId && m.tempId === normalizedMessage.tempId)) return false;
           // Skip optimistic messages (they should have been matched above)
-          if (m.tempId && !message.tempId) return false;
+          if (m.tempId && !normalizedMessage.tempId) return false;
           
           const timeDiff = Math.abs(new Date(m.createdAt).getTime() - messageTime);
           const isDuplicate = (
-            m.content === message.content &&
-            m.senderId === message.senderId &&
-            (m.replyToMessageId || null) === (message.replyToMessageId || null) &&
+            m.content === normalizedMessage.content &&
+            m.senderId === normalizedMessage.senderId &&
+            (m.replyToMessageId || null) === (normalizedMessage.replyToMessageId || null) &&
             timeDiff < 5000 // Within 5 seconds (same as optimistic matching window)
           );
           
           if (isDuplicate) {
             console.warn(`[ChatStore] Found duplicate reply:`, {
               existing: { id: m.id || m.tempId, content: m.content ? m.content.substring(0, 30) : '(empty)', replyTo: m.replyToMessageId },
-              new: { id: message.id || message.tempId, content: message.content ? message.content.substring(0, 30) : '(empty)', replyTo: message.replyToMessageId },
+              new: { id: normalizedMessage.id || normalizedMessage.tempId, content: normalizedMessage.content ? normalizedMessage.content.substring(0, 30) : '(empty)', replyTo: normalizedMessage.replyToMessageId },
               timeDiff,
             });
           }
@@ -182,36 +198,82 @@ export const useChatStore = create<ChatState>((set) => ({
         });
         
         if (duplicateReply) {
-          console.log(`[ChatStore] Preventing duplicate reply message: ${message.id || message.tempId} (duplicate of ${duplicateReply.id || duplicateReply.tempId})`);
+          console.log(`[ChatStore] Preventing duplicate reply message: ${normalizedMessage.id || normalizedMessage.tempId} (duplicate of ${duplicateReply.id || duplicateReply.tempId})`);
           return state;
         }
       }
       
-      // Add new message
-      console.log(`[ChatStore] Adding new message: ${message.id || message.tempId}`, {
-        content: message.content ? message.content.substring(0, 30) : '(empty)',
-        replyToMessageId: message.replyToMessageId,
-      });
+      // Add new message (if not already replaced above)
+      if (updatedMessages === existingMessages) {
+        console.log(`[ChatStore] Adding new message: ${normalizedMessage.id || normalizedMessage.tempId}`, {
+          content: normalizedMessage.content ? normalizedMessage.content.substring(0, 30) : '(empty)',
+          replyToMessageId: normalizedMessage.replyToMessageId,
+          roomId: normalizedMessage.roomId,
+          targetRoomId,
+        });
+        updatedMessages = [...existingMessages, normalizedMessage].sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+        shouldUpdateRoomMembers = true; // New message arrived, might have new sender
+      }
+      
+      // Update roomMembers if this is a new message with a sender we haven't seen
+      let newRoomMembers = state.roomMembers;
+      if (shouldUpdateRoomMembers && normalizedMessage.senderId && targetRoomId) {
+        const currentMembers = state.roomMembers[targetRoomId] || [];
+        if (!currentMembers.includes(normalizedMessage.senderId)) {
+          console.log(`[ChatStore] Adding new sender ${normalizedMessage.senderId} to roomMembers for room ${targetRoomId}`);
+          newRoomMembers = {
+            ...state.roomMembers,
+            [targetRoomId]: [...currentMembers, normalizedMessage.senderId],
+          };
+        }
+      }
+      
+      // CRITICAL: Always create new object references to ensure Zustand detects the change
+      console.log(`[ChatStore] addMessage: Adding message ${normalizedMessage.id || normalizedMessage.tempId} to roomId: "${targetRoomId}"`);
       return {
         messages: {
           ...state.messages,
-          [roomId]: [...existingMessages, message].sort(
-            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-          ),
+          [targetRoomId]: updatedMessages, // New array reference
         },
+        roomMembers: newRoomMembers, // Updated roomMembers if needed
       };
     });
   },
 
   setMessages: (roomId: string, messages: Message[]) => {
-    set((state) => ({
-      messages: {
-        ...state.messages,
-        [roomId]: messages.sort(
-          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-        ),
-      },
-    }));
+    set((state) => {
+      // Normalize roomId (trim whitespace, ensure consistent format)
+      const normalizedRoomId = roomId?.trim();
+      
+      // Check if messages have different roomIds and log warnings
+      const mismatchedMessages = messages.filter(m => m.roomId && m.roomId !== normalizedRoomId);
+      if (mismatchedMessages.length > 0) {
+        console.warn(`[ChatStore] ⚠️ setMessages: Found ${mismatchedMessages.length} messages with different roomId:`, {
+          targetRoomId: normalizedRoomId,
+          mismatchedRoomIds: [...new Set(mismatchedMessages.map(m => m.roomId))],
+          sampleMessage: mismatchedMessages[0],
+        });
+      }
+      
+      // Normalize all message roomIds to match the target roomId
+      const normalizedMessages = messages.map(m => ({
+        ...m,
+        roomId: normalizedRoomId, // Ensure all messages use the same roomId
+      }));
+      
+      console.log(`[ChatStore] setMessages: Setting ${normalizedMessages.length} messages for roomId: "${normalizedRoomId}"`);
+      
+      return {
+        messages: {
+          ...state.messages,
+          [normalizedRoomId]: normalizedMessages.sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          ),
+        },
+      };
+    });
   },
 
   updateMessage: (roomId: string, messageId: string, updates: Partial<Message>) => {
