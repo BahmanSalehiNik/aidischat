@@ -58,6 +58,11 @@ spec:
           create_topic_if_not_exists "ai.message.created"
           create_topic_if_not_exists "ai.message.reply"
           
+          # Feedback topics
+          create_topic_if_not_exists "feedback.reply.received"
+          create_topic_if_not_exists "feedback.reaction.received"
+          create_topic_if_not_exists "feedback.created"
+          
           echo "✅ Kafka topics initialization complete"
           echo "📋 Current topics:"
           rpk topic list --brokers $KAFKA_BROKER

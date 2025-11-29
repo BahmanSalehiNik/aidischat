@@ -74,7 +74,10 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
       projection.provider = projection.modelProvider;
       projection.providerAgentId = provisionResult.providerAgentId;
       projection.lastProvisioningError = null;
+      
+      console.log(`[AgentIngestedListener] Saving agent profile to database: agentId=${agentId}, status=${projection.status}, providerAgentId=${projection.providerAgentId}`);
       await projection.save();
+      console.log(`[AgentIngestedListener] ✅ Agent profile saved successfully to database: agentId=${agentId}`);
 
       console.log(`[AgentIngestedListener] Agent ${agentId} provisioned successfully, publishing agent.creation.reply.success`);
       await new AgentCreationReplySuccessPublisher(kafkaWrapper.producer).publish({
