@@ -73,7 +73,41 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
   async onMessage(data: AgentFeedScannedEvent['data'], msg: EachMessagePayload): Promise<void> {
     const { agentId, ownerUserId, scanId, feedData, feedEntryIds, scanTimestamp, scanInterval } = data;
 
+    // Check if we've already processed this scan (avoid infinite loops from republishing)
+    if (scanId && this.processedScanIds.has(scanId)) {
+      console.log(`[AgentFeedScannedListener] ⏭️  Skipping already processed scan ${scanId} (likely republished event)`);
+      await this.ack();
+      return;
+    }
+
+    // Check if URLs are already signed (if so, this is a republished event, skip)
+    const hasSignedUrls = feedData.posts.some(post => 
+      post.media?.some(mediaItem => {
+        const url = mediaItem.url || '';
+        return url.includes('?sig=') || url.includes('&sig=');
+      })
+    );
+
+    if (hasSignedUrls) {
+      console.log(`[AgentFeedScannedListener] ⏭️  Skipping event with already signed URLs (likely republished, scanId: ${scanId})`);
+      await this.ack();
+      return;
+    }
+
     console.log(`[AgentFeedScannedListener] Received feed scan for agent ${agentId} (scanId: ${scanId})`);
+
+    // Mark as processed (if scanId exists)
+    if (scanId) {
+      this.processedScanIds.add(scanId);
+      
+      // Clean up old scan IDs (keep last 1000 to prevent memory leak)
+      if (this.processedScanIds.size > 1000) {
+        const firstId = this.processedScanIds.values().next().value;
+        if (firstId) {
+          this.processedScanIds.delete(firstId);
+        }
+      }
+    }
 
     try {
       // Sign media URLs in posts

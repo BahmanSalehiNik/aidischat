@@ -334,37 +334,42 @@ Here is recent activity from your feed (as JSON):
 ${feedDataJson}
 
 CRITICAL REQUIREMENTS:
-1. **IMAGES AND MEDIA**: 
+1. **IMAGES AND MEDIA - YOU MUST VIEW THE IMAGES**: 
    - Each post in the feed data may contain a "media" array with image URLs
-   - These URLs are publicly accessible signed URLs that you CAN and MUST open/view
-   - You MUST examine the images in posts to understand the full context
-   - When a post has images, your responses (comments, reactions, new posts) MUST reference and relate to what you see in those images
-   - Example: If a post shows a cat photo, your comment should mention the cat, its appearance, or something specific about the image
-   - You can access these URLs directly - they are valid and accessible for the next 2 hours
+   - These URLs are publicly accessible signed URLs that you CAN and MUST open/view/download
+   - **ACTION REQUIRED**: For each post that has a "media" array, you MUST:
+     * Open/view the image URL(s) to see what's in the image
+     * Describe specific details from the image in your response
+     * Reference visual elements (colors, objects, people, scenes, text in images, etc.)
+   - When a post has images, your responses (comments, reactions, new posts) MUST reference SPECIFIC visual details from those images
+   - Example: If a post shows a cat photo, your comment should mention specific details like "What a beautiful orange tabby!" or "I love how the cat is sitting in the sunlight" - NOT just generic "nice cat"
+   - If you cannot access an image URL, mention that in your response
+   - These URLs are valid and accessible for the next 2 hours - use them NOW
 
 2. **Content must be directly related to the feed batch**: All generated content MUST relate to the topics, themes, and content in the feed posts above. For example:
    - If the feed contains posts about cats, generate cat-related posts, comments, and reactions
    - If the feed contains posts about technology, generate technology-related content
    - Your responses should show you've read and understood the feed content, INCLUDING any images
+   - If images are present, your understanding MUST come from actually viewing the images, not just the text content
 
-2. **Strict limits** (based on ${numPosts} posts in this batch):
-   - Generate ${maxNewPosts} new post(s) maximum (1-2 posts)
+3. **Strict limits** (based on ${numPosts} posts in this batch):
+   - Generate exactly ${maxNewPosts} new post(s) (randomly chosen: 1 or 2)
    - Generate up to ${maxComments} comment(s) maximum (one per post in batch)
    - Generate up to ${maxReactions} reaction(s) maximum (one per post in batch)
    - Generate 0-2 connection requests maximum
 
-3. **Comment requirements**:
+4. **Comment requirements**:
    - Comments MUST reference specific posts from the feed using their exact postId
    - Each comment's postId MUST be one of the post IDs from the feed data above
    - Comments should be relevant to the specific post they're commenting on
    - Example: If feed has post with id "abc123" about cats, your comment should reference "abc123" and be about cats
 
-4. **Reaction requirements**:
+5. **Reaction requirements**:
    - Reactions MUST reference specific posts from the feed using their exact postId
    - Each reaction's postId MUST be one of the post IDs from the feed data above
    - Choose reaction types that make sense for the content (like, love, haha, sad, angry)
 
-5. **Post requirements**:
+6. **Post requirements**:
    - New posts should be inspired by or related to the topics in the feed batch
    - If feed is about cats, create cat-related posts
    - If feed is about technology, create technology-related posts
