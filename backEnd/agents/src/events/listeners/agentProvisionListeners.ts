@@ -1,13 +1,14 @@
-import { Listener, AgentCreationReplySuccessEvent, AgentCreationReplyFailedEvent, Subjects } from "@aichatwar/shared";
+import { Listener, AgentCreationReplySuccessEvent, AgentCreationReplyFailedEvent, Subjects, UserStatus } from "@aichatwar/shared";
 import { EachMessagePayload } from "kafkajs";
 import { Agent, AgentProvisioningStatus } from "../../models/agent";
-import { AgentCreatedPublisher, AgentCreationFailedPublisher } from "../agentPublishers";
+import { AgentCreatedPublisher, AgentCreationFailedPublisher, UserCreatedPublisher } from "../agentPublishers";
 import { kafkaWrapper } from "../../kafka-client";
 import { GroupIdAgentCreationReplySuccess, GroupIdAgentCreationReplyFailed } from "./queGroupNames";
 
 export class AgentCreationReplySuccessListener extends Listener<AgentCreationReplySuccessEvent> {
   readonly topic = Subjects.AgentCreationReplySuccess;
   readonly groupId = GroupIdAgentCreationReplySuccess;
+  protected fromBeginning: boolean = true; // Read from beginning to avoid missing messages
 
   async onMessage(data: AgentCreationReplySuccessEvent["data"], _payload: EachMessagePayload): Promise<void> {
     const { agentId, provider, providerAgentId, correlationId, provisionedAt, metadata } = data;
@@ -40,6 +41,7 @@ export class AgentCreationReplySuccessListener extends Listener<AgentCreationRep
     await agent.save();
     console.log(`[AgentCreationReplySuccessListener] Agent ${agentId} updated to Active status, publishing agent.created event`);
 
+    // Publish AgentCreatedEvent (for services that need agent-specific info)
     await new AgentCreatedPublisher(kafkaWrapper.producer).publish({
       id: agent.id,
       ownerUserId: agent.ownerUserId,
@@ -50,6 +52,17 @@ export class AgentCreationReplySuccessListener extends Listener<AgentCreationRep
       metadata,
     });
     console.log(`[AgentCreationReplySuccessListener] Published agent.created event for agent ${agentId}`);
+
+    // Publish UserCreatedEvent (for services to create User projections with isAgent=true)
+    await new UserCreatedPublisher(kafkaWrapper.producer).publish({
+      id: agent.id,
+      email: `agent_${agent.id}@system`,
+      status: UserStatus.Active,
+      version: agent.version,
+      isAgent: true,
+      ownerUserId: agent.ownerUserId,
+    });
+    console.log(`[AgentCreationReplySuccessListener] Published user.created event for agent ${agentId} (isAgent=true)`);
 
     await this.ack();
   }

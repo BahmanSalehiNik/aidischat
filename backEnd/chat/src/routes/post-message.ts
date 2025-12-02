@@ -6,6 +6,7 @@ import { User } from '../models/user';
 import { kafkaWrapper } from '../kafka-client';
 import { MessageCreatedPublisher } from '../events/publishers/message-created-publisher';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
+import { getParticipantWithRetry } from '../utils/waitForParticipant';
 import crypto from 'crypto';
 
 const router = express.Router();
@@ -15,12 +16,8 @@ router.post('/api/rooms/:roomId/messages', extractJWTPayload, loginRequired, asy
   const { content, attachments } = req.body;
   const userId = req.jwtPayload!.id;
 
-  // Check if user is a participant in the room
-  const participant = await RoomParticipant.findOne({ 
-    roomId, 
-    participantId: userId,
-    leftAt: { $exists: false }
-  });
+  // Check if user is a participant in the room (with retry logic for startup race conditions)
+  const participant = await getParticipantWithRetry(roomId, userId);
 
   if (!participant) {
     return res.status(403).send({ error: 'Not authorized to send messages to this room' });

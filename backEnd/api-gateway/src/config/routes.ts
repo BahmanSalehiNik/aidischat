@@ -23,6 +23,7 @@ const regex = {
   rooms: /^\/api\/rooms(?:\/.*)?$/i,
   realtime: /^\/api\/realtime(?:\/.*)?$/i,
   aiGateway: /^\/api\/ai-gateway(?:\/.*)?$/i,
+  agentManager: /^\/api\/agent-manager(?:\/.*)?$/i,
   search: /^\/api\/search(?:\/.*)?$/i,
   friendSuggestions: /^\/api\/friend-suggestions(?:\/.*)?$/i,
 };
@@ -97,6 +98,11 @@ export const routeRules: RouteRule[] = [
     name: 'ai-gateway',
     targetEnv: 'AI_GATEWAY_URL',
     patterns: [regex.aiGateway],
+  },
+  {
+    name: 'agent-manager-service',
+    targetEnv: 'AGENT_MANAGER_SERVICE_URL',
+    patterns: [regex.agentManager],
   },
   {
     name: 'search-service',

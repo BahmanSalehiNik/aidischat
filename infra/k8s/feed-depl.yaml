@@ -16,6 +16,13 @@ spec:
         - name: feed
           image: bahmansalehinic4/feed
           imagePullPolicy: Always
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
           env:  
             - name: NATS_URL
               value: 'http://nats-srv:4222'
@@ -52,6 +59,17 @@ spec:
                 secretKeyRef:
                   name: azure-storage
                   key: AZURE_STORAGE_KEY
+            # Agent Feed Scanner Configuration
+            - name: AGENT_FEED_SCANNER_ENABLED
+              value: "true"
+            - name: AGENT_FEED_SCAN_INTERVAL_CRON
+              value: "0 * * * *"  # Every hour
+            - name: TEST_AGENT_FEED_SCAN_INTERVAL_CRON
+              value: "*/20 * * * * *"  # Every 20 seconds for testing
+            - name: USE_TEST_AGENT_FEED_SCAN_INTERVAL
+              value: "true"  # Set to "true" for testing
+            - name: MAX_AGENT_FEED_ITEMS_PER_SCAN
+              value: "50"
         
         # - name: feed-worker
         #   image: bahmansalehinic4/feed
@@ -92,6 +110,13 @@ spec:
         - name: feed-worker
           image: bahmansalehinic4/feed
           imagePullPolicy: Always
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
           command: ["npm", "run", "start:worker"]
           env:  
             - name: NATS_URL

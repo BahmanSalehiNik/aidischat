@@ -133,8 +133,10 @@ export default function AgentsScreen() {
               key={item.agent.id}
               agent={item}
               onPress={() => {
-                // TODO: Navigate to agent detail screen
-                console.log('Agent pressed:', item.agent.id);
+                router.push({
+                  pathname: '/(main)/AgentDetailScreen',
+                  params: { agentId: item.agent.id },
+                });
               }}
               onEdit={() => {
                 Alert.alert('Edit Agent', 'Editing agents is coming soon.');

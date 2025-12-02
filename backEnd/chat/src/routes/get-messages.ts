@@ -11,37 +11,7 @@ const router = express.Router();
  * Wait for participant to be synced via Kafka event
  * This handles race conditions where the Kafka event hasn't been processed yet
  */
-async function waitForParticipantSync(
-  roomId: string, 
-  userId: string,
-  maxWaitMs: number = 2000 // Increased to 2 seconds to handle Kafka processing delays
-) {
-  const startTime = Date.now();
-  const checkInterval = 100; // Check every 100ms (less frequent checks)
-  let checkCount = 0;
-  
-  while (Date.now() - startTime < maxWaitMs) {
-    checkCount++;
-    const participant = await RoomParticipant.findOne({ 
-      roomId, 
-      participantId: userId,
-      leftAt: { $exists: false }
-    });
-    
-    if (participant) {
-      const elapsed = Date.now() - startTime;
-      console.log(`[get-messages] ✅ Participant found after ${elapsed}ms (${checkCount} checks): ${userId} -> ${roomId}`);
-      return participant;
-    }
-    
-    // Wait before next check
-    await new Promise(resolve => setTimeout(resolve, checkInterval));
-  }
-  
-  const elapsed = Date.now() - startTime;
-  console.warn(`[get-messages] ⚠️ Participant not found after ${elapsed}ms (${checkCount} checks): ${userId} -> ${roomId} - Kafka event may be delayed or failed`);
-  return null;
-}
+import { getParticipantWithRetry } from '../utils/waitForParticipant';
 
 router.get('/api/rooms/:roomId/messages', extractJWTPayload, loginRequired, async (req: Request, res: Response) => {
   const { roomId } = req.params;
@@ -59,50 +29,8 @@ router.get('/api/rooms/:roomId/messages', extractJWTPayload, loginRequired, asyn
     authHeaderPreview: req.headers.authorization ? `${req.headers.authorization.substring(0, 20)}...` : 'none',
   });
 
-  // Check if user is a participant in the room (local check first)
-  let participant = await RoomParticipant.findOne({ 
-    roomId, 
-    participantId: userId,
-    leftAt: { $exists: false }
-  });
-
-  // If not found locally, wait briefly for Kafka event to sync (handles race condition)
-  if (!participant) {
-    console.log(`[get-messages] Participant not found locally, waiting for Kafka sync: ${userId} -> ${roomId}`);
-    participant = await waitForParticipantSync(roomId, userId, 2000); // Wait up to 2 seconds
-  }
-
-  // Last resort fallback: If user created the room, create participant locally
-  // This handles cases where Kafka event fails or is significantly delayed
-  if (!participant) {
-    console.log(`[get-messages] Participant still not found, checking if user is room creator: ${userId} -> ${roomId}`);
-    const room = await Room.findOne({ _id: roomId });
-    
-    if (!room) {
-      console.error(`[get-messages] ❌ Room ${roomId} not found in chat service DB - RoomCreated event may not have been processed`);
-    } else {
-      console.log(`[get-messages] Room found: id=${room.id}, createdBy=${room.createdBy}, type=${room.type}`);
-    }
-    
-    if (room && room.createdBy === userId) {
-      console.log(`[get-messages] ✅ User is room creator, creating participant locally as fallback: ${userId} -> ${roomId}`);
-      const fallbackParticipant = RoomParticipant.build({
-        roomId,
-        participantId: userId,
-        participantType: 'human',
-        role: 'owner',
-      });
-      await fallbackParticipant.save();
-      participant = await RoomParticipant.findOne({ 
-        roomId, 
-        participantId: userId,
-        leftAt: { $exists: false }
-      });
-      console.log(`[get-messages] ✅ Participant created locally as fallback`);
-    } else if (room) {
-      console.error(`[get-messages] ❌ User ${userId} is not the creator of room ${roomId} (creator: ${room.createdBy})`);
-    }
-  }
+  // Check if user is a participant in the room (with retry logic for startup race conditions)
+  const participant = await getParticipantWithRetry(roomId, userId);
 
   if (!participant) {
     return res.status(403).send({ error: 'Not authorized to access messages in this room' });

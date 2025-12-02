@@ -6,7 +6,8 @@ metadata:
     app: kafka-topics-init
 spec:
   # Don't restart on failure - we want to see if topics already exist
-  backoffLimit: 2
+  backoffLimit: 3
+  activeDeadlineSeconds: 300  # 5 minutes max
   template:
     metadata:
       labels:
@@ -24,48 +25,206 @@ spec:
           echo "Waiting for Kafka broker to be ready..."
           KAFKA_BROKER=${KAFKA_BROKER:-redpanda-srv:9092}
           
-          # Wait for Kafka to be ready (max 60 seconds)
-          for i in {1..60}; do
+          # Wait for Kafka to be ready (max 120 seconds)
+          for i in {1..120}; do
             if rpk cluster info --brokers $KAFKA_BROKER &>/dev/null; then
               echo "✅ Kafka broker is ready"
               break
             fi
-            echo "Waiting for Kafka broker... (attempt $i/60)"
+            if [ $i -eq 120 ]; then
+              echo "❌ Kafka broker not ready after 120 seconds, exiting..."
+              exit 1
+            fi
+            echo "Waiting for Kafka broker... (attempt $i/120)"
             sleep 1
           done
           
+          # Additional wait to ensure broker is fully ready
+          echo "Waiting additional 5 seconds for broker to stabilize..."
+          sleep 5
+          
           echo "Initializing required Kafka topics..."
+          
+          # Set error handling - don't exit on individual topic creation failures
+          set +e
           
           # Function to create topic if it doesn't exist
           create_topic_if_not_exists() {
             local topic=$1
-            if rpk topic list --brokers $KAFKA_BROKER | grep -q "^$topic "; then
+            local max_retries=3
+            local retry_count=0
+            
+            # Check if topic already exists
+            if rpk topic list --brokers $KAFKA_BROKER 2>/dev/null | grep -q "^$topic "; then
               echo "✅ Topic '$topic' already exists, skipping"
-            else
-              echo "📝 Creating topic '$topic'..."
-              rpk topic create $topic --brokers $KAFKA_BROKER --partitions 1 --replicas 1
-              echo "✅ Topic '$topic' created successfully"
+              return 0
             fi
+            
+            # Try to create topic with retries
+            while [ $retry_count -lt $max_retries ]; do
+              echo "📝 Creating topic '$topic'... (attempt $((retry_count + 1))/$max_retries)"
+              if rpk topic create $topic --brokers $KAFKA_BROKER --partitions 1 --replicas 1 2>/dev/null; then
+                echo "✅ Topic '$topic' created successfully"
+                return 0
+              else
+                retry_count=$((retry_count + 1))
+                if [ $retry_count -lt $max_retries ]; then
+                  echo "⚠️ Failed to create topic '$topic', retrying in 2 seconds..."
+                  sleep 2
+                fi
+              fi
+            done
+            
+            echo "❌ Failed to create topic '$topic' after $max_retries attempts"
+            return 1
           }
           
-          # Core message topics for realtime-gateway
+          # User/Profile topics
+          create_topic_if_not_exists "user.created"
+          create_topic_if_not_exists "user.updated"
+          create_topic_if_not_exists "user.deleted"
+          create_topic_if_not_exists "user.signedin"
+          create_topic_if_not_exists "profile.created"
+          create_topic_if_not_exists "profile.updated"
+          create_topic_if_not_exists "profile.deleted"
+          
+          # Post/Comment/Reaction topics
+          create_topic_if_not_exists "post.created"
+          create_topic_if_not_exists "post.updated"
+          create_topic_if_not_exists "post.deleted"
+          create_topic_if_not_exists "comment.created"
+          create_topic_if_not_exists "comment.updated"
+          create_topic_if_not_exists "comment.deleted"
+          create_topic_if_not_exists "reaction.created"
+          create_topic_if_not_exists "reaction.deleted"
+          
+          # Friendship topics
+          create_topic_if_not_exists "friendship.requested"
+          create_topic_if_not_exists "friendship.accepted"
+          create_topic_if_not_exists "friendship.updated"
+          
+          # Room topics
+          create_topic_if_not_exists "room.created"
+          create_topic_if_not_exists "room.updated"
+          create_topic_if_not_exists "room.deleted"
+          create_topic_if_not_exists "room.participant.added"
+          create_topic_if_not_exists "room.participant.removed"
+          
+          # Message topics
           create_topic_if_not_exists "message.created"
+          create_topic_if_not_exists "message.updated"
+          create_topic_if_not_exists "message.read"
+          create_topic_if_not_exists "message.deleted"
+          create_topic_if_not_exists "message.ingest"
+          create_topic_if_not_exists "chat.message.reaction.ingested"
           create_topic_if_not_exists "chat.message.reaction.created"
           create_topic_if_not_exists "chat.message.reaction.removed"
+          create_topic_if_not_exists "chat.message.reply.ingested"
           create_topic_if_not_exists "chat.message.reply.created"
           
-          # Additional topics that may be needed
+          # AI Message topics
           create_topic_if_not_exists "ai.message.created"
           create_topic_if_not_exists "ai.message.reply"
           
+          # Presence topics
+          create_topic_if_not_exists "presence.updated"
+          
+          # Media topics
+          create_topic_if_not_exists "media.created"
+          create_topic_if_not_exists "media.updated"
+          create_topic_if_not_exists "media.deleted"
+          
+          # Agent topics
+          create_topic_if_not_exists "agent.created"
+          create_topic_if_not_exists "agent.updated"
+          create_topic_if_not_exists "agent.deleted"
+          create_topic_if_not_exists "agent.ingested"
+          create_topic_if_not_exists "agent.creation.reply.success"
+          create_topic_if_not_exists "agent.creation.reply.failed"
+          create_topic_if_not_exists "agent.creation.failed"
+          
+          # Agent Manager topics
+          create_topic_if_not_exists "room.agent.invited"
+          create_topic_if_not_exists "agent.invite.requested"
+          create_topic_if_not_exists "system.agent.suggested"
+          create_topic_if_not_exists "agent.invite.ownerApproved"
+          create_topic_if_not_exists "agent.invite.ownerDeclined"
+          create_topic_if_not_exists "agent.join.request"
+          create_topic_if_not_exists "agent.leave.request"
+          create_topic_if_not_exists "agent.invite.ownerApprovalRequired"
+          create_topic_if_not_exists "agent.presence.updated"
+          create_topic_if_not_exists "agent.feed.updated"
+          create_topic_if_not_exists "notification.created"
+          create_topic_if_not_exists "agent.activity.postSuggested"
+          create_topic_if_not_exists "agent.activity.commentSuggested"
+          create_topic_if_not_exists "agent.activity.reactionSuggested"
+          create_topic_if_not_exists "agent.activity.friendshipSuggested"
+          create_topic_if_not_exists "agent.draft.created"
+          create_topic_if_not_exists "agent.draft.updated"
+          create_topic_if_not_exists "moderation.agent.suspended"
+          create_topic_if_not_exists "moderation.agent.muted"
+          create_topic_if_not_exists "moderation.agent.forceLeaveRoom"
+          create_topic_if_not_exists "moderation.content.blocked"
+          create_topic_if_not_exists "agent.safety.state.updated"
+          create_topic_if_not_exists "agent.removed.from.room"
+          create_topic_if_not_exists "agent.capability.restricted"
+          create_topic_if_not_exists "agent.draft.post.approved"
+          create_topic_if_not_exists "agent.draft.comment.approved"
+          create_topic_if_not_exists "agent.draft.reaction.approved"
+          create_topic_if_not_exists "agent.draft.rejected"
+          
+          # Feed Scanning topics
+          create_topic_if_not_exists "agent.feed.scanned"
+          create_topic_if_not_exists "agent.feed.digested"
+          create_topic_if_not_exists "agent.feed.answer.received"
+          
+          # Draft Creation topics
+          create_topic_if_not_exists "agent.draft.post.created"
+          create_topic_if_not_exists "agent.draft.comment.created"
+          create_topic_if_not_exists "agent.draft.reaction.created"
+          create_topic_if_not_exists "agent.draft.connection.request.created"
+          
           # Feedback topics
+          create_topic_if_not_exists "feedback.created"
           create_topic_if_not_exists "feedback.reply.received"
           create_topic_if_not_exists "feedback.reaction.received"
-          create_topic_if_not_exists "feedback.created"
+          create_topic_if_not_exists "agent.learning.updated"
+          create_topic_if_not_exists "training.dataset.ready"
+          create_topic_if_not_exists "model.updated"
+          
+          # Session topics
+          create_topic_if_not_exists "session.ended"
+          
+          # Ecommerce topics
+          create_topic_if_not_exists "ecommerce-model.created"
+          create_topic_if_not_exists "ecommerce-model.updated"
+          create_topic_if_not_exists "ecommerce-oreder.created"
+          create_topic_if_not_exists "ecommerce-order.cancelled"
+          create_topic_if_not_exists "ecommerce-order.expired"
+          
+          # Re-enable error handling
+          set -e
           
           echo "✅ Kafka topics initialization complete"
           echo "📋 Current topics:"
           rpk topic list --brokers $KAFKA_BROKER
+          
+          # Verify critical topics exist
+          echo "🔍 Verifying critical topics..."
+          critical_topics=("message.created" "user.created" "agent.ingested" "agent.creation.reply.success")
+          missing_topics=()
+          for topic in "${critical_topics[@]}"; do
+            if ! rpk topic list --brokers $KAFKA_BROKER 2>/dev/null | grep -q "^$topic "; then
+              missing_topics+=("$topic")
+            fi
+          done
+          
+          if [ ${#missing_topics[@]} -gt 0 ]; then
+            echo "❌ ERROR: Critical topics missing: ${missing_topics[*]}"
+            exit 1
+          else
+            echo "✅ All critical topics verified"
+          fi
         env:
         - name: KAFKA_BROKER
           value: "redpanda-srv:9092"

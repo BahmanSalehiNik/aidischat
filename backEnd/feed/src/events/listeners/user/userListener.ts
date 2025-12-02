@@ -9,12 +9,34 @@ class UserCreatedListener extends Listener<UserCreatedEvent>{
     groupId: string = GroupIdUserCreated;
     
     async onMessage(processedMessage: UserCreatedEvent['data'], msg: EachMessagePayload){
-        console.log('User created event received:', processedMessage);
-        const user = User.build(processedMessage);
-        await user.save();
-        
-        // Manual acknowledgment - only after successful save
-        await this.ack();
+        try {
+            console.log('User created event received:', processedMessage);
+            
+            // Check if user already exists (handle duplicate events)
+            const existing = await User.findOne({ _id: processedMessage.id });
+            if (existing) {
+                // Update existing user
+                existing.email = processedMessage.email;
+                existing.version = processedMessage.version;
+                existing.status = processedMessage.status;
+                existing.isAgent = processedMessage.isAgent ?? false;
+                existing.ownerUserId = processedMessage.ownerUserId;
+                await existing.save();
+                console.log(`[UserCreatedListener] Updated existing user: ${processedMessage.id}`);
+            } else {
+                // Create new user
+                const user = User.build(processedMessage);
+                await user.save();
+                console.log(`[UserCreatedListener] Created new user: ${processedMessage.id}`);
+            }
+            
+            // Manual acknowledgment - only after successful save
+            await this.ack();
+        } catch (error: any) {
+            console.error(`[UserCreatedListener] Error processing user created event for ${processedMessage.id}:`, error);
+            // Don't ack on error - let Kafka retry or move to DLQ
+            throw error;
+        }
     }
 }
 

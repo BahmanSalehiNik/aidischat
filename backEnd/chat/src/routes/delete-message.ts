@@ -5,6 +5,7 @@ import { RoomParticipant } from '../models/room-participant';
 import { kafkaWrapper } from '../kafka-client';
 import { MessageDeletedPublisher } from '../events/publishers/message-deleted-publisher';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
+import { getParticipantWithRetry } from '../utils/waitForParticipant';
 
 const router = express.Router();
 
@@ -23,12 +24,8 @@ router.delete('/api/messages/:messageId', extractJWTPayload, loginRequired, asyn
     return res.status(403).send({ error: 'Not authorized to delete this message' });
   }
 
-  // Check if user is still a participant in the room
-  const participant = await RoomParticipant.findOne({ 
-    roomId: message.roomId, 
-    participantId: userId,
-    leftAt: { $exists: false }
-  });
+  // Check if user is still a participant in the room (with retry logic for startup race conditions)
+  const participant = await getParticipantWithRetry(message.roomId, userId);
 
   if (!participant) {
     return res.status(403).send({ error: 'Not authorized to delete messages in this room' });

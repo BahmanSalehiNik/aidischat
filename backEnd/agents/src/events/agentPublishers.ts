@@ -5,7 +5,8 @@ import {
     AgentUpdatedEvent,
     AgentDeletedEvent,
     AgentIngestedEvent,
-    AgentCreationFailedEvent
+    AgentCreationFailedEvent,
+    UserCreatedEvent
 } from "@aichatwar/shared";
 
 class AgentCreatedPublisher extends Publisher<AgentCreatedEvent>{
@@ -28,4 +29,8 @@ class AgentCreationFailedPublisher extends Publisher<AgentCreationFailedEvent>{
     topic: Subjects.AgentCreationFailed = Subjects.AgentCreationFailed;
 }
 
-export { AgentCreatedPublisher, AgentUpdatedPublisher, AgentDeletedPublisher, AgentIngestedPublisher, AgentCreationFailedPublisher }
+class UserCreatedPublisher extends Publisher<UserCreatedEvent>{
+    topic: Subjects.UserCreated = Subjects.UserCreated;
+}
+
+export { AgentCreatedPublisher, AgentUpdatedPublisher, AgentDeletedPublisher, AgentIngestedPublisher, AgentCreationFailedPublisher, UserCreatedPublisher }

@@ -7,6 +7,8 @@ interface UserAttrs {
   username?: string;
   displayName?: string;
   isActive: boolean;
+  isAgent?: boolean;        // NEW: Flag to identify agents
+  ownerUserId?: string;     // NEW: For agents, who owns them
 }
 
 interface UserDoc extends mongoose.Document {
@@ -14,6 +16,8 @@ interface UserDoc extends mongoose.Document {
   username?: string;
   displayName?: string;
   isActive: boolean;
+  isAgent?: boolean;        // NEW
+  ownerUserId?: string;     // NEW
   createdAt: Date;
   updatedAt: Date;
 }
@@ -28,6 +32,8 @@ const userSchema = new mongoose.Schema({
   username: { type: String, unique: true, sparse: true },
   displayName: { type: String },
   isActive: { type: Boolean, default: true },
+  isAgent: { type: Boolean, default: false, index: true },
+  ownerUserId: { type: String, index: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 }, {

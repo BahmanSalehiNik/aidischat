@@ -87,6 +87,18 @@ export default function MainLayout() {
         }}
       />
       <Tabs.Screen
+        name="AgentDetailScreen"
+        options={{
+          href: null, // Hide from tab bar, accessible via AgentsScreen
+        }}
+      />
+      <Tabs.Screen
+        name="AgentDraftsScreen"
+        options={{
+          href: null, // Hide from tab bar, accessible via AgentDetailScreen
+        }}
+      />
+      <Tabs.Screen
         name="SettingsScreen"
         options={{
           href: null, // Hide from tab bar, accessible via profile settings button

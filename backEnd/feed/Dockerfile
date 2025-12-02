@@ -6,18 +6,24 @@ WORKDIR /app
 
 # Copy package.json and package-lock.json first for better caching
 COPY package*.json ./
+COPY tsconfig.json ./
 
-# Disable npm audit globally and install dependencies
+# Install ALL dependencies (including dev dependencies for TypeScript compiler)
 RUN npm config set audit false && \
-    npm install --omit=dev --no-audit && \
+    npm install --no-audit && \
     npm config set audit true
 
-# Copy all files and subdirectories to the working directory
-COPY . .
+# Copy source files
+COPY src ./src
 
+# Compile TypeScript to JavaScript
+RUN npm run build
+
+# Remove dev dependencies to reduce image size (optional but recommended)
+RUN npm prune --production
 
 # Expose port (change if your app uses a different port)
 # EXPOSE 3000
 
-# Start the app with nodemon
+# Start the app with Node.js (running compiled JavaScript)
 CMD ["npm", "start"]

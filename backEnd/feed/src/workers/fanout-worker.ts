@@ -15,7 +15,9 @@ const start = async () => {
 start()
 
 import { Feed, FeedReason } from '../models/feed/feed';
-import { Friendship } from '../models/friendship/freindship'
+import { Friendship } from '../models/friendship/freindship';
+import { User } from '../models/user/user';
+import { UserStatus } from '@aichatwar/shared';
 
 const fanoutWorker = new Worker(
   'fanout-job',
@@ -45,6 +47,30 @@ const fanoutWorker = new Worker(
       // Add friends to recipients
       friendIds.forEach(id => authorIncluded.add(id));
       console.log(Array.from(authorIncluded), "rec")
+
+      // For public posts, also add to all active agents' feeds
+      // This allows agents to see public posts and generate content based on them
+      try {
+        const activeAgents = await User.find({
+          isAgent: true,
+          status: UserStatus.Active,
+        })
+          .select('_id')
+          .lean();
+
+        const agentIds = activeAgents.map(agent => agent._id.toString());
+        console.log(`[FanoutWorker] Found ${agentIds.length} active agents for public post fanout`);
+        
+        // Add agents to recipients (excluding the author if the author is an agent)
+        agentIds.forEach(agentId => {
+          if (agentId !== authorId) {
+            authorIncluded.add(agentId);
+          }
+        });
+      } catch (err) {
+        console.error('[FanoutWorker] Error fetching active agents:', err);
+        // Continue with normal fanout even if agent fetch fails
+      }
     } else if (visibility === 'friends') {
       const friendships = await Friendship.find({
         status: 'accepted',
@@ -61,21 +87,49 @@ const fanoutWorker = new Worker(
 
     if (!recipients.length) return;
     console.log(recipients,"rec")
-    const feedEntries = recipients.map(uid => ({
-      userId: uid,
-      postId,
-      sourceUserId: authorId,
-      reason: FeedReason.Friend,
-      originalCreationTime: new Date().toISOString(),
-    }));
+    
+    // Determine which recipients are agents (for setting FeedReason)
+    const agentIdsSet = new Set<string>();
+    if (visibility === 'public') {
+      try {
+        const activeAgents = await User.find({
+          isAgent: true,
+          status: UserStatus.Active,
+        })
+          .select('_id')
+          .lean();
+        activeAgents.forEach(agent => agentIdsSet.add(agent._id.toString()));
+      } catch (err) {
+        console.error('[FanoutWorker] Error fetching agents for reason determination:', err);
+      }
+    }
+    
+    // Create feed entries with appropriate reason
+    const feedEntries = recipients.map(uid => {
+      // Determine reason: Recommendation if it's an agent seeing a public post (and not the author)
+      // Otherwise, Friend
+      const reason = (uid !== authorId && 
+                     visibility === 'public' && 
+                     agentIdsSet.has(uid)) 
+                     ? FeedReason.Recommendation 
+                     : FeedReason.Friend;
+      
+      return {
+        userId: uid,
+        postId,
+        sourceUserId: authorId,
+        reason,
+        originalCreationTime: new Date().toISOString(),
+      };
+    });
     
     console.log(feedEntries,"feed")
     try {
-  const res = await Feed.insertMany(feedEntries, { ordered: false });
-  console.log('Inserted feed entries:', res.length);
-} catch (err) {
-  console.error('Error inserting feeds:', err);
-}
+      const res = await Feed.insertMany(feedEntries, { ordered: false });
+      console.log('Inserted feed entries:', res.length);
+    } catch (err) {
+      console.error('Error inserting feeds:', err);
+    }
   },
   {
     connection: { host: process.env.REDIS_HOST || 'expiration-redis-srv', port: 6379 },

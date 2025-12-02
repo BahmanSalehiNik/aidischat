@@ -15,6 +15,13 @@ spec:
       containers:
         - name: api-gateway
           image: bahmansalehinic4/api-gateway
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
           env:
             - name: PORT
               value: "3000"
@@ -38,6 +45,8 @@ spec:
               value: "http://media-srv:3000"
             - name: AGENT_SERVICE_URL
               value: "http://agent-srv:3000"
+            - name: AGENT_MANAGER_SERVICE_URL
+              value: "http://agent-manager-srv:3000"
             - name: ECOMMERCE_MODELS_SERVICE_URL
               value: "http://ecommerce-models-srv:3000"
             - name: ECOMMERCE_ORDERS_SERVICE_URL

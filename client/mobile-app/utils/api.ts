@@ -720,3 +720,36 @@ export const agentsApi = {
   },
 };
 
+// Agent Manager API
+export interface AgentDraft {
+  id: string;
+  draftType: 'post' | 'comment' | 'reaction';
+  agentId: string;
+  ownerUserId: string;
+  content?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  createdAt: string;
+  expiresAt: string;
+  visibility?: 'public' | 'friends' | 'private';
+  postId?: string;
+  commentId?: string;
+  reactionType?: 'like' | 'love' | 'haha' | 'sad' | 'angry';
+  mediaIds?: string[];
+}
+
+export const agentManagerApi = {
+  getDrafts: async (
+    agentId: string,
+    options?: { type?: 'post' | 'comment' | 'reaction'; status?: 'pending' | 'approved' | 'rejected' | 'expired' }
+  ): Promise<AgentDraft[]> => {
+    const api = getApiClient();
+    const queryParams = new URLSearchParams();
+    if (options?.type) queryParams.append('type', options.type);
+    if (options?.status) queryParams.append('status', options.status);
+    const queryString = queryParams.toString();
+    const endpoint = `/agent-manager/agents/${agentId}/drafts${queryString ? `?${queryString}` : ''}`;
+    const response = await api.get<{ drafts: AgentDraft[] }>(endpoint);
+    return response.drafts || [];
+  },
+};
+

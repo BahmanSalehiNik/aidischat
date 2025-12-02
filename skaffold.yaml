@@ -143,6 +143,14 @@ build:
       sync:
         manual:
           - dest: .
+            src: 'src/**/*.ts'
+    - image: bahmansalehinic4/agent-manager
+      context: backEnd/agent-manager
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
             src: 'src/**/*.ts' 
     - image: bahmansalehinic4/api-gateway
       context: backEnd/api-gateway
@@ -187,6 +195,8 @@ manifests:
     - ./infra/k8s/room-depl.yaml
     - ./infra/k8s/chat-depl.yaml
     - ./infra/k8s/agent-depl.yaml
+    - ./infra/k8s/agent-manager-depl.yaml
+    - ./infra/k8s/agent-manager-mongo-depl.yaml
     - ./infra/k8s/ai-gateway-depl.yaml
     - ./infra/k8s/realtime-gateway-depl.yaml
     - ./infra/k8s/api-gateway-depl.yaml
