@@ -15,6 +15,13 @@ spec:
       containers:
         - name: search
           image: bahmansalehinic4/search
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
           env:
             - name: MONGO_URI
               value: "mongodb://search-mongo-srv:27017/search"

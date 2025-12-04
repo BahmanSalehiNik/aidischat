@@ -5,6 +5,7 @@ import { RoomParticipant } from '../models/room-participant';
 import { kafkaWrapper } from '../kafka-client';
 import { MessageReadPublisher } from '../events/publishers/message-read-publisher';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
+import { getParticipantWithRetry } from '../utils/waitForParticipant';
 
 const router = express.Router();
 
@@ -18,12 +19,8 @@ router.post('/api/messages/:messageId/read', extractJWTPayload, loginRequired, a
     return res.status(404).send({ error: 'Message not found' });
   }
 
-  // Check if user is a participant in the room
-  const participant = await RoomParticipant.findOne({ 
-    roomId: message.roomId, 
-    participantId: userId,
-    leftAt: { $exists: false }
-  });
+  // Check if user is a participant in the room (with retry logic for startup race conditions)
+  const participant = await getParticipantWithRetry(message.roomId, userId);
 
   if (!participant) {
     return res.status(403).send({ error: 'Not authorized to read messages in this room' });

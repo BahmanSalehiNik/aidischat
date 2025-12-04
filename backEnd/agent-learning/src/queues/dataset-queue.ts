@@ -11,10 +11,12 @@ const redisPort = parseInt(process.env.REDIS_PORT || "6379", 10);
 
 const connection = new IORedis({
     host: redisHost,
-    port: redisPort
+    port: redisPort,
+    // BullMQ requires maxRetriesPerRequest: null for blocking operations (BLPOP, etc.)
+    maxRetriesPerRequest: null
 });
 
-const queueName = "agent-learning:dataset";
+const queueName = "agent-learning-dataset";
 
 export interface DatasetJobPayload {
     jobId: string;

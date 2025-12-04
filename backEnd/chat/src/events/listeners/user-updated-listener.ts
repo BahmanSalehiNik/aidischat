@@ -7,6 +7,7 @@ import { User } from '../../models/user';
 export class UserUpdatedListener extends Listener<UserUpdatedEvent> {
   readonly topic = Subjects.UserUpdated;
   readonly groupId = 'chat-service';
+  protected fromBeginning: boolean = true; // Read from beginning to catch missed events on restart
 
   async onMessage(data: UserUpdatedEvent['data'], payload: any) {
     const { id, email, status } = data;

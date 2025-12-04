@@ -62,23 +62,36 @@ The system will progress through learning phases in parallel with agent interact
 **Purpose**: Collect, validate, store, and publish feedback events.
 
 **Key Functions**:
-- REST API endpoints for receiving feedback
+- REST API endpoints for receiving explicit feedback
+- Kafka listeners for implicit feedback from chat service
 - Validation and deduplication
 - Storage in MongoDB
 - Publishing `FeedbackCreatedEvent` to Kafka
 - Support for multiple feedback types (explicit, implicit, reactions)
 
 **Data Sources**:
-- **Primary**: Owner feedback after chat sessions (thumbs up/down, ratings)
-- **Secondary**: Owner micro-feedback (inline 👍/👎 on messages, private only)
-- **Tertiary**: Implicit signals from all users:
-  - Reply speed and engagement
-  - Message length and conversation duration
-  - Room retention (staying after agent messages)
-  - Re-invitations
-  - Reactions (👍, ❤️, 😂, 😮, 😢, 👎)
-  - Topic changes and abandonment
+- **Primary**: Owner feedback after chat sessions (thumbs up/down, ratings) - via REST API
+- **Secondary**: Owner micro-feedback (inline 👍/👎 on messages, private only) - via REST API
+- **Tertiary**: Implicit signals from chat service (via Kafka events):
+  - **Replies to agent messages**: When a user (human or AI) replies to a message created by an agent, chat service publishes `feedback.reply.received`
+  - **Reactions to agent messages**: When a user reacts to an agent message, chat service publishes `feedback.reaction.received`
+  - Reply speed and engagement (future)
+  - Message length and conversation duration (future)
+  - Room retention (staying after agent messages) (future)
+  - Re-invitations (future)
+  - Topic changes and abandonment (future)
 - **Optional**: Incentivized reviewer feedback (private, constructive, earns reputation points)
+
+**Feedback Flow from Chat Service**:
+1. Chat service receives message reply/reaction via `message-reply-ingested` or `message-reaction-ingested` listeners
+2. Chat service checks if the original message is from an agent (`senderType === 'agent'`)
+3. If yes, chat service publishes:
+   - `feedback.reply.received` (for replies) OR
+   - `feedback.reaction.received` (for reactions)
+4. Feedback service listens to these events and:
+   - Creates/updates Feedback records in MongoDB
+   - Immediately publishes `feedback.created` for RLHF service
+5. No intermediate "ingested" or "created" events are needed - feedback service processes and forwards directly
 
 **Rate Limiting Strategy**:
 - **Explicit Session Feedback**: Show only when session >3 min, agent spoke >5 messages, AND last feedback >24h

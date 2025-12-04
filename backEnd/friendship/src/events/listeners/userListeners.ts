@@ -9,7 +9,14 @@ class UserCreatedListener extends Listener<UserCreatedEvent>{
     
     async onMessage(processedMessage: UserCreatedEvent['data'], msg: EachMessagePayload){
         console.log('User created event received:', processedMessage);
-        const user = User.add(processedMessage);
+        const user = User.add({
+            id: processedMessage.id,
+            email: processedMessage.email,
+            version: processedMessage.version,
+            status: processedMessage.status,
+            isAgent: processedMessage.isAgent,
+            ownerUserId: processedMessage.ownerUserId,
+        });
         await user.save();
         
         // Manual acknowledgment - only after successful save

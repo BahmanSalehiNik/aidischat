@@ -7,12 +7,16 @@ interface UserAttrs {
     email: string;
     version: number;
     status: UserStatus;
+    isAgent?: boolean;        // NEW: Flag to identify agents
+    ownerUserId?: string;     // NEW: For agents, who owns them
 }
 
 interface UserDoc extends mongoose.Document {
     email: string;
     version: number;
     status: UserStatus;
+    isAgent?: boolean;        // NEW
+    ownerUserId?: string;     // NEW
 } 
 
 interface UserModel extends mongoose.Model<UserDoc> {
@@ -37,6 +41,8 @@ const userSchame = new mongoose.Schema({
     enum: Object.values(UserStatus),
     default: UserStatus.Active,
   },
+    isAgent: { type: Boolean, default: false, index: true },
+    ownerUserId: { type: String, index: true },
 }, {
     toJSON:{
         transform(doc, ret: DummyRet){

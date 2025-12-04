@@ -11,8 +11,10 @@ import { ReactionCreatedListener, ReactionDeletedListener } from "./events/liste
 import { FriendshipAcceptedListener, 
     FriendshipUpdatedListener, 
     FriendshipRequestedListener } from "./events/listeners/friendship/friendshipListener";
-import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdPostCreated, GroupIdPostUpdated, GroupIdPostDeleted, GroupIdCommentCreated, GroupIdCommentDeleted, GroupIdReactionCreated, GroupIdReactionDeleted, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated } from "./events/queGroupNames";
+import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdPostCreated, GroupIdPostUpdated, GroupIdPostDeleted, GroupIdCommentCreated, GroupIdCommentDeleted, GroupIdReactionCreated, GroupIdReactionDeleted, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated, GroupIdAgentFeedAnswerReceived } from "./events/queGroupNames";
+import { AgentFeedAnswerReceivedListener } from "./events/listeners/agentFeedAnswerReceived/agentFeedAnswerReceivedListener";
 import { trendingWorker } from "./modules/trending/trendingWorker";
+import { agentFeedScannerWorker } from "./workers/agent-feed-scanner";
 
 
 const startMongoose = async ()=>{
@@ -85,9 +87,13 @@ const startMongoose = async ()=>{
         new FriendshipAcceptedListener(kafkaWrapper.consumer(GroupIdFreindshipAccepted)).listen();
         new FriendshipUpdatedListener(kafkaWrapper.consumer(GroupIdFreindshipUpdated)).listen();
 
+        // Agent feed answer received listener - marks feed entries as seen after processing
+        new AgentFeedAnswerReceivedListener(kafkaWrapper.consumer(GroupIdAgentFeedAnswerReceived)).listen();
+
         console.log("All Kafka listeners started successfully");
 
         trendingWorker.start();
+        agentFeedScannerWorker.start();
 
         app.listen(3000, ()=>{
             console.log("app listening on port 3000! feed service")
@@ -98,5 +104,17 @@ const startMongoose = async ()=>{
         process.exit(1);
     }
 }
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    // Don't exit - let the error handler deal with it
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error: Error) => {
+    console.error('Uncaught Exception:', error);
+    // Don't exit immediately - log and let error handler try to handle it
+});
 
 startMongoose()

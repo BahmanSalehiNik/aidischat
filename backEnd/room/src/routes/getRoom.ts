@@ -2,6 +2,7 @@
 import express, { Request, Response } from 'express';
 import { Room } from '../models/room';
 import { Participant } from '../models/room-participant';
+import { User } from '../models/user';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
 
 const router = express.Router();
@@ -39,7 +40,37 @@ router.get('/api/rooms/:roomId', extractJWTPayload, loginRequired, async (req: R
     return res.status(404).send({ error: 'Room not found' });
   }
 
-  res.status(200).send(room);
+  // Get all participants for this room with their user details
+  const participants = await Participant.find({
+    roomId,
+    leftAt: { $exists: false }
+  }).lean();
+
+  // Fetch user details for each participant
+  const participantIds = participants.map(p => p.participantId);
+  const users = await User.find({ _id: { $in: participantIds } }).lean();
+  const userMap = new Map(users.map(u => [u._id.toString(), u]));
+
+  // Enrich participants with user data
+  const enrichedParticipants = participants.map(p => {
+    const user = userMap.get(p.participantId);
+    return {
+      id: p.participantId,
+      participantId: p.participantId,
+      participantType: p.participantType,
+      role: p.role,
+      joinedAt: p.joinedAt,
+      name: user ? (user.displayName || user.username || user.email?.split('@')[0]) : undefined,
+      email: user?.email,
+      username: user?.username,
+    };
+  });
+
+  const roomJson = room.toJSON();
+  res.status(200).send({
+    ...roomJson,
+    participants: enrichedParticipants,
+  });
 });
 
 export { router as getRoomRouter };

@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  # Redpanda (Kafka-compatible) for local development
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --mode dev-container
+      - --smp 1
+      - --overprovisioned
+      - --node-id 0
+      - --kafka-addr PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr PLAINTEXT://localhost:9092,OUTSIDE://localhost:19092
+      - --pandaproxy-addr 0.0.0.0:8082
+      - --advertise-pandaproxy-addr localhost:8082
+      - --schema-registry-addr 0.0.0.0:8081
+      - --rpc-addr 0.0.0.0:33145
+      - --advertise-rpc-addr localhost:33145
+      - --memory 512M
+      - --reserve-memory 0M
+    ports:
+      - "9092:9092"      # Kafka API (internal)
+      - "19092:19092"    # Kafka API (external, for services outside Docker network)
+      - "8081:8081"      # Schema Registry
+      - "8082:8082"      # Pandaproxy (REST API)
+      - "9644:9644"      # Admin API
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - kafka-network
+
+  # Kafka Topics Initialization
+  kafka-topics-init:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: kafka-topics-init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        echo "Waiting for Kafka broker to be ready..."
+        KAFKA_BROKER=redpanda:9092
+        
+        # Wait for Kafka to be ready (max 60 seconds)
+        for i in {1..60}; do
+          if rpk cluster info --brokers $KAFKA_BROKER &>/dev/null; then
+            echo "✅ Kafka broker is ready"
+            break
+          fi
+          echo "Waiting for Kafka broker... (attempt $i/60)"
+          sleep 1
+        done
+        
+        echo "Initializing required Kafka topics..."
+        
+        # Function to create topic if it doesn't exist
+        create_topic_if_not_exists() {
+          local topic=$1
+          if rpk topic list --brokers $KAFKA_BROKER | grep -q "^$topic "; then
+            echo "✅ Topic '$topic' already exists, skipping"
+          else
+            echo "📝 Creating topic '$topic'..."
+            rpk topic create $topic --brokers $KAFKA_BROKER --partitions 1 --replicas 1
+            echo "✅ Topic '$topic' created successfully"
+          fi
+        }
+        
+        # Core message topics for realtime-gateway
+        create_topic_if_not_exists "message.created"
+        create_topic_if_not_exists "chat.message.reaction.created"
+        create_topic_if_not_exists "chat.message.reaction.removed"
+        create_topic_if_not_exists "chat.message.reply.created"
+        
+        # Additional topics that may be needed
+        create_topic_if_not_exists "ai.message.created"
+        create_topic_if_not_exists "ai.message.reply"
+        
+        # Feedback topics
+        create_topic_if_not_exists "feedback.reply.received"
+        create_topic_if_not_exists "feedback.reaction.received"
+        create_topic_if_not_exists "feedback.created"
+        
+        # Post service topics
+        create_topic_if_not_exists "post.created"
+        create_topic_if_not_exists "post.updated"
+        create_topic_if_not_exists "post.deleted"
+        create_topic_if_not_exists "reaction.created"
+        create_topic_if_not_exists "reaction.deleted"
+        create_topic_if_not_exists "comment.created"
+        create_topic_if_not_exists "comment.updated"
+        create_topic_if_not_exists "comment.deleted"
+        
+        # User/Profile topics
+        create_topic_if_not_exists "user.created"
+        create_topic_if_not_exists "user.updated"
+        create_topic_if_not_exists "user.deleted"
+        create_topic_if_not_exists "profile.created"
+        create_topic_if_not_exists "profile.updated"
+        
+        echo "✅ Kafka topics initialization complete"
+        echo "📋 Current topics:"
+        rpk topic list --brokers $KAFKA_BROKER
+    networks:
+      - kafka-network
+    restart: "no"  # Only run once
+
+volumes:
+  redpanda-data:
+    driver: local
+
+networks:
+  kafka-network:
+    driver: bridge
+    name: kafka-network
+

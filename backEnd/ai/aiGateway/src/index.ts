@@ -4,6 +4,7 @@ import { kafkaWrapper } from './kafka-client';
 import { AiMessageCreatedListener } from './events/listeners/ai-message-created-listener';
 import { AgentUpdatedListener } from './events/listeners/agent-updated-listener';
 import { AgentIngestedListener } from './events/listeners/agent-ingested-listener';
+import { AgentFeedScannedListener } from './events/listeners/agent-feed-scanned-listener';
 
 const startService = async () => {
   // Validate environment variables
@@ -53,6 +54,12 @@ const startService = async () => {
       kafkaWrapper.consumer('ai-gateway-agent-updated')
     );
     await agentUpdatedListener.listen();
+
+    // Agent feed scanned listener - processes agent feed scans
+    const agentFeedScannedListener = new AgentFeedScannedListener(
+      kafkaWrapper.consumer('ai-gateway-agent-feed-scanned')
+    );
+    await agentFeedScannedListener.listen();
 
     console.log('✅ All Kafka listeners started successfully');
     console.log('🤖 AI Gateway service is ready!');

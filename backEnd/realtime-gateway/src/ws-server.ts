@@ -20,6 +20,26 @@ const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 
 let globalWss: WebSocketServer | null = null;
 
+// Diagnostic function to check socket mapping state
+function logSocketMappingState() {
+  console.log(`📊 [WS Server] Socket Mapping Diagnostic:`, {
+    totalRooms: roomMembers.size,
+    rooms: Array.from(roomMembers.entries()).map(([roomId, sockets]) => ({
+      roomId,
+      socketCount: sockets.size,
+      openSockets: Array.from(sockets).filter(ws => ws.readyState === WebSocket.OPEN).length,
+      closedSockets: Array.from(sockets).filter(ws => ws.readyState !== WebSocket.OPEN).length,
+      socketStates: Array.from(sockets).map((ws: WebSocket & { user?: { id: string; type?: string } }) => ({
+        readyState: ws.readyState,
+        hasUser: !!ws.user,
+        userId: ws.user?.id,
+      })),
+    })),
+    totalConnectedUsers: connectedUsers.size,
+    connectedUserIds: Array.from(connectedUsers.keys()),
+  });
+}
+
 export function startWebSocketServer(server: any, kafkaProducer: Producer) {
   const wss = new WebSocketServer({ 
     server,
@@ -61,13 +81,37 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
    * ✅ Efficient filtering (pod only checks its own sockets)
    * ✅ Horizontal scaling (each pod handles its own clients)
    */
-    redisSubscriber.on('message', (channel: string, raw: string) => {
-    const roomId = channel.replace('room:', '');
+  console.log('🔧 [WS Server] Setting up Redis subscriber message handler...');
+  console.log('🔧 [WS Server] Redis subscriber ready state:', redisSubscriber.status);
+  
+  redisSubscriber.on('message', (channel: string, raw: string) => {
+    // Normalize roomId extraction (trim whitespace)
+    const roomId = channel.replace('room:', '').trim();
     const sockets = roomMembers.get(roomId);
+    
+    console.log(`📡 [Redis→WS] Received message on channel "${channel}", extracted roomId: "${roomId}", sockets in room: ${sockets?.size || 0}`);
+    console.log(`📡 [Redis→WS] Current roomMembers map state:`, {
+      totalRooms: roomMembers.size,
+      allRoomIds: Array.from(roomMembers.keys()),
+      targetRoomId: roomId,
+      hasSockets: !!sockets,
+      socketCount: sockets?.size || 0,
+    });
+    
+    // Debug: Log all roomIds in roomMembers map to detect mismatches
+    if (!sockets || sockets.size === 0) {
+      const allRoomIds = Array.from(roomMembers.keys());
+      console.log(`📡 [Redis→WS] DEBUG - No sockets for roomId "${roomId}". Available roomIds in roomMembers:`, allRoomIds);
+      // Check for potential matches with different formatting
+      const potentialMatch = allRoomIds.find(id => id.trim() === roomId || id === roomId.trim());
+      if (potentialMatch) {
+        console.warn(`📡 [Redis→WS] ⚠️ Found potential roomId mismatch: received "${roomId}" but have "${potentialMatch}"`);
+      }
+    }
     
     // If this pod has no sockets in this room, ignore (another pod will handle it)
     if (!sockets || sockets.size === 0) {
-      console.log(`📡 [Redis→WS] No sockets in room ${roomId} on this pod, skipping`);
+      console.log(`📡 [Redis→WS] ⚠️ No sockets in room ${roomId} on this pod, skipping (another pod will handle it)`);
       return;
     }
     
@@ -134,9 +178,31 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
     }
     
     if (sentCount > 0) {
-      console.log(`📡 [Redis→WS] Broadcast ${wsMessageType} to ${sentCount} socket(s) in room ${roomId} on this pod`);
+      console.log(`📡 [Redis→WS] ✅ Broadcast ${wsMessageType} to ${sentCount} socket(s) in room ${roomId} on this pod`);
     } else {
-      console.warn(`⚠️ [Redis→WS] No sockets sent message in room ${roomId} (${sockets.size} sockets but none OPEN)`);
+      console.warn(`⚠️ [Redis→WS] ❌ No sockets sent message in room ${roomId} (${sockets.size} sockets but ${sentCount} sent - check socket states)`);
+      // Log socket states for debugging
+      let openCount = 0;
+      let closedCount = 0;
+      const socketDetails: any[] = [];
+      sockets.forEach((ws: any) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          openCount++;
+        } else {
+          closedCount++;
+        }
+        socketDetails.push({
+          readyState: ws.readyState,
+          readyStateName: ws.readyState === WebSocket.OPEN ? 'OPEN' : ws.readyState === WebSocket.CONNECTING ? 'CONNECTING' : ws.readyState === WebSocket.CLOSING ? 'CLOSING' : 'CLOSED',
+          hasUser: !!ws.user,
+          userId: ws.user?.id,
+        });
+      });
+      console.warn(`📡 [Redis→WS] Socket states: ${openCount} OPEN, ${closedCount} not OPEN`);
+      console.warn(`📡 [Redis→WS] Socket details:`, socketDetails);
+      
+      // Log full socket mapping state when message delivery fails
+      logSocketMappingState();
     }
   });
 
@@ -282,17 +348,38 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
       // Auto-subscribe to user's rooms from Redis
       try {
         const userRooms = await redisRoom.hgetall(RedisRoomKeys.userRooms(userPayload.id));
-        const roomIds = Object.keys(userRooms);
+        const roomIds = Object.keys(userRooms).map(id => id.trim()); // Normalize roomIds
+        console.log(`📡 [WS] Auto-subscribing user ${userPayload.id} to ${roomIds.length} rooms:`, roomIds);
+        
         for (const roomId of roomIds) {
           const set = roomMembers.get(roomId) || new Set();
+          const wasFirstSocket = set.size === 0;
           set.add(ws);
           roomMembers.set(roomId, set);
-          // Subscribe to message pub/sub for this room
-          await redisSubscriber.subscribe(`room:${roomId}`);
+          
+          console.log(`📡 [WS] Adding socket to room ${roomId} for user ${userPayload.id}:`, {
+            wasFirstSocket,
+            socketCountBefore: wasFirstSocket ? 0 : set.size - 1,
+            socketCountAfter: set.size,
+            roomId,
+          });
+          
+          // Subscribe to message pub/sub for this room (only if first socket on this pod)
+          if (wasFirstSocket) {
+            const channel = `room:${roomId}`;
+            try {
+              await redisSubscriber.subscribe(channel);
+              console.log(`📡 [WS] ✅ Auto-subscribed to Redis channel "${channel}" for user ${userPayload.id} (first socket on this pod)`);
+            } catch (subErr) {
+              console.error(`❌ [WS] Failed to auto-subscribe to Redis channel "${channel}":`, subErr);
+            }
+          } else {
+            console.log(`📡 [WS] Socket added to room ${roomId} for user ${userPayload.id} (${set.size} total sockets, already subscribed)`);
+          }
         }
-        console.log(`✅ User ${userPayload.id} connected, auto-subscribed to ${roomIds.length} rooms`);
+        console.log(`✅ [WS] User ${userPayload.id} connected, auto-subscribed to ${roomIds.length} rooms. RoomMembers map now has ${roomMembers.size} rooms.`);
       } catch (error) {
-        console.error('Error auto-subscribing to user rooms:', error);
+        console.error('❌ [WS] Error auto-subscribing to user rooms:', error);
       }
     }
     
@@ -319,9 +406,17 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
       }
       
       if (msg.type === 'join') {
-        const { roomId } = msg;
+        const { roomId: rawRoomId } = msg;
+        // Normalize roomId (trim whitespace) to ensure consistency
+        const roomId = rawRoomId?.trim();
         
-        console.log(`🔗 [WS] User ${ws.user?.id} attempting to join room ${roomId}`);
+        if (!roomId) {
+          console.error(`❌ [WS] Invalid roomId in join message:`, rawRoomId);
+          ws.send(JSON.stringify({ type: 'error', payload: { message: 'Invalid roomId' } }));
+          return;
+        }
+        
+        console.log(`🔗 [WS] User ${ws.user?.id} attempting to join room "${roomId}" (normalized from "${rawRoomId}")`);
         
         // Check if user is a member of this room in Redis
         if (ws.user?.id) {
@@ -344,13 +439,41 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
         set.add(ws);
         roomMembers.set(roomId, set);
         
+        // Log current roomMembers state for debugging
+        console.log(`📊 [WS] RoomMembers map state after join:`, {
+          roomId,
+          socketsInRoom: set.size,
+          totalRooms: roomMembers.size,
+          allRoomIds: Array.from(roomMembers.keys()),
+        });
+        
         // Subscribe to Redis channel when first socket joins this room on this pod
         // This enables receiving messages from other pods via Redis pub/sub fan-out
         if (wasFirstSocket) {
-          await redisSubscriber.subscribe(`room:${roomId}`);
-          console.log(`📡 [WS] Subscribed to Redis channel "room:${roomId}" for fan-out (first socket on this pod)`);
+          try {
+            const channel = `room:${roomId}`;
+            console.log(`📡 [WS] Attempting to subscribe to Redis channel "${channel}"...`);
+            await redisSubscriber.subscribe(channel);
+            console.log(`📡 [WS] ✅ Successfully subscribed to Redis channel "${channel}" for fan-out (first socket on this pod)`);
+            
+            // Verify subscription by checking active channels
+            try {
+              const subscribedChannels = await redisSubscriber.pubsub('CHANNELS', `room:${roomId}`);
+              console.log(`📡 [WS] Verified subscription - active channels matching "room:${roomId}":`, subscribedChannels);
+            } catch (verifyError) {
+              console.warn(`⚠️ [WS] Could not verify subscription (non-critical):`, verifyError);
+            }
+          } catch (error) {
+            console.error(`❌ [WS] Failed to subscribe to Redis channel "room:${roomId}":`, error);
+            console.error(`❌ [WS] Error details:`, {
+              message: (error as Error).message,
+              stack: (error as Error).stack,
+              roomId,
+              channel: `room:${roomId}`,
+            });
+          }
         } else {
-          console.log(`📡 [WS] Socket added to room ${roomId} (${set.size} total sockets on this pod)`);
+          console.log(`📡 [WS] Socket added to room ${roomId} (${set.size} total sockets on this pod, already subscribed)`);
         }
         
         // Send confirmation with room members list
@@ -360,12 +483,24 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
           payload: { roomId, members },
         }));
         console.log(`✅ [WS] User ${ws.user?.id} joined room ${roomId}, ${members.length} total members`);
+        
+        // Log socket mapping state after join for debugging
+        logSocketMappingState();
       }
 
       if (msg.type === 'message.send') {
+        // Normalize roomId
+        const roomId = msg.roomId?.trim();
+        if (!roomId) {
+          console.error(`❌ [WS] Invalid roomId in message.send:`, msg.roomId);
+          return;
+        }
+        
+        console.log(`📤 [WS] Publishing message.send to Kafka: roomId=${roomId}, content=${msg.content?.substring(0, 50) || 'empty'}, senderId=${ws.user?.id}`);
+        
         const publisher = new MessageIngestPublisher(kafkaProducer);
         await publisher.publish({
-          roomId: msg.roomId,
+          roomId,
           content: msg.content,
           senderId: ws.user?.id || '',
           senderType: ws.user?.type || 'human',
@@ -384,9 +519,16 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
       }
 
       if (msg.type === 'message.reaction') {
+        // Normalize roomId
+        const roomId = msg.roomId?.trim();
+        if (!roomId) {
+          console.error(`❌ [WS] Invalid roomId in message.reaction:`, msg.roomId);
+          return;
+        }
+        
         const publisher = new MessageReactionIngestPublisher(kafkaProducer);
         await publisher.publish({
-          roomId: msg.roomId,
+          roomId,
           messageId: msg.messageId,
           userId: ws.user?.id || '',
           emoji: msg.emoji,
@@ -404,9 +546,16 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
       }
 
       if (msg.type === 'message.reply') {
+        // Normalize roomId
+        const roomId = msg.roomId?.trim();
+        if (!roomId) {
+          console.error(`❌ [WS] Invalid roomId in message.reply:`, msg.roomId);
+          return;
+        }
+        
         const publisher = new MessageReplyIngestPublisher(kafkaProducer);
         await publisher.publish({
-          roomId: msg.roomId,
+          roomId,
           senderId: ws.user?.id || '',
           senderType: (ws.user?.type || 'human') as 'human' | 'agent',
           content: msg.content,
@@ -449,14 +598,34 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
       }
       
       // Clean up room memberships in memory
+      console.log(`🔌 [WS] Cleaning up room memberships for user ${userId}. Current roomMembers map:`, {
+        totalRooms: roomMembers.size,
+        roomIds: Array.from(roomMembers.keys()),
+      });
+      
       for (const [roomId, sockets] of roomMembers.entries()) {
+        const hadSocket = sockets.has(ws);
         sockets.delete(ws);
+        const remainingSockets = sockets.size;
+        
+        if (hadSocket) {
+          console.log(`🔌 [WS] Removed socket from room ${roomId}. Remaining sockets: ${remainingSockets}`);
+        }
+        
         // Unsubscribe from Redis channel when last socket leaves this room on this pod
-        if (sockets.size === 0) {
-          redisSubscriber.unsubscribe(`room:${roomId}`);
-          console.log(`📡 Unsubscribed from Redis channel "room:${roomId}" (no more sockets)`);
+        if (remainingSockets === 0) {
+          try {
+            await redisSubscriber.unsubscribe(`room:${roomId}`);
+            console.log(`📡 [WS] Unsubscribed from Redis channel "room:${roomId}" (no more sockets on this pod)`);
+            // Remove empty room from map
+            roomMembers.delete(roomId);
+          } catch (unsubErr) {
+            console.error(`❌ [WS] Error unsubscribing from Redis channel "room:${roomId}":`, unsubErr);
+          }
         }
       }
+      
+      console.log(`🔌 [WS] After cleanup, roomMembers map has ${roomMembers.size} rooms`);
       
       // Set up grace period before publishing disconnect
       // This gives the user time to reconnect if it was a temporary network issue

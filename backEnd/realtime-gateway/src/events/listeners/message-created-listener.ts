@@ -1,5 +1,5 @@
 import { redisPublisher } from '../../redis';
-import { Consumer, EachMessagePayload } from 'kafkajs';
+import { EachMessagePayload } from 'kafkajs';
 import { Listener, MessageCreatedEvent, Subjects } from '@aichatwar/shared';
 
 /**
@@ -15,24 +15,25 @@ import { Listener, MessageCreatedEvent, Subjects } from '@aichatwar/shared';
  * 3. Redis broadcasts to ALL Gateway pods subscribed to that channel
  * 4. Each pod checks local roomMembers map and sends to its connected sockets
  * 
- * Note: This listener extends the base Listener but uses a shared consumer pattern.
- * The listen() method is overridden to be a no-op since subscription/run is handled centrally in index.ts
+ * Note: All listeners use the same groupId 'realtime-gateway-group' to ensure
+ * only one pod processes each message, then fans out via Redis.
  */
 export class MessageCreatedListener extends Listener<MessageCreatedEvent> {
   readonly topic = Subjects.MessageCreated;
   readonly groupId = 'realtime-gateway-group';
+  protected fromBeginning: boolean = false; // Read from latest offset (only new messages)
 
-  constructor(consumer: Consumer) {
-    super(consumer);
-  }
-
-  // Override listen() to be a no-op since we use shared consumer in index.ts
-  async listen() {
-    // No-op: subscription and run are handled centrally in index.ts
-    console.log(`✅ [MessageCreatedListener] Listener initialized for topic: ${this.topic}`);
-  }
-
-  async onMessage(data: MessageCreatedEvent['data'], payload: EachMessagePayload) {
+  async onMessage(data: MessageCreatedEvent['data'], kafkaPayload: EachMessagePayload) {
+    console.log(`📥 [MessageCreatedListener] onMessage called with data:`, {
+      messageId: data.id,
+      roomId: data.roomId,
+      senderId: data.senderId,
+      senderName: data.senderName,
+      contentLength: data.content?.length || 0,
+      partition: kafkaPayload.partition,
+      offset: kafkaPayload.message.offset,
+    });
+    
     // Validate required fields before publishing
     // Note: content can be empty (e.g., messages with only attachments)
     if (!data.id || !data.roomId || !data.senderId) {
@@ -45,12 +46,35 @@ export class MessageCreatedListener extends Listener<MessageCreatedEvent> {
       return;
     }
     
-    const channel = `room:${data.roomId}`;
+    // Normalize roomId to ensure consistency (trim whitespace)
+    const normalizedRoomId = data.roomId?.trim();
+    if (!normalizedRoomId) {
+      console.error(`❌ [MessageCreatedListener] Invalid roomId in message.created event:`, data.roomId);
+      // Note: In the old pattern with shared consumer, ack is handled in index.ts
+      // throw error to prevent ack in index.ts
+      throw new Error(`Invalid roomId: ${data.roomId}`);
+    }
+    
+    const channel = `room:${normalizedRoomId}`;
+    const redisPayload = {
+      ...data,
+      roomId: normalizedRoomId, // Ensure roomId in payload is also normalized
+    };
     
     // FAN-OUT TRIGGER: Publish to Redis (all Gateway pods will receive this)
-    await redisPublisher.publish(channel, JSON.stringify(data));
+    const publishResult = await redisPublisher.publish(channel, JSON.stringify(redisPayload));
     
-    console.log(`📤 [Kafka→Redis] Published message.created to channel ${channel} (fan-out trigger)`);
+    console.log(`📤 [Kafka→Redis] Published message.created to channel "${channel}" (roomId: "${normalizedRoomId}") (fan-out trigger)`, {
+      channel,
+      roomId: normalizedRoomId,
+      messageId: data.id,
+      publishResult, // Number of subscribers that received the message
+      payloadSize: JSON.stringify(redisPayload).length,
+    });
+    
+    // Note: In the old pattern with shared consumer, ack is handled in index.ts
+    // This method is kept for compatibility but won't be called in the old pattern
+    // await this.ack(kafkaPayload);
   }
 }
 

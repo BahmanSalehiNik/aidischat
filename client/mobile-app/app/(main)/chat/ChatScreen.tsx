@@ -17,7 +17,10 @@ import { InviteParticipantsModal } from '../../../components/chat/InviteParticip
 import { ParticipantsModal } from '../../../components/chat/ParticipantsModal';
 
 export default function ChatScreen() {
-  const { roomId } = useLocalSearchParams<{ roomId: string }>();
+  const { roomId: rawRoomId } = useLocalSearchParams<{ roomId: string }>();
+  // Normalize roomId to ensure consistency (trim whitespace)
+  const roomId = rawRoomId?.trim() || null;
+  
   // Use Zustand selector to subscribe only to messages for this room - this ensures re-renders when messages change
   // Zustand will automatically detect when state.messages[roomId] changes (new array reference)
   const roomMessages = useChatStore((state) => {
@@ -26,6 +29,16 @@ export default function ChatScreen() {
     if (messages.length > 0) {
       const lastMsg = messages[messages.length - 1];
       console.log(`[ChatScreen] Selector ran for room ${roomId}, messages: ${messages.length}, last msg reactions:`, lastMsg.reactionsSummary);
+    }
+    // DEBUG: Log all roomIds in store to detect ID mismatches
+    const allRoomIds = Object.keys(state.messages);
+    if (allRoomIds.length > 0 && roomId) {
+      console.log(`[ChatScreen] 🔍 DEBUG - roomId from params: "${roomId}", roomIds in store:`, allRoomIds, `Match: ${allRoomIds.includes(roomId)}`);
+      // Check if messages exist under different roomId (case sensitivity, whitespace, etc.)
+      const mismatchedRooms = allRoomIds.filter(id => id !== roomId && state.messages[id]?.length > 0);
+      if (mismatchedRooms.length > 0) {
+        console.warn(`[ChatScreen] ⚠️ WARNING - Found messages in other rooms:`, mismatchedRooms.map(id => ({ roomId: id, count: state.messages[id]?.length })));
+      }
     }
     return messages;
   });
@@ -169,7 +182,63 @@ export default function ChatScreen() {
       
       const response = await messageApi.getMessages(roomId, 1, 50);
       const messagesData = (response as any).messages || [];
-      setMessages(roomId, messagesData);
+      console.log(`[ChatScreen] 🔍 DEBUG - Loading messages for roomId: "${roomId}", received ${messagesData.length} messages`);
+      console.log(`[ChatScreen] 🔍 DEBUG - Full API response:`, {
+        hasMessages: !!(response as any).messages,
+        messagesType: Array.isArray((response as any).messages),
+        messagesLength: (response as any).messages?.length || 0,
+        responseKeys: Object.keys(response || {}),
+      });
+      
+      if (messagesData.length > 0) {
+        const firstMsg = messagesData[0];
+        const firstMsgRoomIdNormalized = firstMsg.roomId?.trim();
+        const roomIdMatch = firstMsgRoomIdNormalized === roomId;
+        console.log(`[ChatScreen] 🔍 DEBUG - First message roomId: "${firstMsg.roomId}", normalized: "${firstMsgRoomIdNormalized}", param: "${roomId}", match: ${roomIdMatch}`);
+        
+        // Check all messages for roomId mismatches
+        const mismatchedMessages = messagesData.filter((m: any) => m.roomId?.trim() !== roomId);
+        if (mismatchedMessages.length > 0) {
+          console.warn(`[ChatScreen] ⚠️ Found ${mismatchedMessages.length} messages with different roomId:`, {
+            expected: roomId,
+            found: [...new Set(mismatchedMessages.map((m: any) => m.roomId?.trim()))],
+          });
+        }
+        
+        // DEBUG: Log senderName for first few messages
+        messagesData.slice(0, 3).forEach((msg: any, idx: number) => {
+          console.log(`[ChatScreen] 🔍 DEBUG - Message ${idx + 1}:`, {
+            id: msg.id,
+            roomId: msg.roomId,
+            roomIdNormalized: msg.roomId?.trim(),
+            senderId: msg.senderId,
+            senderName: msg.senderName,
+            sender: msg.sender,
+            hasSenderName: !!msg.senderName,
+            senderNameType: typeof msg.senderName,
+          });
+        });
+      } else {
+        console.warn(`[ChatScreen] ⚠️ No messages returned from API for roomId: "${roomId}"`);
+        // Check if messages exist in store under different roomId
+        const { messages: storeMessages } = useChatStore.getState();
+        const allRoomIds = Object.keys(storeMessages);
+        if (allRoomIds.length > 0) {
+          console.warn(`[ChatScreen] ⚠️ But messages exist in store for other rooms:`, allRoomIds.map(id => ({
+            roomId: id,
+            count: storeMessages[id]?.length || 0,
+            firstMessageRoomId: storeMessages[id]?.[0]?.roomId,
+          })));
+        }
+      }
+      
+      // Normalize all message roomIds before storing
+      const normalizedMessages = messagesData.map((m: any) => ({
+        ...m,
+        roomId: m.roomId?.trim() || roomId, // Ensure all messages use normalized roomId
+      }));
+      
+      setMessages(roomId, normalizedMessages);
       setLoading(false);
       setSettingUp(false);
       setSetupError(false);
@@ -411,7 +480,7 @@ export default function ChatScreen() {
       
       <ParticipantsModal
         visible={participantsModalVisible}
-        roomId={roomId}
+        roomId={roomId || undefined}
         roomName={room?.name}
         participantIds={memberIds}
         messages={roomMessages.map(m => ({

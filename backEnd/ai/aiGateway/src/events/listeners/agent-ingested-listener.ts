@@ -17,6 +17,7 @@ import { PromptBuilder, CharacterAttributes } from '../../prompt-engineering';
 export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
   readonly topic = Subjects.AgentIngested;
   readonly groupId = 'ai-gateway-agent-ingested';
+  protected fromBeginning: boolean = true; // Read from beginning to catch missed events on restart
 
   async onMessage(data: AgentIngestedEvent['data'], _payload: EachMessagePayload): Promise<void> {
     const {
@@ -28,6 +29,9 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
       metadata,
       ingestedAt,
     } = data;
+
+    console.log(`[AgentIngestedListener] ✅✅✅ Received agent.ingested event for agent ${agentId}, correlationId: ${correlationId}, provider: ${profile.modelProvider}`);
+    console.log(`[AgentIngestedListener] Starting agent provisioning process for agent ${agentId}...`);
 
     const ingestedDate = new Date(ingestedAt);
 
@@ -53,7 +57,9 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
     });
 
     try {
+      console.log(`[AgentIngestedListener] Calling provisionAgent for agent ${agentId}...`);
       const provisionResult = await this.provisionAgent(projection);
+      console.log(`[AgentIngestedListener] provisionAgent completed for agent ${agentId}, providerAgentId: ${provisionResult.providerAgentId}`);
 
       if (provisionResult.error) {
         // Provider returned an error response
@@ -68,8 +74,12 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
       projection.provider = projection.modelProvider;
       projection.providerAgentId = provisionResult.providerAgentId;
       projection.lastProvisioningError = null;
+      
+      console.log(`[AgentIngestedListener] Saving agent profile to database: agentId=${agentId}, status=${projection.status}, providerAgentId=${projection.providerAgentId}`);
       await projection.save();
+      console.log(`[AgentIngestedListener] ✅ Agent profile saved successfully to database: agentId=${agentId}`);
 
+      console.log(`[AgentIngestedListener] Agent ${agentId} provisioned successfully, publishing agent.creation.reply.success`);
       await new AgentCreationReplySuccessPublisher(kafkaWrapper.producer).publish({
         id: agentId,
         agentId,
@@ -84,14 +94,17 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
           provision: provisionResult.metadata,
         },
       });
+      console.log(`[AgentIngestedListener] Published agent.creation.reply.success for agent ${agentId}`);
     } catch (error: any) {
       const failureMessage = error?.message || 'Failed to provision agent with provider';
       const retryable = error?.retryable ?? false;
 
+      console.error(`[AgentIngestedListener] Failed to provision agent ${agentId}:`, failureMessage);
       projection.status = AgentProfileStatus.Failed;
       projection.lastProvisioningError = failureMessage;
       await projection.save();
 
+      console.log(`[AgentIngestedListener] Publishing agent.creation.reply.failed for agent ${agentId}`);
       await new AgentCreationReplyFailedPublisher(kafkaWrapper.producer).publish({
         id: agentId,
         agentId,
@@ -179,6 +192,11 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
         style: 'detailed', // Use detailed style for agent creation
       }
     );
+
+    // Add chat instructions about message format
+    const chatInstructions = `\n\nYou might be invited to a chat with 1 or more users. Some of them are AI models, some of them are humans. You will see their username and type at the beginning of each message in the format: "username(user type): message text". The user type will be either "human" or "AI".`;
+    
+    enhancedInstructions = enhancedInstructions + chatInstructions;
 
     // If no character attributes and no base prompt, ensure we at least have the agent name
     if (!enhancedInstructions.trim() && agentName) {

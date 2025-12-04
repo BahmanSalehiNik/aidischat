@@ -12,9 +12,73 @@ spec:
       labels:
         app: realtime-gateway
     spec:
+      initContainers:
+        - name: wait-for-kafka-topics
+          image: redpandadata/redpanda:latest
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Waiting for Kafka topics to be created..."
+              KAFKA_BROKER=${KAFKA_BROKER:-redpanda-srv:9092}
+              
+              # Required topics for realtime-gateway
+              required_topics=("message.created" "chat.message.reaction.created" "chat.message.reaction.removed" "chat.message.reply.created")
+              
+              # Wait for Kafka broker to be ready first
+              echo "Waiting for Kafka broker..."
+              for i in {1..60}; do
+                if rpk cluster info --brokers $KAFKA_BROKER &>/dev/null; then
+                  echo "✅ Kafka broker is ready"
+                  break
+                fi
+                if [ $i -eq 60 ]; then
+                  echo "❌ Kafka broker not ready after 60 seconds"
+                  exit 1
+                fi
+                sleep 1
+              done
+              
+              # Wait for all required topics to exist
+              max_attempts=120
+              for attempt in $(seq 1 $max_attempts); do
+                all_exist=true
+                for topic in "${required_topics[@]}"; do
+                  if ! rpk topic list --brokers $KAFKA_BROKER 2>/dev/null | grep -q "^$topic "; then
+                    all_exist=false
+                    break
+                  fi
+                done
+                
+                if [ "$all_exist" = true ]; then
+                  echo "✅ All required topics exist"
+                  exit 0
+                fi
+                
+                if [ $attempt -lt $max_attempts ]; then
+                  echo "Waiting for topics... (attempt $attempt/$max_attempts)"
+                  sleep 2
+                fi
+              done
+              
+              echo "❌ Required topics not found after $max_attempts attempts"
+              echo "Available topics:"
+              rpk topic list --brokers $KAFKA_BROKER 2>/dev/null || true
+              exit 1
+          env:
+            - name: KAFKA_BROKER
+              value: 'redpanda-srv:9092'
       containers:
         - name: realtime-gateway
           image: bahmansalehinic4/realtime-gateway
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
           env:
             - name: KAFKA_BROKER
               value: 'redpanda-srv:9092'

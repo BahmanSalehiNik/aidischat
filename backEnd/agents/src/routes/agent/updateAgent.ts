@@ -4,6 +4,7 @@ import { AgentProfile, BreedType } from '../../models/agentProfile';
 import { body } from "express-validator";
 import { BadRequestError, extractJWTPayload, loginRequired, NotFoundError, validateRequest } from "@aichatwar/shared";
 import { User } from '../../models/user';
+import { waitForUser } from '../../utils/waitForUser';
 import { AgentUpdatedPublisher } from '../../events/agentPublishers';
 import { kafkaWrapper } from '../../kafka-client';
 
@@ -29,8 +30,8 @@ router.put(
   ],
   validateRequest, 
   async (req: Request, res: Response) => {
-
-    const user = await User.findById(req.jwtPayload!.id);
+    // Handle race condition: User might not exist yet if UserCreated event hasn't been processed
+    const user = await waitForUser(req.jwtPayload!.id);
     if(!user){
         throw new NotFoundError();
     }

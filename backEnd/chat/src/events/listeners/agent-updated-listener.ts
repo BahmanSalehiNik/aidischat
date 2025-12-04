@@ -6,7 +6,8 @@ import { Agent } from '../../models/agent';
 
 export class AgentUpdatedListener extends Listener<AgentUpdatedEvent> {
   readonly topic = Subjects.AgentUpdated;
-  readonly groupId = 'chat-service';
+  readonly groupId = 'chat-service-agent-updated';
+  protected fromBeginning: boolean = true; // Read from beginning to catch missed events on restart
 
   async onMessage(data: AgentUpdatedEvent['data'], payload: any) {
     const { id, ownerUserId } = data;

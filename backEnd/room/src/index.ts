@@ -3,6 +3,9 @@ import express from "express";
 import mongoose from "mongoose";
 import { kafkaWrapper } from './kafka-client';
 import { startDisconnectListener } from './disconnect-listener';
+import { UserCreatedListener } from './events/listeners/user-created-listener';
+import { ProfileCreatedListener } from './events/listeners/profile-created-listener';
+import { ProfileUpdatedListener } from './events/listeners/profile-updated-listener';
 
 
 
@@ -37,6 +40,18 @@ const startMongoose = async ()=>{
 
         await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
         console.log("Kafka connected successfully");
+
+        // Start event listeners for user/profile data
+        console.log("Starting Kafka listeners for user/profile data...");
+        new UserCreatedListener(kafkaWrapper.consumer('room-service-user-created')).listen().catch(err => {
+            console.error("❌ Failed to start UserCreatedListener:", err);
+        });
+        new ProfileCreatedListener(kafkaWrapper.consumer('room-service-profile-created')).listen().catch(err => {
+            console.error("❌ Failed to start ProfileCreatedListener:", err);
+        });
+        new ProfileUpdatedListener(kafkaWrapper.consumer('room-service-profile-updated')).listen().catch(err => {
+            console.error("❌ Failed to start ProfileUpdatedListener:", err);
+        });
 
         // Start disconnect listener to handle user disconnection cleanup
         await startDisconnectListener();

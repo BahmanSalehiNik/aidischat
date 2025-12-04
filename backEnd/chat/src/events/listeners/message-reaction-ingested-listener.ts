@@ -3,6 +3,7 @@ import { Listener, Subjects, MessageReactionIngestedEvent } from '@aichatwar/sha
 import { Message } from '../../models/message';
 import { RoomParticipant } from '../../models/room-participant';
 import { MessageReactionCreatedPublisher, MessageReactionRemovedPublisher } from '../publishers/message-reaction-publishers';
+import { FeedbackReactionReceivedPublisher } from '../publishers/feedback-reaction-received-publisher';
 import { kafkaWrapper } from '../../kafka-client';
 import { EachMessagePayload } from 'kafkajs';
 
@@ -95,6 +96,24 @@ export class MessageReactionIngestedListener extends Listener<MessageReactionIng
         },
         reactionsSummary,
       });
+
+      // If the message is from an agent, publish feedback event
+      if (message.senderType === 'agent') {
+        // Determine reaction user type (assume human for now, could be enhanced to check if userId is an agent)
+        const reactionUserType: 'human' | 'agent' = 'human'; // TODO: Check if userId is an agent
+        
+        await new FeedbackReactionReceivedPublisher(kafkaWrapper.producer).publish({
+          roomId,
+          messageId,
+          agentId: message.senderId,
+          agentMessageContent: message.content,
+          reactionUserId: userId,
+          reactionUserType,
+          emoji,
+          createdAt: new Date().toISOString(),
+        });
+        console.log(`[Message Reaction Ingested] Published feedback.reaction.received for agent ${message.senderId}`);
+      }
 
       console.log(`[Message Reaction Ingested] Added/updated reaction ${emoji} to message ${messageId}`);
     }

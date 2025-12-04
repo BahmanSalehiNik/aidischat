@@ -56,6 +56,20 @@ const startMongoose = async ()=>{
 
         console.log("All Kafka listeners started successfully");
 
+        process.on("SIGINT", async () => {
+            console.log("SIGINT received - closing Media service connections");
+            await kafkaWrapper.disconnect();
+            await mongoose.disconnect();
+            process.exit();
+        });
+
+        process.on("SIGTERM", async () => {
+            console.log("SIGTERM received - closing Media service connections");
+            await kafkaWrapper.disconnect();
+            await mongoose.disconnect();
+            process.exit();
+        });
+
         app.listen(3000, ()=>{
             console.log("app listening on port 3000! media service")
         });
@@ -66,13 +80,4 @@ const startMongoose = async ()=>{
     }
 }
 
-startMongoose()
-
-app.use(function (req: express.Request, res: express.Response, next) {
-    next({ status: 404 });
-});
-
-app.use(function (err: any, req: express.Request, res: express.Response, next: express.NextFunction) {
-    console.error(err);
-    res.status(err.status || 500).json();
-});
+startMongoose();

@@ -3,6 +3,7 @@ import { Agent } from '../../models/agent';
 import { AgentProfile } from '../../models/agentProfile';
 import { extractJWTPayload, loginRequired, NotFoundError } from "@aichatwar/shared";
 import { User } from '../../models/user';
+import { waitForUser } from '../../utils/waitForUser';
 
 const router = express.Router();
 
@@ -11,8 +12,8 @@ router.get(
     extractJWTPayload,
     loginRequired,
   async (req: Request, res: Response) => {
-
-    const user = await User.findById(req.jwtPayload!.id);
+    // Handle race condition: User might not exist yet if UserCreated event hasn't been processed
+    const user = await waitForUser(req.jwtPayload!.id);
     if(!user){
         throw new NotFoundError();
     }

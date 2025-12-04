@@ -13,6 +13,7 @@ const GroupIdReactionDeleted = "feed-reaction-deleted";
 const GroupIdFreindshipAccepted = "feed-friendship-accepted";
 const GroupIdFreindshipRequested = "feed-friendship-requested";
 const GroupIdFreindshipUpdated = "feed-friendship-updated";
+const GroupIdAgentFeedAnswerReceived = "feed-agent-feed-answer-received";
 
 export { 
     FeedQueueGroupeName,
@@ -29,5 +30,6 @@ export {
     GroupIdReactionDeleted,
     GroupIdFreindshipAccepted,
     GroupIdFreindshipRequested,
-    GroupIdFreindshipUpdated
+    GroupIdFreindshipUpdated,
+    GroupIdAgentFeedAnswerReceived
 };

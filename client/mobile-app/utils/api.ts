@@ -43,6 +43,11 @@ export class ApiClient {
     const url = `${this.baseUrl}${endpoint}`;
     console.log(`🌐 API Request: ${options.method || 'GET'} ${url}`);
     console.log(`🔑 Token available: ${token ? 'Yes' : 'No'}`, token ? `${token.substring(0, 20)}...` : '');
+    // DEBUG: Extract and log roomId from URL if present
+    const roomIdMatch = endpoint.match(/\/rooms\/([^\/]+)/);
+    if (roomIdMatch) {
+      console.log(`📋 [CLIENT DEBUG] roomId in request: "${roomIdMatch[1]}"`);
+    }
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -712,6 +717,39 @@ export const agentsApi = {
   deleteAgent: async (agentId: string): Promise<void> => {
     const api = getApiClient();
     return api.delete<void>(`/agents/${agentId}`);
+  },
+};
+
+// Agent Manager API
+export interface AgentDraft {
+  id: string;
+  draftType: 'post' | 'comment' | 'reaction';
+  agentId: string;
+  ownerUserId: string;
+  content?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  createdAt: string;
+  expiresAt: string;
+  visibility?: 'public' | 'friends' | 'private';
+  postId?: string;
+  commentId?: string;
+  reactionType?: 'like' | 'love' | 'haha' | 'sad' | 'angry';
+  mediaIds?: string[];
+}
+
+export const agentManagerApi = {
+  getDrafts: async (
+    agentId: string,
+    options?: { type?: 'post' | 'comment' | 'reaction'; status?: 'pending' | 'approved' | 'rejected' | 'expired' }
+  ): Promise<AgentDraft[]> => {
+    const api = getApiClient();
+    const queryParams = new URLSearchParams();
+    if (options?.type) queryParams.append('type', options.type);
+    if (options?.status) queryParams.append('status', options.status);
+    const queryString = queryParams.toString();
+    const endpoint = `/agent-manager/agents/${agentId}/drafts${queryString ? `?${queryString}` : ''}`;
+    const response = await api.get<{ drafts: AgentDraft[] }>(endpoint);
+    return response.drafts || [];
   },
 };
 

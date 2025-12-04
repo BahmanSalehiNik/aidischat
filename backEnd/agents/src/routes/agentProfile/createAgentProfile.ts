@@ -3,6 +3,7 @@ import { AgentProfile, BreedType } from '../../models/agentProfile';
 import { body } from "express-validator";
 import { BadRequestError, extractJWTPayload, loginRequired, validateRequest } from "@aichatwar/shared";
 import { User } from '../../models/user';
+import { waitForUser } from '../../utils/waitForUser';
 
 const router = express.Router();
 
@@ -18,7 +19,8 @@ router.post(
   ],
   validateRequest,
   async (req: Request, res: Response) => {
-    const user = await User.findById(req.jwtPayload!.id);
+    // Handle race condition: User might not exist yet if UserCreated event hasn't been processed
+    const user = await waitForUser(req.jwtPayload!.id);
     if (!user) {
       throw new BadRequestError('User not found');
     }

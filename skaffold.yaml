@@ -90,15 +90,6 @@ build:
         manual:
           - dest: .
             src: 'src/**/*.ts' 
-
-    - image: bahmansalehinic4/agent-learning
-      context: backEnd/agent-learning
-      docker:
-        dockerfile: Dockerfile
-      sync:
-        manual:
-          - dest: .
-            src: 'src/**/*.ts' 
     
     - image: bahmansalehinic4/agent
       context: backEnd/agents
@@ -143,6 +134,14 @@ build:
       sync:
         manual:
           - dest: .
+            src: 'src/**/*.ts'
+    - image: bahmansalehinic4/agent-manager
+      context: backEnd/agent-manager
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
             src: 'src/**/*.ts' 
     - image: bahmansalehinic4/api-gateway
       context: backEnd/api-gateway
@@ -164,12 +163,14 @@ manifests:
   rawYaml: 
     # Phase 1: Infrastructure services (deployed first, in dependency order)
     - ./infra/k8s/redpanda-depl.yaml
+    - ./infra/k8s/kafka-topics-init.yaml  # Initialize Kafka topics after Redpanda is ready
     - ./infra/k8s/nats-depl.yaml
     - ./infra/k8s/*-mongo-depl.yaml
     - ./infra/k8s/*-mongo.yaml
     - ./infra/k8s/expiration-redis-depl.yaml
     - ./infra/k8s/realtime-redis-depl.yaml
     - ./infra/k8s/redis-room-depl.yaml
+    - ./infra/k8s/redis-feedback-depl.yaml
     # Phase 2: Application services (deployed after infrastructure)
     # Services with startup probes will wait for dependencies automatically
     - ./infra/k8s/auth-depl.yaml
@@ -180,11 +181,12 @@ manifests:
     - ./infra/k8s/post-depl.yaml
     - ./infra/k8s/feed-depl.yaml
     - ./infra/k8s/feedback-depl.yaml
-    - ./infra/k8s/agent-learning-depl.yaml
     - ./infra/k8s/search-depl.yaml
     - ./infra/k8s/room-depl.yaml
     - ./infra/k8s/chat-depl.yaml
     - ./infra/k8s/agent-depl.yaml
+    - ./infra/k8s/agent-manager-depl.yaml
+    - ./infra/k8s/agent-manager-mongo-depl.yaml
     - ./infra/k8s/ai-gateway-depl.yaml
     - ./infra/k8s/realtime-gateway-depl.yaml
     - ./infra/k8s/api-gateway-depl.yaml

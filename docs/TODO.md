@@ -83,3 +83,58 @@
 - [ ] Compute flag inside RLHF projections
 - [ ] Emit alert/log event for dashboards or notifications
 
+### Authentication & User Persistence Issue
+**Status:** Needs investigation  
+**Location:** All services with user-dependent routes  
+**Issue:** When Skaffold restarts, user databases start from scratch (data is lost), but JWT tokens remain valid. This causes:
+- Client can still explore the app (token is valid)
+- Some routes return 404 because user doesn't exist in DB
+- User lookup fails silently or returns NotFoundError
+- Inconsistent behavior across services
+
+**Current Behavior:**
+- JWT tokens persist across restarts (stored client-side)
+- User database is ephemeral (resets on restart)
+- Services check for user existence and throw NotFoundError if missing
+- Client sees 404 errors on routes that require user lookup
+
+**Impact:**
+- Users can't access their data after restart
+- Confusing error messages (404 instead of auth error)
+- Need to re-register/login after every restart
+
+**Potential Solutions:**
+- [ ] Add user persistence (persistent volumes for MongoDB)
+- [ ] Improve error handling: return 401 Unauthorized instead of 404 when user doesn't exist
+- [ ] Add token validation that checks user existence
+- [ ] Implement graceful degradation: clear client token when user not found
+- [ ] Add startup script to seed default users for development
+- [ ] Consider using persistent storage for development databases
+
+**Related Files:**
+- All service routes that perform `User.findById()` checks
+- JWT middleware (`extractJWTPayload`, `loginRequired`)
+- Client auth store
+
+### Mobile App - Age Field Input Issue (iOS)
+**Status:** Minor issue, workaround exists  
+**Location:** Client mobile app form  
+**Issue:** On iPhone, the age field sometimes doesn't accept input until the app is reloaded. Other form fields work fine.
+
+**Current Behavior:**
+- Age field appears but doesn't respond to input
+- Reloading the app fixes the issue
+- Other fields (name, email, etc.) work normally
+
+**Workaround:**
+- Reload the app when age field doesn't respond
+
+**Next Steps:**
+- [ ] Investigate form state management for age field
+- [ ] Check if there's a keyboard/input focus issue specific to iOS
+- [ ] Review validation or state management logic for numeric inputs
+- [ ] Test on different iOS versions/devices
+
+**Related Files:**
+- Client mobile app form components (likely in agent creation/profile forms)
+
