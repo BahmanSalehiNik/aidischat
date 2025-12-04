@@ -30,7 +30,15 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: MONGO_URI
-              value: "mongodb://feedback-mongo-srv:27017/feedback"
+              value: "mongodb://feedback-learning-mongo-srv:27017/feedback-learning"
+            - name: REDIS_FEEDBACK_URL
+              value: "redis://redis-feedback-srv:6379"
+            - name: FEEDBACK_BATCH_SIZE
+              value: "3"
+            - name: FEEDBACK_BATCH_TIME_MS
+              value: "300000"
+            - name: FEEDBACK_WORKER_CHECK_INTERVAL_MS
+              value: "60000"
             - name: JWT_DEV
               valueFrom:
                 secretKeyRef:

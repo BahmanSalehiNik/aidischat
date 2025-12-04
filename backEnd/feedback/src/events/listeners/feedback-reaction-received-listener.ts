@@ -1,13 +1,11 @@
 /**
  * Listens to feedback.reaction.received events from chat service.
- * Processes reactions to agent messages and creates feedback records.
- * After thresholds are met, publishes FeedbackCreated events for RLHF service.
+ * Adds reactions to agent messages to the Redis feedback batcher.
+ * Batcher handles batching, saving to MongoDB, and publishing events.
  */
 import { EachMessagePayload } from "kafkajs";
 import { FeedbackReactionReceivedEvent, Listener, Subjects } from "@aichatwar/shared";
-import { Feedback } from "../../models/feedback";
-import { kafkaWrapper } from "../../kafka-client";
-import { FeedbackCreatedPublisher } from "../publishers/feedback-created-publisher";
+import { feedbackBatcherRedis } from "../../services/feedback-batcher-redis";
 
 // Map emoji reactions to reward values
 const REACTION_REWARDS: Record<string, number> = {
@@ -27,57 +25,22 @@ export class FeedbackReactionReceivedListener extends Listener<FeedbackReactionR
         // Calculate reward based on emoji type
         const reward = REACTION_REWARDS[data.emoji] || 0.2; // Default to slight positive for unknown emojis
 
-        // Check for existing feedback to avoid duplicates
-        const existing = await Feedback.findOne({
-            userId: data.reactionUserId,
-            agentId: data.agentId,
+        // Add to Redis batcher - it will handle batching, saving, and publishing
+        await feedbackBatcherRedis.add({
+            feedbackType: 'reaction',
+            source: 'chat',
             sourceId: data.messageId,
-            source: 'chat'
-        });
-
-        if (existing) {
-            // Update existing feedback with new reaction
-            existing.value = reward;
-            existing.metadata = {
+            agentId: data.agentId,
+            userId: data.reactionUserId,
+            roomId: data.roomId,
+            value: reward,
+            metadata: {
                 reactionType: this.mapEmojiToReactionType(data.emoji),
                 agentMessageContent: data.agentMessageContent,
                 reactionUserType: data.reactionUserType
-            };
-            existing.updatedAt = new Date();
-            await existing.save();
-        } else {
-            // Create new feedback
-            const feedback = Feedback.build({
-                feedbackType: 'reaction',
-                source: 'chat',
-                sourceId: data.messageId,
-                agentId: data.agentId,
-                userId: data.reactionUserId,
-                roomId: data.roomId,
-                value: reward,
-                metadata: {
-                    reactionType: this.mapEmojiToReactionType(data.emoji),
-                    agentMessageContent: data.agentMessageContent,
-                    reactionUserType: data.reactionUserType
-                }
-            });
-            await feedback.save();
-
-            // Publish FeedbackCreated event for RLHF service
-            await new FeedbackCreatedPublisher(kafkaWrapper.producer).publish({
-                id: feedback.id,
-                feedbackType: feedback.feedbackType,
-                source: feedback.source,
-                sourceId: feedback.sourceId,
-                agentId: feedback.agentId,
-                userId: feedback.userId,
-                roomId: feedback.roomId,
-                value: feedback.value,
-                metadata: feedback.metadata,
-                createdAt: feedback.createdAt.toISOString(),
-                updatedAt: feedback.updatedAt.toISOString()
-            });
-        }
+            },
+            receivedAt: new Date().toISOString()
+        });
 
         await this.ack();
     }

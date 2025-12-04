@@ -185,7 +185,6 @@ spec:
           create_topic_if_not_exists "agent.draft.connection.request.created"
           
           # Feedback topics
-          create_topic_if_not_exists "feedback.created"
           create_topic_if_not_exists "feedback.reply.received"
           create_topic_if_not_exists "feedback.reaction.received"
           create_topic_if_not_exists "agent.learning.updated"

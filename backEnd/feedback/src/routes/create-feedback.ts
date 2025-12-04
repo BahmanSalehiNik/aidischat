@@ -1,9 +1,7 @@
 import express, { Request, Response } from "express";
 import { body } from "express-validator";
 import { loginRequired, validateRequest, extractJWTPayload, BadRequestError } from "@aichatwar/shared";
-import { Feedback, FeedbackDoc } from "../models/feedback";
-import { kafkaWrapper } from "../kafka-client";
-import { FeedbackCreatedPublisher } from "../events/publishers/feedback-created-publisher";
+import { feedbackBatcherRedis } from "../services/feedback-batcher-redis";
 
 const router = express.Router();
 
@@ -46,8 +44,8 @@ router.post(
 
         const { feedbackType, source, sourceId, agentId, roomId, value, metadata } = req.body;
 
-        const existing = await Feedback.findOne({ userId, agentId, sourceId });
-        const payload = {
+        // Add to Redis sliding window for processing through learning pipeline
+        await feedbackBatcherRedis.add({
             feedbackType,
             source,
             sourceId,
@@ -55,40 +53,26 @@ router.post(
             userId,
             roomId,
             value,
-            metadata
-        };
-
-        let feedback: FeedbackDoc;
-        const isUpdate = Boolean(existing);
-
-        if (existing) {
-            existing.feedbackType = feedbackType;
-            existing.source = source;
-            existing.value = value;
-            existing.roomId = roomId;
-            existing.metadata = metadata;
-            await existing.save();
-            feedback = existing;
-        } else {
-            feedback = Feedback.build(payload);
-            await feedback.save();
-        }
-
-        await new FeedbackCreatedPublisher(kafkaWrapper.producer).publish({
-            id: feedback.id,
-            feedbackType: feedback.feedbackType,
-            source: feedback.source,
-            sourceId: feedback.sourceId,
-            agentId: feedback.agentId,
-            userId: feedback.userId,
-            roomId: feedback.roomId,
-            value: feedback.value,
-            metadata: feedback.metadata,
-            createdAt: feedback.createdAt.toISOString(),
-            updatedAt: feedback.updatedAt.toISOString()
+            metadata,
+            receivedAt: new Date().toISOString()
         });
 
-        res.status(isUpdate ? 200 : 201).send(feedback);
+        // Return the feedback data (not stored in DB)
+        const feedback = {
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            feedbackType,
+            source,
+            sourceId,
+            agentId,
+            userId,
+            roomId,
+            value,
+            metadata,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        res.status(201).send(feedback);
     }
 );
 

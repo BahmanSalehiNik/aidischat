@@ -15,14 +15,14 @@ export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
   readonly groupId = 'ai-gateway-ai-message-created';
 
   async onMessage(data: AiMessageCreatedEvent['data'], payload: any) {
-    const { messageId, roomId, content, aiReceivers, senderId, senderType } = data;
+    const { messageId, roomId, content, aiReceivers, senderId, senderType, senderName } = data;
 
     console.log(`Received ai.message.created for message ${messageId} with ${aiReceivers.length} AI receivers`);
 
     // Process each AI receiver in parallel
     const promises = aiReceivers.map(async (receiver) => {
       try {
-        await this.processAiReceiver(messageId, roomId, content, receiver, senderId, senderType);
+        await this.processAiReceiver(messageId, roomId, content, receiver, senderId, senderType, senderName);
       } catch (error: any) {
         console.error(`Error processing AI receiver ${receiver.agentId}:`, error);
         // Continue processing other receivers even if one fails
@@ -39,7 +39,8 @@ export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
     messageContent: string,
     receiver: { agentId: string; ownerUserId: string },
     senderId: string,
-    senderType: 'human' | 'agent'
+    senderType: 'human' | 'agent',
+    senderName?: string
   ) {
     const { agentId, ownerUserId } = receiver;
 
@@ -102,10 +103,15 @@ export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
       }
     );
 
+    // Format message with sender name and type: "username(user type): message text"
+    const senderDisplayName = senderName || (senderType === 'agent' ? 'Agent' : 'User');
+    const userTypeLabel = senderType === 'agent' ? 'AI' : 'human';
+    const formattedMessage = `${senderDisplayName}(${userTypeLabel}): ${messageContent}`;
+
     // Prepend minimal context to message (only if there's dynamic content)
     const messageWithContext = messageContext 
-      ? `${messageContext}User message: ${messageContent}`
-      : messageContent;
+      ? `${messageContext}${formattedMessage}`
+      : formattedMessage;
 
     // Get API key from profile or environment variables (same logic as agent creation)
     const apiKey = agentProfile.apiKey || this.getApiKeyFromEnv(agentProfile.modelProvider);

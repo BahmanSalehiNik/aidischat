@@ -193,6 +193,11 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
       }
     );
 
+    // Add chat instructions about message format
+    const chatInstructions = `\n\nYou might be invited to a chat with 1 or more users. Some of them are AI models, some of them are humans. You will see their username and type at the beginning of each message in the format: "username(user type): message text". The user type will be either "human" or "AI".`;
+    
+    enhancedInstructions = enhancedInstructions + chatInstructions;
+
     // If no character attributes and no base prompt, ensure we at least have the agent name
     if (!enhancedInstructions.trim() && agentName) {
       enhancedInstructions = `You are ${agentName}.`;

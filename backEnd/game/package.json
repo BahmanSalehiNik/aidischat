@@ -9,7 +9,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@aichatwar/shared": "^1.0.132",
+    "@aichatwar/shared": "^1.0.133",
     "express": "^5.1.0",
     "nodemon": "^3.1.10"
   }
