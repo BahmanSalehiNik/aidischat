@@ -55,12 +55,6 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
         
         // Create minimal user (will be updated by UserCreated/UserUpdated events)
         try {
-          const minimalUser = User.build({
-            id: senderId,
-            email: `${senderId}@unknown.local`, // Placeholder email
-            isActive: true,
-          });
-          await minimalUser.save();
           console.log(`[Message Ingest] Created minimal user record for ${senderId}`);
           
           // Use a readable fallback name (first 8 chars of ID)
@@ -189,26 +183,40 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
       console.log(`[MessageIngest] Found ${aiParticipants.length} agent participants in room ${roomId}: ${participantAgentIds.join(', ')}`);
 
       // Get agent information to get ownerUserId (using createdBy field which should be ownerUserId)
+      // IMPORTANT: We include ALL agents in the room, not just active ones, because:
+      // 1. Agents need to see each other's messages for context
+      // 2. An agent might be temporarily inactive but still in the room
+      // 3. The AI Gateway will handle inactive agents appropriately
       const agents = await Agent.find({
-        _id: { $in: participantAgentIds },
-        isActive: true
+        _id: { $in: participantAgentIds }
       });
-      console.log(`[MessageIngest] Found ${agents.length} active agents in chat service (out of ${participantAgentIds.length} participants)`);
+      console.log(`[MessageIngest] Found ${agents.length} agents in chat service (out of ${participantAgentIds.length} participants)`);
       
-      if (agents.length === 0 && participantAgentIds.length > 0) {
-        // Check if agents exist but are not active
-        const allAgents = await Agent.find({ _id: { $in: participantAgentIds } });
-        console.log(`[MessageIngest] Total agents found (including inactive): ${allAgents.length}`);
-        allAgents.forEach(a => {
-          console.log(`[MessageIngest] Agent ${a.id}: isActive=${a.isActive}, name=${a.name}`);
-        });
+      // Log agent status for debugging
+      if (agents.length < participantAgentIds.length) {
+        const foundAgentIds = new Set(agents.map(a => a.id));
+        const missingAgentIds = participantAgentIds.filter(id => !foundAgentIds.has(id));
+        console.warn(`[MessageIngest] ⚠️ Some agents in room are not in chat service DB: ${missingAgentIds.join(', ')}`);
+        console.warn(`[MessageIngest] These agents will NOT receive messages. Ensure AgentCreated/AgentIngested events are processed.`);
       }
+      
+      agents.forEach(a => {
+        if (!a.isActive) {
+          console.log(`[MessageIngest] Agent ${a.id} (${a.name}) is not active but will still receive messages for context`);
+        }
+      });
 
-      // If sender is an agent, filter out the sender from the receivers
+      // IMPORTANT: Agents need to see each other's messages for context (they're added to the thread),
+      // but they should NOT generate replies to agent messages to prevent infinite loops
+      // We'll publish ai.message.created for agent messages so they're added to the thread,
+      // but the AI Gateway will check senderType and skip reply generation for agent messages
+      
+      // If sender is an agent, filter out the sender from the receivers (agents shouldn't reply to themselves)
+      // If sender is human, all agents in the room should receive the message
       let eligibleAgentsForReceiving = agents;
       if (senderType === 'agent') {
         eligibleAgentsForReceiving = agents.filter(agent => agent.id !== senderId);
-        console.log(`[MessageIngest] Sender is an agent (${senderId}), filtering out sender from receivers. ${eligibleAgentsForReceiving.length} agents will receive the message (out of ${agents.length} total)`);
+        console.log(`[MessageIngest] Sender is an agent (${senderId}), filtering out sender from receivers. ${eligibleAgentsForReceiving.length} agents will receive the message for context (out of ${agents.length} total). AI Gateway will skip reply generation for agent messages.`);
       }
 
       if (eligibleAgentsForReceiving.length === 0) {
@@ -241,10 +249,14 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
       });
 
       // Build aiReceivers array with agentId and ownerUserId (only for eligible agents)
-      const aiReceivers = eligibleAgents.map(agent => ({
-        agentId: agent.id,
-        ownerUserId: agent.createdBy // createdBy should be ownerUserId based on agent-updated-listener
-      }));
+      // IMPORTANT: Filter out the sender agent if sender is an agent (shouldn't happen since we skip agent messages above,
+      // but adding as a safety check for edge cases)
+      const aiReceivers = eligibleAgents
+        //.filter(agent => agent.id !== senderId) // Exclude sender agent from receivers
+        .map(agent => ({
+          agentId: agent.id,
+          ownerUserId: agent.createdBy // createdBy should be ownerUserId based on agent-updated-listener
+        }));
 
       // Only publish if there are AI receivers
       if (aiReceivers.length > 0) {

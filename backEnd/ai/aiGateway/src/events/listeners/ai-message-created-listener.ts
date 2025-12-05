@@ -44,6 +44,65 @@ export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
   ) {
     const { agentId, ownerUserId } = receiver;
 
+    // Defense in depth: Prevent agent from responding to itself
+    // This check should be redundant (chat service should filter this out),
+    // but it's a good safety measure in case of bugs or edge cases
+    if (senderType === 'agent' && senderId === agentId) {
+      console.log(`[AI Message] Agent ${agentId} is trying to respond to its own message (${originalMessageId}), skipping. This should not happen - chat service should filter this out.`);
+      return;
+    }
+
+    // For OpenAI Assistants API, we'll add the message to the thread but skip creating a run (which would generate a reply)
+    if (senderType === 'agent') {
+      console.log(`[AI Message] Sender is an agent (${senderId}), adding message to thread for agent ${agentId} but skipping reply generation.`);
+      
+      // Fetch agent profile to get OpenAI configuration
+      const agentProfile = await AgentProfile.findByAgentId(agentId);
+      if (!agentProfile || agentProfile.status !== AgentProfileStatus.Active) {
+        console.log(`[AI Message] Agent ${agentId} profile not found or not active, skipping thread update`);
+        return;
+      }
+
+      // Only add to thread for OpenAI Assistants API (other providers don't use threads)
+      if (agentProfile.modelProvider === 'openai' && agentProfile.providerAgentId) {
+        const apiKey = agentProfile.apiKey || this.getApiKeyFromEnv('openai');
+        if (!apiKey) {
+          console.warn(`[AI Message] No API key for agent ${agentId}, skipping thread update`);
+          return;
+        }
+
+        // Get or create thread for this agent
+        const threadId = await this.getOrCreateThread(roomId, agentId, agentProfile.providerAgentId, apiKey);
+        if (!threadId) {
+          console.warn(`[AI Message] Failed to get thread for agent ${agentId}, skipping thread update`);
+          return;
+        }
+
+        // Format message with sender name
+        const senderDisplayName = senderName || 'Agent';
+        const formattedMessage = `${senderDisplayName}(AI): ${messageContent}`;
+
+        // Add message to thread (but don't create a run - this just adds it to context)
+        try {
+          const openaiClient = new OpenAI({ apiKey });
+          await openaiClient.beta.threads.messages.create(threadId, {
+            role: 'user',
+            content: formattedMessage,
+          });
+          console.log(`[AI Message] ✅ Added agent message from ${senderId} to thread ${threadId} for agent ${agentId} (no reply will be generated)`);
+        } catch (error: any) {
+          console.error(`[AI Message] Failed to add agent message to thread:`, error);
+          // Continue - message is still in database for context
+        }
+      } else {
+        // For non-OpenAI providers, the message is already in the database and will be in context
+        // when the next human message arrives
+        console.log(`[AI Message] Agent ${agentId} uses ${agentProfile.modelProvider}, message will be in context from database`);
+      }
+      
+      return; // Don't generate a reply
+    }
+
     // Fetch agent profile to get model configuration
     const agentProfile = await AgentProfile.findByAgentId(agentId);
     
@@ -104,8 +163,9 @@ export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
     );
 
     // Format message with sender name and type: "username(user type): message text"
-    const senderDisplayName = senderName || (senderType === 'agent' ? 'Agent' : 'User');
-    const userTypeLabel = senderType === 'agent' ? 'AI' : 'human';
+    // At this point, senderType is guaranteed to be 'human' (we return early for 'agent')
+    const senderDisplayName = senderName || 'User';
+    const userTypeLabel = 'human';
     const formattedMessage = `${senderDisplayName}(${userTypeLabel}): ${messageContent}`;
 
     // Prepend minimal context to message (only if there's dynamic content)

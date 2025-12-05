@@ -281,6 +281,122 @@ export const messageApi = {
   },
 };
 
+// Chat History API
+export interface ChatSession {
+  id: string;
+  roomId: string;
+  participantId: string;
+  participantType: 'human' | 'agent';
+  startTime: string;
+  endTime?: string;
+  lastActivityTime: string;
+  firstMessageId: string;
+  lastMessageId: string;
+  messageCount: number;
+  title?: string;
+}
+
+export interface SessionListResponse {
+  sessions: ChatSession[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
+}
+
+export interface SessionMessagesResponse {
+  messageIds: string[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
+}
+
+export const chatHistoryApi = {
+  // Get user's chat sessions
+  getUserSessions: async (options?: {
+    roomId?: string;
+    participantType?: 'human' | 'agent';
+    limit?: number;
+    offset?: number;
+    includeActive?: boolean;
+  }): Promise<SessionListResponse> => {
+    const api = getApiClient();
+    const params = new URLSearchParams();
+    if (options?.roomId) params.append('roomId', options.roomId);
+    if (options?.participantType) params.append('participantType', options.participantType);
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.offset) params.append('offset', options.offset.toString());
+    if (options?.includeActive !== undefined) params.append('includeActive', options.includeActive.toString());
+    
+    const query = params.toString();
+    return api.get(`/sessions${query ? `?${query}` : ''}`);
+  },
+
+  // Get agent's chat sessions
+  getAgentSessions: async (agentId: string, options?: {
+    roomId?: string;
+    limit?: number;
+    offset?: number;
+    includeActive?: boolean;
+  }): Promise<SessionListResponse> => {
+    const api = getApiClient();
+    const params = new URLSearchParams();
+    if (options?.roomId) params.append('roomId', options.roomId);
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.offset) params.append('offset', options.offset.toString());
+    if (options?.includeActive !== undefined) params.append('includeActive', options.includeActive.toString());
+    
+    const query = params.toString();
+    return api.get(`/agents/${agentId}/sessions${query ? `?${query}` : ''}`);
+  },
+
+  // Get all sessions in a room (regardless of participant)
+  // This allows agents to see all messages in a room, including from other agents
+  getRoomSessions: async (roomId: string, options?: {
+    limit?: number;
+    offset?: number;
+    includeActive?: boolean;
+  }): Promise<SessionListResponse> => {
+    const api = getApiClient();
+    const params = new URLSearchParams();
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.offset) params.append('offset', options.offset.toString());
+    if (options?.includeActive !== undefined) params.append('includeActive', options.includeActive.toString());
+    
+    const query = params.toString();
+    return api.get(`/rooms/${roomId}/sessions${query ? `?${query}` : ''}`);
+  },
+
+  // Get a specific session by ID
+  getSession: async (sessionId: string): Promise<{ session: ChatSession }> => {
+    const api = getApiClient();
+    return api.get(`/sessions/${sessionId}`);
+  },
+
+  // Get messages for a session
+  getSessionMessages: async (sessionId: string, options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<SessionMessagesResponse> => {
+    const api = getApiClient();
+    const params = new URLSearchParams();
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.offset) params.append('offset', options.offset.toString());
+    
+    const query = params.toString();
+    return api.get(`/sessions/${sessionId}/messages${query ? `?${query}` : ''}`);
+  },
+
+  // Find session by message ID
+  getSessionByMessage: async (messageId: string): Promise<{ session: ChatSession }> => {
+    const api = getApiClient();
+    return api.get(`/sessions/by-message/${messageId}`);
+  },
+};
+
 // Media API
 export const mediaApi = {
   // Get upload URL from media service

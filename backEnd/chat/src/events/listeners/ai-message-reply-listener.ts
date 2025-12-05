@@ -76,17 +76,37 @@ export class AiMessageReplyListener extends Listener<AiMessageReplyEvent> {
     console.log(`[AI Message Reply] Reply count for original message ${originalMessageId}: ${replyCount.replyCount}/${AI_MAX_REPLIES_PER_MESSAGE}`);
 
     // Publish message created event (for other services like realtime-gateway)
-    await new MessageCreatedPublisher(kafkaWrapper.producer).publish({
-      id: message.id,
-      roomId: message.roomId,
-      senderType: message.senderType,
-      senderId: message.senderId,
-      senderName: message.senderName, // Include sender name in event
-      content: message.content,
-      attachments: message.attachments,
-      createdAt: message.createdAt.toISOString(),
-      dedupeKey: message.dedupeKey,
+    // await new MessageCreatedPublisher(kafkaWrapper.producer).publish({
+    //   id: message.id,
+    //   roomId: message.roomId,
+    //   senderType: message.senderType,
+    //   senderId: message.senderId,
+    //   senderName: message.senderName, // Include sender name in event
+    //   content: message.content,
+    //   attachments: message.attachments,
+    //   createdAt: message.createdAt.toISOString(),
+    //   dedupeKey: message.dedupeKey,
+    // });
+
+    // IMPORTANT: Also publish message.ingest so that message-ingest-listener processes this agent message
+    // and publishes ai.message.created for other agents in the room
+    // This ensures agents can see each other's messages
+    await kafkaWrapper.producer.send({
+      topic: 'message.ingest',
+      messages: [{
+        key: roomId,
+        value: JSON.stringify({
+          roomId,
+          content: message.content,
+          senderId: agentId,
+          senderType: 'agent',
+          tempId: tempId,
+          // Note: message.ingest doesn't include replyToMessageId, but that's okay
+          // The message is already saved with replyToMessageId if it was a reply
+        })
+      }],
     });
+    console.log(`[AI Message Reply] Published message.ingest for agent message ${messageId} so other agents can receive it`);
 
     await this.ack();
   }

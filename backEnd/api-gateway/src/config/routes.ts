@@ -26,6 +26,9 @@ const regex = {
   agentManager: /^\/api\/agent-manager(?:\/.*)?$/i,
   search: /^\/api\/search(?:\/.*)?$/i,
   friendSuggestions: /^\/api\/friend-suggestions(?:\/.*)?$/i,
+  sessions: /^\/api\/sessions(?:\/.*)?$/i,
+  agentSessions: /^\/api\/agents\/[^/]+\/sessions(?:\/.*)?$/i,
+  roomSessions: /^\/api\/rooms\/[^/]+\/sessions(?:\/.*)?$/i,
 };
 
 export const routeRules: RouteRule[] = [
@@ -113,6 +116,11 @@ export const routeRules: RouteRule[] = [
     name: 'friend-suggestions-service',
     targetEnv: 'FRIEND_SUGGESTIONS_SERVICE_URL',
     patterns: [regex.friendSuggestions],
+  },
+  {
+    name: 'chat-history-service',
+    targetEnv: 'CHAT_HISTORY_SERVICE_URL',
+    patterns: [regex.sessions, regex.agentSessions, regex.roomSessions],
   },
 ];
 

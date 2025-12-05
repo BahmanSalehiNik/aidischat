@@ -1,0 +1,340 @@
+/**
+ * Integration Test for Feedback Service with Real Kafka Events
+ * 
+ * This test uses Testcontainers to provide real infrastructure:
+ * - Real Kafka (Redpanda) for actual event publishing and consumption
+ * - Real Redis for sliding window operations
+ * - Real MongoDB (in-memory) for data persistence
+ * 
+ * Flow:
+ * 1. Publish agent.created event to Kafka (real event)
+ * 2. Publish feedback.reaction.received events to Kafka (real events)
+ * 3. Real listeners consume events and process them
+ * 4. Verify Redis sliding window (max 3 items per agentId+roomId)
+ * 5. Verify MongoDB aggregations are updated
+ * 6. Trigger batch flush manually
+ * 7. Verify learning summary is updated with numeric scores
+ * 8. Verify agent.learning.updated event is published (real event)
+ */
+
+import mongoose from 'mongoose';
+import Redis from 'ioredis';
+import { startTestInfrastructure, stopTestInfrastructure, TestInfrastructure } from '../setup/test-infrastructure';
+import { RedisFeedbackKeys } from '../../redis-client';
+import { AgentFeedbackAggregation, buildAgentFeedbackAggregation } from '../../models/agent-feedback-aggregation';
+import { AgentLearningSummary, buildAgentLearningSummary } from '../../models/agent-learning-summary';
+import { kafkaWrapper } from '../../kafka-client';
+import { FeedbackReactionReceivedListener } from '../../events/listeners/feedback-reaction-received-listener';
+import { AgentCreatedListener } from '../../events/listeners/agent-created-listener';
+import { Publisher, FeedbackReactionReceivedEvent, AgentCreatedEvent, Subjects } from '@aichatwar/shared';
+
+// Dynamic imports - will be loaded after env vars are set
+let feedbackBatcherRedis: any;
+let redisFeedback: any;
+
+// Test publishers (simple implementations for testing)
+class FeedbackReactionReceivedPublisher extends Publisher<FeedbackReactionReceivedEvent> {
+  readonly topic = Subjects.FeedbackReactionReceived;
+}
+
+class AgentCreatedPublisher extends Publisher<AgentCreatedEvent> {
+  readonly topic = Subjects.AgentCreated;
+}
+
+// Test data
+const TEST_USER1_ID = 'test-user-1';
+const TEST_USER2_ID = 'test-user-2';
+const TEST_AGENT_ID = 'test-agent-123';
+const TEST_AGENT_OWNER_ID = TEST_USER1_ID;
+const TEST_ROOM_ID = 'test-room-456';
+const TEST_AGENT_MESSAGE_ID = 'test-agent-message-789';
+
+let infra: TestInfrastructure;
+let redisClient: Redis;
+let receivedLearningUpdatedEvents: any[] = [];
+
+describe('Feedback Service Integration Test with Real Kafka', () => {
+  beforeAll(async () => {
+    // ✅ Start REAL infrastructure (Kafka, Redis, MongoDB)
+    // Note: startTestInfrastructure sets REDIS_FEEDBACK_URL before returning
+    console.log('🚀 Starting test infrastructure...');
+    infra = await startTestInfrastructure({ includeKafka: true });
+    
+    // Set other environment variables
+    process.env.KAFKA_BROKER_URL = infra.kafkaBrokerUrl!;
+    process.env.MONGO_URI = infra.mongoUri;
+    process.env.JWT_DEV = 'test-jwt-secret';
+    
+    // Connect to MongoDB
+    await mongoose.connect(infra.mongoUri);
+    console.log('✅ MongoDB connected');
+    
+    // Connect to Redis (for direct queries in test)
+    redisClient = new Redis(infra.redisUrl);
+    await redisClient.ping();
+    console.log('✅ Redis connected');
+    
+    // SIMPLER SOLUTION: Replace redisFeedback with our test Redis client
+    // This avoids the singleton issue by directly replacing the client
+    const redisClientModule = await import('../../redis-client');
+    redisFeedback = redisClientModule.redisFeedback;
+    
+    // Disconnect the existing redisFeedback if it's connected
+    if (redisFeedback && redisFeedback.status !== 'end' && redisFeedback.status !== 'close') {
+      try {
+        await redisFeedback.quit();
+        console.log('🔄 Disconnected existing redisFeedback connection');
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (error) {
+        // Ignore errors
+      }
+    }
+    
+    // Replace redisFeedback with our test client by monkey-patching the module
+    // This ensures feedbackBatcherRedis uses the test Redis
+    Object.defineProperty(redisClientModule, 'redisFeedback', {
+      value: redisClient,
+      writable: true,
+      configurable: true,
+    });
+    
+    // Update the reference
+    redisFeedback = redisClient;
+    console.log('✅ Replaced redisFeedback with test Redis client');
+    
+    // Now import feedbackBatcherRedis - it will use our test client
+    const feedbackBatcherModule = await import('../../services/feedback-batcher-redis');
+    feedbackBatcherRedis = feedbackBatcherModule.feedbackBatcherRedis;
+    
+    // Verify the connection works
+    await redisFeedback.ping();
+    console.log('✅ Feedback Redis client verified');
+    
+    // Connect to Kafka
+    await kafkaWrapper.connect([infra.kafkaBrokerUrl!], 'feedback-test-client');
+    console.log('✅ Kafka connected');
+    
+    // Start real Kafka listeners
+    new AgentCreatedListener(kafkaWrapper.consumer('feedback-service-agent-created-test')).listen();
+    new FeedbackReactionReceivedListener(kafkaWrapper.consumer('feedback-service-reaction-received-test')).listen();
+    console.log('✅ Kafka listeners started');
+    
+    // Listen for agent.learning.updated events to verify they're published
+    const learningUpdatedConsumer = kafkaWrapper.consumer('test-learning-updated-listener');
+    await learningUpdatedConsumer.subscribe({ topic: Subjects.AgentLearningUpdated });
+    await learningUpdatedConsumer.run({
+      eachMessage: async ({ message }) => {
+        const event = JSON.parse(message.value!.toString());
+        receivedLearningUpdatedEvents.push(event);
+        console.log('📨 Received agent.learning.updated event:', event.agentId);
+      },
+    });
+    console.log('✅ Learning updated event listener started');
+    
+    // Wait for listeners to be ready
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }, 120000); // 2 minute timeout for infrastructure setup
+
+  beforeEach(async () => {
+    // Clear MongoDB
+    if (mongoose.connection.db) {
+      const collections = await mongoose.connection.db.collections();
+      for (const collection of collections) {
+        await collection.deleteMany({});
+      }
+    }
+
+    // Clear Redis
+    const keys = await redisClient.keys('feedback:*');
+    if (keys.length > 0) {
+      await redisClient.del(...keys);
+    }
+    
+    // Clear received events
+    receivedLearningUpdatedEvents = [];
+  });
+
+  afterAll(async () => {
+    // Cleanup
+    await redisClient.quit();
+    await kafkaWrapper.disconnect();
+    await mongoose.connection.close();
+    await stopTestInfrastructure(infra);
+  }, 60000);
+
+  it('should process reactions through real Kafka events and publish agent.learning.updated', async () => {
+    // Step 1: Publish agent.created event to Kafka (real event)
+    console.log('\n📝 Step 1: Publishing agent.created event to Kafka...');
+    await new AgentCreatedPublisher(kafkaWrapper.producer).publish({
+      id: TEST_AGENT_ID,
+      ownerUserId: TEST_AGENT_OWNER_ID,
+      version: 1,
+    });
+    console.log('✅ Agent created event published');
+    
+    // Wait for listener to process
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Verify agent learning summary was created
+    const initialSummary = await AgentLearningSummary.findOne({ agentId: TEST_AGENT_ID });
+    expect(initialSummary).toBeDefined();
+    expect(initialSummary!.ownerUserId).toBe(TEST_AGENT_OWNER_ID);
+    console.log('✅ Agent learning summary created via Kafka event');
+    
+    // Verify agent feedback aggregation was created
+    const initialAggregation = await AgentFeedbackAggregation.findOne({ agentId: TEST_AGENT_ID });
+    expect(initialAggregation).toBeDefined();
+    console.log('✅ Agent feedback aggregation created via Kafka event');
+
+    // Step 2: Publish feedback.reaction.received events to Kafka (real events)
+    console.log('\n📝 Step 2: Publishing reaction feedback events to Kafka...');
+    
+    const agentMessageContent = 'Hello! This is a test message from the agent.';
+    
+    // User1 reacts with 'like' (👍) - REAL Kafka event
+    await new FeedbackReactionReceivedPublisher(kafkaWrapper.producer).publish({
+      roomId: TEST_ROOM_ID,
+      messageId: TEST_AGENT_MESSAGE_ID,
+      agentId: TEST_AGENT_ID,
+      agentMessageContent,
+      reactionUserId: TEST_USER1_ID,
+      reactionUserType: 'human',
+      emoji: '👍',
+      createdAt: new Date().toISOString(),
+    });
+    console.log('✅ User1 reaction (like) event published to Kafka');
+    
+    // Wait for processing
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // User2 reacts with 'love' (❤️) - REAL Kafka event
+    await new FeedbackReactionReceivedPublisher(kafkaWrapper.producer).publish({
+      roomId: TEST_ROOM_ID,
+      messageId: TEST_AGENT_MESSAGE_ID,
+      agentId: TEST_AGENT_ID,
+      agentMessageContent,
+      reactionUserId: TEST_USER2_ID,
+      reactionUserType: 'human',
+      emoji: '❤️',
+      createdAt: new Date().toISOString(),
+    });
+    console.log('✅ User2 reaction (love) event published to Kafka');
+    
+    // Wait for processing
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // User1 reacts with 'laugh' (😂) - REAL Kafka event
+    await new FeedbackReactionReceivedPublisher(kafkaWrapper.producer).publish({
+      roomId: TEST_ROOM_ID,
+      messageId: TEST_AGENT_MESSAGE_ID,
+      agentId: TEST_AGENT_ID,
+      agentMessageContent,
+      reactionUserId: TEST_USER1_ID,
+      reactionUserType: 'human',
+      emoji: '😂',
+      createdAt: new Date().toISOString(),
+    });
+    console.log('✅ User1 reaction (laugh) event published to Kafka');
+    
+    // Wait for all events to be processed
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Step 3: Verify Redis sliding window (max 3 items)
+    console.log('\n📝 Step 3: Verifying Redis sliding window...');
+    const windowKey = RedisFeedbackKeys.window(TEST_AGENT_ID, TEST_ROOM_ID);
+    const windowItems = await redisClient.lrange(windowKey, 0, -1);
+    console.log(`✅ Redis window contains ${windowItems.length} items (max 3 expected)`);
+    
+    expect(windowItems.length).toBeLessThanOrEqual(3);
+    expect(windowItems.length).toBeGreaterThan(0);
+    
+    const items = windowItems.map((json: string) => JSON.parse(json));
+    console.log('📦 Window items:', items.map(i => ({ 
+      userId: i.userId, 
+      value: i.value, 
+      feedbackType: i.feedbackType,
+      metadata: i.metadata?.reactionType
+    })));
+    
+    // Verify all items are for the correct agent and room
+    items.forEach(item => {
+      expect(item.agentId).toBe(TEST_AGENT_ID);
+      expect(item.roomId).toBe(TEST_ROOM_ID);
+      expect(item.feedbackType).toBe('reaction');
+      expect(item.value).toBeGreaterThan(0); // All reactions should be positive
+    });
+
+    // Step 4: Trigger batch flush manually (for testing)
+    console.log('\n📝 Step 4: Triggering batch flush...');
+    await feedbackBatcherRedis.flush(TEST_AGENT_ID);
+    console.log('✅ Batch flushed');
+    
+    // Wait for processing to complete
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Step 5: Verify MongoDB aggregations are updated (after flush)
+    console.log('\n📝 Step 5: Verifying MongoDB aggregations...');
+    const updatedAggregation = await AgentFeedbackAggregation.findOne({ agentId: TEST_AGENT_ID });
+    
+    expect(updatedAggregation).toBeDefined();
+    expect(updatedAggregation!.totalFeedback).toBeGreaterThan(0);
+    expect(updatedAggregation!.positiveCount).toBeGreaterThan(0);
+    
+    console.log('📊 Aggregation:', {
+      totalFeedback: updatedAggregation!.totalFeedback,
+      positiveCount: updatedAggregation!.positiveCount,
+      negativeCount: updatedAggregation!.negativeCount,
+      pendingFeedbackCount: updatedAggregation!.pendingFeedbackCount,
+      pendingRewardSum: updatedAggregation!.pendingRewardSum,
+      lastPolicyUpdateAt: updatedAggregation!.lastPolicyUpdateAt,
+    });
+
+    // Step 6: Verify learning summary was updated
+    console.log('\n📝 Step 6: Verifying learning summary updates...');
+    const finalSummary = await AgentLearningSummary.findOne({ agentId: TEST_AGENT_ID });
+    expect(finalSummary).toBeDefined();
+    
+    // Verify summary has numeric scores
+    expect(typeof finalSummary!.sentimentScore).toBe('number');
+    expect(typeof finalSummary!.engagementScore).toBe('number');
+    expect(finalSummary!.version).toBeGreaterThan(0);
+    
+    console.log('📈 Learning Summary:', {
+      sentimentScore: finalSummary!.sentimentScore,
+      engagementScore: finalSummary!.engagementScore,
+      qualityScore: finalSummary!.qualityScore,
+      version: finalSummary!.version,
+      lastPolicyUpdateAt: finalSummary!.lastPolicyUpdateAt,
+    });
+    
+    console.log('✅ Learning summary verified with numeric scores!');
+
+    // Step 7: Verify agent.learning.updated event was published (real Kafka event)
+    console.log('\n📝 Step 7: Verifying agent.learning.updated event was published...');
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for event to be published
+    
+    expect(receivedLearningUpdatedEvents.length).toBeGreaterThan(0);
+    const learningEvent = receivedLearningUpdatedEvents.find(e => e.agentId === TEST_AGENT_ID);
+    expect(learningEvent).toBeDefined();
+    expect(learningEvent!.agentId).toBe(TEST_AGENT_ID);
+    expect(learningEvent!.learningMetrics).toBeDefined();
+    expect(learningEvent!.learningMetrics.sentimentScore).toBeDefined();
+    expect(learningEvent!.learningMetrics.engagementScore).toBeDefined();
+    console.log('✅ agent.learning.updated event received:', {
+      agentId: learningEvent!.agentId,
+      sentimentScore: learningEvent!.learningMetrics.sentimentScore,
+      engagementScore: learningEvent!.learningMetrics.engagementScore,
+    });
+
+    // Final summary
+    console.log('\n✅ Integration test with real Kafka events completed successfully!');
+    console.log('Summary:');
+    console.log(`  - Agent ID: ${TEST_AGENT_ID}`);
+    console.log(`  - Reactions processed via Kafka: 3`);
+    console.log(`  - Redis window items: ${windowItems.length} (max 3)`);
+    console.log(`  - MongoDB aggregation: verified`);
+    console.log(`  - Learning summary: updated with numeric scores`);
+    console.log(`  - agent.learning.updated event: published and received`);
+  }, 120000); // 2 minute timeout
+});
+

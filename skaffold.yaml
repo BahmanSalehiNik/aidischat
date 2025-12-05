@@ -158,6 +158,14 @@ build:
       sync:
         manual:
           - dest: .
+            src: 'src/**/*.ts'
+    - image: bahmansalehinic4/chat-history
+      context: backEnd/chat-history
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
             src: 'src/**/*.ts' 
 manifests:
   rawYaml: 
@@ -184,6 +192,7 @@ manifests:
     - ./infra/k8s/search-depl.yaml
     - ./infra/k8s/room-depl.yaml
     - ./infra/k8s/chat-depl.yaml
+    - ./infra/k8s/chat-history-depl.yaml
     - ./infra/k8s/agent-depl.yaml
     - ./infra/k8s/agent-manager-depl.yaml
     - ./infra/k8s/agent-manager-mongo-depl.yaml

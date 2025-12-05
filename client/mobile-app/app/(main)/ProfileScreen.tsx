@@ -3,13 +3,14 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useState, useEffect, useCallback } from 'react';
-import { authApi, postApi } from '../../utils/api';
+import { authApi, postApi, chatHistoryApi, ChatSession } from '../../utils/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PostCard, Post } from '../../components/feed/PostCard';
 import { profileScreenStyles as styles } from '../../styles/profile/profileScreenStyles';
 import { PostDetailModal } from './PostDetailModal';
+import { SessionItem } from '../../components/chat/SessionItem';
 
-type TabType = 'posts' | 'agents' | 'friends';
+type TabType = 'posts' | 'agents' | 'friends' | 'chatHistory';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -28,7 +29,10 @@ export default function ProfileScreen() {
     posts: 0,
     friends: 0,
     agents: 0,
+    chatHistory: 0,
   });
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [loadingChatHistory, setLoadingChatHistory] = useState(false);
 
   const loadUserPosts = useCallback(async () => {
     if (!user?.id) return;
@@ -52,19 +56,44 @@ export default function ProfileScreen() {
     loadProfile();
   }, []);
 
+  const loadChatHistory = useCallback(async () => {
+    if (!user?.id) return;
+    
+    try {
+      setLoadingChatHistory(true);
+      const response = await chatHistoryApi.getUserSessions({
+        participantType: 'human',
+        limit: 50,
+        offset: 0,
+        includeActive: true,
+      });
+      setChatSessions(response.sessions);
+      setCounts(prev => ({ ...prev, chatHistory: response.pagination.total }));
+    } catch (error) {
+      console.error('Error loading chat history:', error);
+      setChatSessions([]);
+    } finally {
+      setLoadingChatHistory(false);
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     if (activeTab === 'posts' && user?.id) {
       loadUserPosts();
+    } else if (activeTab === 'chatHistory' && user?.id) {
+      loadChatHistory();
     }
-  }, [activeTab, user?.id, loadUserPosts]);
+  }, [activeTab, user?.id, loadUserPosts, loadChatHistory]);
 
-  // Reload posts when the posts tab becomes active
+  // Reload data when tab becomes active
   useFocusEffect(
     useCallback(() => {
       if (activeTab === 'posts' && user?.id) {
         loadUserPosts();
+      } else if (activeTab === 'chatHistory' && user?.id) {
+        loadChatHistory();
       }
-    }, [activeTab, user?.id, loadUserPosts])
+    }, [activeTab, user?.id, loadUserPosts, loadChatHistory])
   );
 
   const loadProfile = async () => {
@@ -83,10 +112,12 @@ export default function ProfileScreen() {
     setRefreshing(true);
     if (activeTab === 'posts') {
       loadUserPosts();
+    } else if (activeTab === 'chatHistory') {
+      loadChatHistory();
     } else {
       setRefreshing(false);
     }
-  }, [activeTab, loadUserPosts]);
+  }, [activeTab, loadUserPosts, loadChatHistory]);
 
   const handlePostPress = useCallback((post: Post) => {
     setSelectedPost(post);
@@ -156,7 +187,11 @@ export default function ProfileScreen() {
       <ScrollView 
         style={styles.content} 
         showsVerticalScrollIndicator={false}
-        refreshControl={activeTab === 'posts' ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} /> : undefined}
+        refreshControl={
+          (activeTab === 'posts' || activeTab === 'chatHistory') 
+            ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} /> 
+            : undefined
+        }
         scrollEnabled={true}
       >
         {/* Profile Header */}
@@ -233,6 +268,19 @@ export default function ProfileScreen() {
             />
             <Text style={[styles.tabText, activeTab === 'friends' && styles.activeTabText]}>
               Friends
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'chatHistory' && styles.activeTab]}
+            onPress={() => setActiveTab('chatHistory')}
+          >
+            <Ionicons 
+              name="chatbubbles" 
+              size={20} 
+              color={activeTab === 'chatHistory' ? '#007AFF' : '#8E8E93'} 
+            />
+            <Text style={[styles.tabText, activeTab === 'chatHistory' && styles.activeTabText]}>
+              History
             </Text>
           </TouchableOpacity>
         </View>
@@ -334,6 +382,49 @@ export default function ProfileScreen() {
                   <Text style={styles.emptyStateButtonText}>Find Friends</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          )}
+
+          {activeTab === 'chatHistory' && (
+            <View style={styles.sectionContainer}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Chat History</Text>
+                <Text style={styles.sectionCount}>{counts.chatHistory} sessions</Text>
+              </View>
+              {loadingChatHistory ? (
+                <View style={styles.postsLoadingContainer}>
+                  <ActivityIndicator size="large" color="#007AFF" />
+                </View>
+              ) : chatSessions.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="chatbubbles-outline" size={64} color="#C7C7CC" />
+                  <Text style={styles.emptyStateTitle}>No Chat History</Text>
+                  <Text style={styles.emptyStateText}>
+                    You haven't started any chat sessions yet.
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {chatSessions.map((session) => {
+                    const sessionId = session.id || (session as any)._id;
+                    console.log('[ProfileScreen] Session object:', { id: session.id, _id: (session as any)._id, sessionId });
+                    return (
+                      <SessionItem
+                        key={sessionId}
+                        session={session}
+                        onPress={(session) => {
+                          const id = session.id || (session as any)._id;
+                          console.log('[ProfileScreen] Navigating to session:', id);
+                          router.push({
+                            pathname: '/(main)/chat/SessionDetailScreen',
+                            params: { sessionId: id },
+                          });
+                        }}
+                      />
+                    );
+                  })}
+                </>
+              )}
             </View>
           )}
         </View>

@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 export default function ChatStackLayout() {
   return (
     <Stack 
+      initialRouteName="RoomListScreen"
       screenOptions={{ 
         headerShown: true,
         // Ensure tab bar is visible on nested screens
@@ -23,6 +24,20 @@ export default function ChatStackLayout() {
           headerShown: true,
           headerBackTitle: '', // Remove back button text on iOS
           headerTitleAlign: 'center', // Center the title
+        }}
+      />
+      <Stack.Screen
+        name="ChatHistoryScreen"
+        options={{ 
+          title: 'Chat History',
+          headerShown: false, // Use custom header
+        }}
+      />
+      <Stack.Screen
+        name="SessionDetailScreen"
+        options={{ 
+          title: 'Session',
+          headerShown: false, // Use custom header
         }}
       />
     </Stack>

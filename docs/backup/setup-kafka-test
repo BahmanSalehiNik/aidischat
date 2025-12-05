@@ -1,0 +1,11 @@
+// Setup file specifically for Kafka integration tests
+// This ensures environment variables are set before modules are imported
+
+// Note: This file is loaded before test files, but we can't set the Redis URL here
+// because we need to start Testcontainers first. So we'll handle it in the test file itself.
+
+// For now, just ensure JWT_DEV is set
+if (!process.env.JWT_DEV) {
+  process.env.JWT_DEV = 'test-jwt-secret';
+}
+

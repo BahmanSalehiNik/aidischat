@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-history-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chat-history
+  template:
+    metadata:
+      labels:
+        app: chat-history
+    spec:
+      containers:
+        - name: chat-history
+          image: bahmansalehinic4/chat-history
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          env:
+            - name: KAFKA_BROKER_URL
+              value: 'redpanda-srv:9092'
+            - name: KAFKA_CLIENT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MONGO_URI
+              value: "mongodb://chat-history-mongo-srv:27017/chat-history"
+            - name: JWT_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: JWT_DEV
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-history-srv
+spec:
+  selector:
+    app: chat-history
+  ports:
+    - name: http
+      protocol: TCP
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-history-mongodb-depl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chat-history-mongodb
+  template:
+    metadata:
+      labels:
+        app: chat-history-mongodb
+    spec:
+      containers:
+        - name: chat-history-mongodb
+          image: mongo:7.0
+          ports:
+            - containerPort: 27017
+          # No volume mounts - persistence removed for now
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-history-mongo-srv
+spec:
+  selector:
+    app: chat-history-mongodb
+  ports:
+    - name: mongo
+      protocol: TCP
+      port: 27017
+      targetPort: 27017
+
