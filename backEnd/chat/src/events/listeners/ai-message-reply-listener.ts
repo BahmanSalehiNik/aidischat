@@ -32,44 +32,44 @@ export class AiMessageReplyListener extends Listener<AiMessageReplyEvent> {
       return;
     }
 
-    // Generate message ID
-    const messageId = crypto.randomUUID();
+    // // Generate message ID
+    // const messageId = crypto.randomUUID();
     
-    // Use tempId as dedupeKey if provided, otherwise generate one
-    const dedupeKey = tempId || `${roomId}-${agentId}-${Date.now()}`;
+    // // Use tempId as dedupeKey if provided, otherwise generate one
+    // const dedupeKey = tempId || `${roomId}-${agentId}-${Date.now()}`;
 
-    // Fetch agent name for denormalization
-    const agent = await Agent.findOne({ _id: agentId }).lean();
-    const senderName = agent?.name;
+    // // Fetch agent name for denormalization
+    // const agent = await Agent.findOne({ _id: agentId }).lean();
+    // const senderName = agent?.name;
 
-    // Create and save message to database (senderType is 'agent')
-    const message = Message.build({
-      id: messageId,
-      roomId,
-      senderType: 'agent',
-      senderId: agentId,
-      senderName, // Store denormalized sender name
-      content,
-      attachments: [],
-      dedupeKey
-    });
+    // // Create and save message to database (senderType is 'agent')
+    // const message = Message.build({
+    //   id: messageId,
+    //   roomId,
+    //   senderType: 'agent',
+    //   senderId: agentId,
+    //   senderName, // Store denormalized sender name
+    //   content,
+    //   attachments: [],
+    //   dedupeKey
+    // });
 
-    await message.save();
+    // await message.save();
 
-    // Verify message was saved
-    const savedMessage = await Message.findOne({ _id: messageId }).lean();
-    if (!savedMessage) {
-      console.error(`❌ [AI Message Reply] Failed to save message ${messageId} - message not found after save!`);
-    } else {
-      console.log(`✅ [AI Message Reply] Message ${messageId} confirmed saved in database:`, {
-        roomId: savedMessage.roomId,
-        senderType: savedMessage.senderType,
-        senderId: savedMessage.senderId,
-        senderName: savedMessage.senderName,
-        contentLength: savedMessage.content?.length || 0,
-        createdAt: savedMessage.createdAt,
-      });
-    }
+    // // Verify message was saved
+    // const savedMessage = await Message.findOne({ _id: messageId }).lean();
+    // if (!savedMessage) {
+    //   console.error(`❌ [AI Message Reply] Failed to save message ${messageId} - message not found after save!`);
+    // } else {
+    //   console.log(`✅ [AI Message Reply] Message ${messageId} confirmed saved in database:`, {
+    //     roomId: savedMessage.roomId,
+    //     senderType: savedMessage.senderType,
+    //     senderId: savedMessage.senderId,
+    //     senderName: savedMessage.senderName,
+    //     contentLength: savedMessage.content?.length || 0,
+    //     createdAt: savedMessage.createdAt,
+    //   });
+    // }
 
     // Increment reply count for this agent's reply to the original message
     const replyCount = await AiReplyCount.incrementReplyCount(originalMessageId, agentId);
@@ -97,7 +97,7 @@ export class AiMessageReplyListener extends Listener<AiMessageReplyEvent> {
         key: roomId,
         value: JSON.stringify({
           roomId,
-          content: message.content,
+          content: content,
           senderId: agentId,
           senderType: 'agent',
           tempId: tempId,
@@ -106,7 +106,7 @@ export class AiMessageReplyListener extends Listener<AiMessageReplyEvent> {
         })
       }],
     });
-    console.log(`[AI Message Reply] Published message.ingest for agent message ${messageId} so other agents can receive it`);
+    console.log(`[AI Message Reply] Published message.ingest for agent message ${originalMessageId} so other agents can receive it`);
 
     await this.ack();
   }

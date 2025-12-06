@@ -3,26 +3,34 @@ import { View, Text, FlatList, ActivityIndicator, RefreshControl, TouchableOpaci
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { chatHistoryApi, messageApi } from '../../../utils/api';
-import { Message } from '../../../store/chatStore';
-import { MessageBubble } from '../../../components/chat/MessageBubble';
+import { chatHistoryApi, messageApi } from '../../utils/api';
+import { Message, useChatStore } from '../../store/chatStore';
+import { MessageBubble } from '../../components/chat/MessageBubble';
 
 export default function SessionDetailScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ sessionId: string | string[] }>();
+  const params = useLocalSearchParams<{ sessionId: string | string[], returnTo?: string }>();
   // Handle both query string (?sessionId=...) and route params
   const sessionId = typeof params.sessionId === 'string' 
     ? params.sessionId 
     : Array.isArray(params.sessionId) 
       ? params.sessionId[0] 
       : undefined;
+  const returnTo = params.returnTo || '/(main)/ProfileScreen';
   const [session, setSession] = useState<any>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const { setCurrentRoom, clearRoomMessages } = useChatStore();
 
-  console.log('[SessionDetail] Component rendered, params:', params, 'sessionId:', sessionId);
+  console.log('[SessionDetail] Component rendered, params:', params, 'sessionId:', sessionId, 'returnTo:', returnTo);
+
+  // Clear chat state when viewing history to keep it separate from main chat
+  useEffect(() => {
+    setCurrentRoom(null);
+    // Note: We don't clear all messages, just the current room, to avoid affecting other rooms
+  }, [setCurrentRoom]);
 
   const loadSession = useCallback(async () => {
     if (!sessionId) {
@@ -142,7 +150,7 @@ export default function SessionDetailScreen() {
       year: 'numeric', 
       month: 'long', 
       day: 'numeric',
-      hour: 'numeric',
+      hour: 'numeric', 
       minute: '2-digit'
     });
   };
@@ -177,7 +185,16 @@ export default function SessionDetailScreen() {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={() => {
+              if (returnTo.includes('ProfileScreen')) {
+                router.push({
+                  pathname: returnTo as any,
+                  params: { activeTab: 'chatHistory' },
+                });
+              } else {
+                router.back();
+              }
+            }}
           >
             <Ionicons name="arrow-back" size={24} color="#000000" />
           </TouchableOpacity>
@@ -196,7 +213,17 @@ export default function SessionDetailScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => {
+            // Navigate back to the screen we came from (usually ProfileScreen with chatHistory tab)
+            if (returnTo.includes('ProfileScreen')) {
+              router.push({
+                pathname: returnTo as any,
+                params: { activeTab: 'chatHistory' },
+              });
+            } else {
+              router.back();
+            }
+          }}
         >
           <Ionicons name="arrow-back" size={24} color="#000000" />
         </TouchableOpacity>

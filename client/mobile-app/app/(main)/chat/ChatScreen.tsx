@@ -178,6 +178,8 @@ export default function ChatScreen() {
         setSettingUp(false);
         setSetupError(false);
         setupStartTimeRef.current = null;
+        // Note: We can't set loadingMessages flag here because it's in the store
+        // The store's setMessages will handle it
       }
       
       const response = await messageApi.getMessages(roomId, 1, 50);
@@ -238,7 +240,32 @@ export default function ChatScreen() {
         roomId: m.roomId?.trim() || roomId, // Ensure all messages use normalized roomId
       }));
       
+      // Log message breakdown before setting
+      const userMessages = normalizedMessages.filter((m: any) => m.senderType === 'human');
+      const agentMessages = normalizedMessages.filter((m: any) => m.senderType === 'agent');
+      console.log(`[ChatScreen] 📥 About to call setMessages for roomId: "${roomId}"`, {
+        total: normalizedMessages.length,
+        user: userMessages.length,
+        agent: agentMessages.length,
+        agentMessageIds: agentMessages.map((m: any) => m.id).slice(0, 5),
+      });
+      
       setMessages(roomId, normalizedMessages);
+      
+      // Log after setMessages to check if duplicates were created
+      setTimeout(() => {
+        const { messages: storeMessages } = useChatStore.getState();
+        const roomMsgs = storeMessages[roomId] || [];
+        const storeUserMsgs = roomMsgs.filter(m => m.senderType === 'human');
+        const storeAgentMsgs = roomMsgs.filter(m => m.senderType === 'agent');
+        console.log(`[ChatScreen] 📊 After setMessages for roomId: "${roomId}"`, {
+          total: roomMsgs.length,
+          user: storeUserMsgs.length,
+          agent: storeAgentMsgs.length,
+          agentMessageIds: storeAgentMsgs.map(m => m.id).slice(0, 5),
+          duplicatesDetected: storeAgentMsgs.length > agentMessages.length ? 'YES ⚠️' : 'NO ✅',
+        });
+      }, 100);
       setLoading(false);
       setSettingUp(false);
       setSetupError(false);

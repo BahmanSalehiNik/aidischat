@@ -5,14 +5,16 @@ import { useMemo } from 'react';
 export default function MainLayout() {
   const pathname = usePathname();
   
-  // Hide tab bar when inside ChatScreen (but not RoomListScreen) or SettingsScreen
+  // Hide tab bar when inside ChatScreen (but not RoomListScreen), SessionDetailScreen, or SettingsScreen
   const shouldHideTabBar = useMemo(() => {
     if (!pathname) return false;
     // Hide in ChatScreen (but not RoomListScreen)
     const isInChatScreen = pathname.includes('ChatScreen') && !pathname.includes('RoomListScreen');
+    // Hide in SessionDetailScreen (history view - separate from main chat, now in main folder)
+    const isInSessionDetail = pathname.includes('SessionDetailScreen');
     // Hide in SettingsScreen
     const isInSettingsScreen = pathname.includes('SettingsScreen');
-    return isInChatScreen || isInSettingsScreen;
+    return isInChatScreen || isInSessionDetail || isInSettingsScreen;
   }, [pathname]);
 
   return (
@@ -102,6 +104,12 @@ export default function MainLayout() {
         name="SettingsScreen"
         options={{
           href: null, // Hide from tab bar, accessible via profile settings button
+        }}
+      />
+      <Tabs.Screen
+        name="SessionDetailScreen"
+        options={{
+          href: null, // Hide from tab bar, accessible via ProfileScreen history
         }}
       />
       <Tabs.Screen

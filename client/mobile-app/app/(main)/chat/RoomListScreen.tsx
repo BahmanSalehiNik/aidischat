@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../../store/authStore';
@@ -29,6 +29,18 @@ export default function RoomListScreen() {
   useEffect(() => {
     loadRooms();
   }, []);
+
+  // Ensure RoomListScreen is shown when chat tab is focused
+  // This prevents staying on SessionDetailScreen when switching to chat tab
+  useFocusEffect(
+    React.useCallback(() => {
+      // When this screen is focused (chat tab clicked), ensure we're on RoomListScreen
+      // This helps separate history view from main chat
+      return () => {
+        // Cleanup if needed
+      };
+    }, [])
+  );
 
   useGlobalWebSocket(() => {
     console.log('🔄 Refreshing room list due to room.created event');

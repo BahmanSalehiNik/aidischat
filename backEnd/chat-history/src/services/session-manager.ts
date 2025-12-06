@@ -297,6 +297,8 @@ export class SessionManager {
 
   /**
    * Get messages for a session
+   * Returns ALL messages in the room during the session's time period, not just messages from the session's participant
+   * This ensures users see the full conversation including agent messages
    */
   static async getMessagesBySession(
     sessionId: string,
@@ -307,15 +309,40 @@ export class SessionManager {
   ): Promise<{ messageIds: string[]; total: number }> {
     const { limit = 100, offset = 0 } = options;
 
-    const links = await MessageSessionLink.find({ sessionId })
+    // First, get the session to find roomId and time range
+    const session = await Session.findOne({ _id: sessionId }).lean();
+    if (!session) {
+      console.warn(`[SessionManager] Session ${sessionId} not found`);
+      return { messageIds: [], total: 0 };
+    }
+
+    // Calculate time range: from session start to session end (or now if still active)
+    const startTime = session.startTime;
+    const endTime = session.endTime || new Date(); // Use current time if session is still active
+
+    // Get ALL messages in the room during the session time period
+    // This includes messages from all participants (user, agents, etc.)
+    const links = await MessageSessionLink.find({
+      roomId: session.roomId,
+      createdAt: {
+        $gte: startTime,
+        $lte: endTime,
+      },
+    })
       .sort({ createdAt: 1 }) // Chronological order
       .skip(offset)
       .limit(limit)
       .lean();
 
-    const total = await MessageSessionLink.countDocuments({ sessionId });
+    const total = await MessageSessionLink.countDocuments({
+      roomId: session.roomId,
+      createdAt: {
+        $gte: startTime,
+        $lte: endTime,
+      },
+    });
 
-    console.log(`[SessionManager] getMessagesBySession: sessionId=${sessionId}, found ${links.length} links, total=${total}`);
+    console.log(`[SessionManager] getMessagesBySession: sessionId=${sessionId}, roomId=${session.roomId}, timeRange=[${startTime.toISOString()}, ${endTime.toISOString()}], found ${links.length} links, total=${total}`);
 
     return {
       messageIds: links.map(link => link.messageId),

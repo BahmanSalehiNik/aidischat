@@ -1,5 +1,5 @@
 import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useState, useEffect, useCallback } from 'react';
@@ -14,10 +14,18 @@ type TabType = 'posts' | 'agents' | 'friends' | 'chatHistory';
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ activeTab?: string }>();
   const { user } = useAuthStore();
   const [profileData, setProfileData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('posts');
+
+  // Handle activeTab parameter from navigation (e.g., when returning from SessionDetailScreen)
+  useEffect(() => {
+    if (params.activeTab && ['posts', 'agents', 'friends', 'chatHistory'].includes(params.activeTab)) {
+      setActiveTab(params.activeTab as TabType);
+    }
+  }, [params.activeTab]);
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -416,8 +424,11 @@ export default function ProfileScreen() {
                           const id = session.id || (session as any)._id;
                           console.log('[ProfileScreen] Navigating to session:', id);
                           router.push({
-                            pathname: '/(main)/chat/SessionDetailScreen',
-                            params: { sessionId: id },
+                            pathname: '/(main)/SessionDetailScreen',
+                            params: { 
+                              sessionId: id,
+                              returnTo: '/(main)/ProfileScreen', // Tell SessionDetailScreen where to return
+                            },
                           });
                         }}
                       />

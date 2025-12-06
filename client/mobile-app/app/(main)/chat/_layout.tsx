@@ -33,13 +33,6 @@ export default function ChatStackLayout() {
           headerShown: false, // Use custom header
         }}
       />
-      <Stack.Screen
-        name="SessionDetailScreen"
-        options={{ 
-          title: 'Session',
-          headerShown: false, // Use custom header
-        }}
-      />
     </Stack>
   );
 }
