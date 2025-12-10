@@ -61,6 +61,8 @@ spec:
               value: "http://friend-suggestions-srv:3000"
             - name: CHAT_HISTORY_SERVICE_URL
               value: "http://chat-history-srv:3000"
+            - name: AR_AVATAR_SERVICE_URL
+              value: "http://ar-avatar-srv:3000"
 ---
 apiVersion: v1
 kind: Service

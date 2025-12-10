@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity, StyleSheet } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { chatHistoryApi, messageApi } from '../../utils/api';
@@ -138,6 +138,13 @@ export default function SessionDetailScreen() {
   useEffect(() => {
     loadSession();
   }, [loadSession]);
+
+  // Reload session and messages when screen comes into focus (e.g., after sending messages and returning)
+  useFocusEffect(
+    useCallback(() => {
+      loadSession();
+    }, [loadSession])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

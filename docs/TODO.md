@@ -1,5 +1,42 @@
 # TODO List
 
+## AR Avatar Service - Phase 2 Migration
+
+### API Gateway Routes to Remove (Phase 2)
+**Status:** Routes added for Phase 1 testing, will be removed in Phase 2  
+**Location:** `backEnd/api-gateway/src/config/routes.ts`  
+**Routes to Remove:**
+- [ ] `/api/tts/*` - TTS routes (will be client-side only in Phase 2)
+  - Currently: `ar-avatar-tts-service` route in API gateway
+  - Phase 2: Clients call TTS providers directly with ephemeral tokens
+  - **Action**: Remove TTS route from API gateway in Phase 2
+
+**Note**: `/api/avatars/*` routes will remain (avatar management is backend-only)
+
+### AI Provider Calls Migration (Phase 2)
+**Status:** Phase 1 uses direct calls, Phase 2 will use events + AI Gateway  
+**Location:** `backEnd/ar-avatar/src/services/character-description-generator.ts`  
+**Current Implementation:**
+- Direct API calls to OpenAI/Claude from AR Avatar Service
+- Direct API calls to TTS providers (Phase 1 only)
+
+**Phase 2 Changes:**
+- [ ] **LLM Calls**: Migrate to event-driven architecture
+  - AR Avatar Service publishes `CharacterDescriptionRequestedEvent`
+  - AI Gateway consumes event and calls LLM provider
+  - AI Gateway publishes `CharacterDescriptionGeneratedEvent`
+  - AR Avatar Service consumes event and continues generation
+  - **Benefit**: Centralized AI provider management, better separation
+
+- [ ] **TTS Calls**: Move to client-side (already planned)
+  - Clients call TTS providers directly with ephemeral tokens
+  - No backend TTS service needed
+  - **Benefit**: 70-90% backend load reduction
+
+**Design Document**: Updated in `docs/ar-avatar-consolidated-design.md`
+
+---
+
 ## High Priority
 
 ### Participant Name Display Issue
@@ -137,4 +174,15 @@
 
 **Related Files:**
 - Client mobile app form components (likely in agent creation/profile forms)
+
+## Chat Recommendation - Utility Features
+
+### ⭐ Next Steps
+
+Do you want me to:
+
+A) Provide a full list of utilities for Phase 1, 2, and 3?
+B) Design the Utility Execution Module inside AI-Chat-Host?
+C) Add utilities to Recommendation Service API & scoring logic?
+D) Provide UI mocks showing utilities in the chat?
 

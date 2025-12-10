@@ -166,6 +166,30 @@ build:
       sync:
         manual:
           - dest: .
+            src: 'src/**/*.ts'
+    - image: bahmansalehinic4/ai-chat-host
+      context: backEnd/ai-chat-host
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
+            src: 'src/**/*.ts'
+    - image: bahmansalehinic4/chat-recommendation
+      context: backEnd/chat-recommendation
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
+            src: 'src/**/*.ts'
+    - image: bahmansalehinic4/ar-avatar
+      context: backEnd/ar-avatar
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - dest: .
             src: 'src/**/*.ts' 
 manifests:
   rawYaml: 
@@ -193,6 +217,12 @@ manifests:
     - ./infra/k8s/room-depl.yaml
     - ./infra/k8s/chat-depl.yaml
     - ./infra/k8s/chat-history-depl.yaml
+    - ./infra/k8s/ai-chat-host-depl.yaml
+    - ./infra/k8s/ai-chat-host-mongo-depl.yaml
+    - ./infra/k8s/chat-recommendation-depl.yaml
+    - ./infra/k8s/chat-recommendation-mongo-depl.yaml
+    - ./infra/k8s/ar-avatar-depl.yaml
+    - ./infra/k8s/ar-avatar-mongo-depl.yaml
     - ./infra/k8s/agent-depl.yaml
     - ./infra/k8s/agent-manager-depl.yaml
     - ./infra/k8s/agent-manager-mongo-depl.yaml

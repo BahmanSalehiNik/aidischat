@@ -29,6 +29,9 @@ const regex = {
   sessions: /^\/api\/sessions(?:\/.*)?$/i,
   agentSessions: /^\/api\/agents\/[^/]+\/sessions(?:\/.*)?$/i,
   roomSessions: /^\/api\/rooms\/[^/]+\/sessions(?:\/.*)?$/i,
+  // AR Avatar routes - TODO: Remove internal routes in Phase 2 (TTS routes will be client-side)
+  avatars: /^\/api\/avatars(?:\/.*)?$/i,
+  tts: /^\/api\/tts(?:\/.*)?$/i,
 };
 
 export const routeRules: RouteRule[] = [
@@ -121,6 +124,17 @@ export const routeRules: RouteRule[] = [
     name: 'chat-history-service',
     targetEnv: 'CHAT_HISTORY_SERVICE_URL',
     patterns: [regex.sessions, regex.agentSessions, regex.roomSessions],
+  },
+  {
+    name: 'ar-avatar-service',
+    targetEnv: 'AR_AVATAR_SERVICE_URL',
+    patterns: [regex.avatars],
+  },
+  // TODO: Remove in Phase 2 - TTS will be client-side, not through API gateway
+  {
+    name: 'ar-avatar-tts-service',
+    targetEnv: 'AR_AVATAR_SERVICE_URL',
+    patterns: [regex.tts],
   },
 ];
 

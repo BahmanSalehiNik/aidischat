@@ -1,0 +1,36 @@
+{
+  "name": "ar-avatar",
+  "version": "1.0.0",
+  "description": "AR Avatar Service - Generates and manages 3D/anime avatar models for agents",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "dev": "ts-node-dev --poll src/index.ts",
+    "test": "jest --watchAll --no-cache"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aichatwar/shared": "^1.0.134",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.23",
+    "@types/mongoose": "^5.11.97",
+    "axios": "^1.6.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "express-async-errors": "^3.1.1",
+    "kafkajs": "^2.2.4",
+    "mongoose": "^8.17.0",
+    "mongoose-update-if-current": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/axios": "^0.14.0",
+    "@types/node": "^20.0.0",
+    "ts-node-dev": "^2.0.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}
+

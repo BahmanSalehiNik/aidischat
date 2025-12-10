@@ -60,6 +60,9 @@ export const ParticipantsModal: React.FC<ParticipantsModalProps> = ({
       const nameMap = new Map<string, { name?: string; type?: 'human' | 'agent' }>();
       messages.forEach((msg) => {
         if (msg.senderId) {
+          // Normalize senderId (trim whitespace, convert to string)
+          const normalizedSenderId = String(msg.senderId).trim();
+          
           // Use senderName if available, otherwise try to extract from sender object
           // Also check if sender has email and extract prefix
           const name = msg.senderName || 
@@ -69,13 +72,16 @@ export const ParticipantsModal: React.FC<ParticipantsModalProps> = ({
           
           if (name) {
             // Only set if we don't already have a better name for this ID
-            const existing = nameMap.get(msg.senderId);
+            const existing = nameMap.get(normalizedSenderId);
             if (!existing || !existing.name || existing.name.length < name.length) {
-              nameMap.set(msg.senderId, {
+              nameMap.set(normalizedSenderId, {
                 name,
                 type: type as 'human' | 'agent',
               });
+              console.log(`[ParticipantsModal] Added to nameMap: ${normalizedSenderId} -> ${name} (${type})`);
             }
+          } else {
+            console.log(`[ParticipantsModal] No name found for senderId: ${normalizedSenderId}, senderName: ${msg.senderName}, sender.name: ${(msg as any).sender?.name}`);
           }
         }
       });
@@ -85,6 +91,19 @@ export const ParticipantsModal: React.FC<ParticipantsModalProps> = ({
       console.log('[ParticipantsModal] Messages count:', messages.length);
       console.log('[ParticipantsModal] Messages with senderName:', messages.filter(m => m.senderName).length);
       console.log('[ParticipantsModal] Messages with sender.name:', messages.filter(m => (m as any).sender?.name).length);
+      
+      // Debug: Check if participant IDs match message senderIds
+      const messageSenderIds = new Set(messages.map(m => m.senderId).filter(Boolean));
+      const participantIdSet = new Set(participantIds);
+      const matchingIds = participantIds.filter(id => messageSenderIds.has(id));
+      const missingFromMessages = participantIds.filter(id => !messageSenderIds.has(id));
+      console.log('[ParticipantsModal] ID matching:', {
+        participantIdsCount: participantIds.length,
+        messageSenderIdsCount: messageSenderIds.size,
+        matchingIds,
+        missingFromMessages,
+        nameMapKeys: Array.from(nameMap.keys()),
+      });
 
       // Try to get room details which might include participant info
       // This is optional - we can work with just participantIds and messages
@@ -111,23 +130,150 @@ export const ParticipantsModal: React.FC<ParticipantsModalProps> = ({
       // If room data has participants with details, use that (PREFERRED - most reliable)
       if (roomData?.participants && Array.isArray(roomData.participants)) {
         console.log('[ParticipantsModal] Using participants from room data:', roomData.participants.length);
-        const participantList = roomData.participants
-          .map((p: { participantId?: string; id?: string; name?: string; username?: string; email?: string; participantType?: string; type?: string }) => {
+        
+        // Process participants and fetch missing agent names
+        const participantList = await Promise.all(
+          roomData.participants.map(async (p: { participantId?: string; id?: string; name?: string; username?: string; email?: string; participantType?: string; type?: string }) => {
             const id = p.participantId || p.id;
             if (!id) return null; // Skip if no ID
-            const fromMessages = nameMap.get(id);
-            // Priority: p.name (from room service) > p.username > email prefix > fromMessages > fallback
-            const name = p.name || p.username || p.email?.split('@')[0] || fromMessages?.name || 
-                         (id.includes('@') ? id.split('@')[0] : `User ${id.slice(0, 8)}`);
+            
+            // Normalize ID for comparison (trim whitespace, convert to string)
+            const normalizedId = String(id).trim();
+            const fromMessages = nameMap.get(normalizedId);
+            console.log(`[ParticipantsModal] Processing participant ${id}:`, {
+              participantId: id,
+              normalizedId,
+              fromRoomData: { 
+                name: p.name, 
+                username: p.username, 
+                email: p.email,
+                participantType: p.participantType,
+                type: p.type,
+              },
+              fromMessages: fromMessages ? { name: fromMessages.name, type: fromMessages.type } : null,
+            });
+            
+            // Determine participant type - prioritize room data, then messages, then heuristics
+            // If no email address, it's likely an agent (MongoDB ObjectId), otherwise human
+            const isEmail = normalizedId.includes('@');
+            const participantType = p.participantType || p.type || fromMessages?.type || 
+                                   (isEmail ? 'human' : 'agent');
+            
+            // Priority: fromMessages (most reliable) > p.name (from room service) > p.username > email prefix > fetch from API (for agents) > fallback
+            // CRITICAL: Check fromMessages FIRST if it's an agent, since messages have the most reliable name
+            // Also check if p.name is just a placeholder (starts with "agent_" or equals the ID)
+            // This handles cases where room data returns placeholder names like "agent_1765025168144"
+            const isPlaceholderName = p.name && (
+              p.name.startsWith('agent_') || 
+              p.name === normalizedId || 
+              p.name === id ||
+              p.name === `agent_${normalizedId}` ||
+              p.name === `agent_${id}` ||
+              p.name.startsWith('User ')
+            );
+            
+            // Get email prefix, but check if it's also a placeholder
+            const emailPrefix = p.email?.split('@')[0];
+            const isEmailPrefixPlaceholder = emailPrefix && (
+              emailPrefix.startsWith('agent_') ||
+              emailPrefix === normalizedId ||
+              emailPrefix === id
+            );
+            
+            // Priority: fromMessages (most reliable) > p.name (if not placeholder) > p.username > email prefix (if not placeholder) > fetch from API (for agents) > fallback
+            let name = fromMessages?.name || 
+                      (!isPlaceholderName ? p.name : null) || 
+                      p.username || 
+                      (!isEmailPrefixPlaceholder ? emailPrefix : null);
+            
+            console.log(`[ParticipantsModal] Name resolution for ${normalizedId}:`, {
+              fromMessagesName: fromMessages?.name,
+              roomDataName: p.name,
+              isPlaceholderName,
+              roomDataUsername: p.username,
+              currentName: name,
+              participantType,
+              hasParticipantType: !!(p.participantType || p.type),
+              isEmail,
+              willTryAgentAPI: !name && (participantType === 'agent' || !isEmail),
+            });
+            
+            // If name is still missing, try to fetch it
+            // Strategy: If it's not an email (likely an agent with MongoDB ObjectId), try agent API first
+            // If that fails or it's an email, fall back to user search or default
+            if (!name) {
+              // Try agent API if:
+              // 1. It's explicitly an agent, OR
+              // 2. It's not an email (MongoDB ObjectId format, likely an agent)
+              const shouldTryAgent = participantType === 'agent' || !isEmail;
+              
+              if (shouldTryAgent) {
+                console.log(`[ParticipantsModal] No name found for ${participantType === 'agent' ? 'agent' : 'non-email participant'} ${normalizedId}, trying agent API...`);
+                try {
+                  const { agentsApi } = await import('../../utils/api');
+                  try {
+                    const agentResponse = await agentsApi.getAgent(normalizedId);
+                    // The API returns { agent, agentProfile }, and name is in agentProfile
+                    const agentProfile = (agentResponse as any).agentProfile;
+                    name = agentProfile?.name || agentProfile?.displayName || (agentResponse as any).agent?.name;
+                    if (name) {
+                      console.log(`[ParticipantsModal] ✅ Fetched agent name from API for ${normalizedId}: ${name}`);
+                    } else {
+                      console.warn(`[ParticipantsModal] ⚠️ Agent API returned no name for ${normalizedId}`, {
+                        hasAgent: !!(agentResponse as any).agent,
+                        hasAgentProfile: !!agentProfile,
+                        agentProfileName: agentProfile?.name,
+                        agentProfileDisplayName: agentProfile?.displayName,
+                      });
+                    }
+                  } catch (agentError: any) {
+                    console.log(`[ParticipantsModal] Agent API call failed for ${normalizedId} (${agentError?.status || agentError?.message}), trying search...`);
+                    // Try search as fallback
+                    try {
+                      const agentSearchResult = await searchApi.autocomplete(normalizedId, 1, ['agents']);
+                      if (agentSearchResult.agents && agentSearchResult.agents.length > 0) {
+                        const agent = agentSearchResult.agents.find((a: any) => a.id === normalizedId) || agentSearchResult.agents[0];
+                        if (agent) {
+                          name = (agent as any).title || (agent as any).subtitle || (agent as any).snippet;
+                          if (name) {
+                            console.log(`[ParticipantsModal] ✅ Fetched agent name from search for ${normalizedId}: ${name}`);
+                          }
+                        }
+                      } else {
+                        console.log(`[ParticipantsModal] No agent found in search for ${normalizedId}`);
+                      }
+                    } catch (searchError) {
+                      console.log(`[ParticipantsModal] Search also failed for ${normalizedId}:`, searchError);
+                    }
+                  }
+                } catch (error) {
+                  console.error(`[ParticipantsModal] Error importing agentsApi for ${normalizedId}:`, error);
+                }
+              }
+              
+              // If still no name and it's an email, we already tried email prefix above
+              // For non-emails that failed agent API, we'll use fallback below
+              if (!name && isEmail) {
+                console.log(`[ParticipantsModal] No name found for human ${normalizedId}, using email prefix fallback`);
+              }
+            }
+            
+            // Final fallback if name is still missing
+            if (!name) {
+              name = id.includes('@') ? id.split('@')[0] : `User ${id.slice(0, 8)}`;
+            }
+            
             return {
-              id,
+              id: normalizedId,
               name,
-              type: p.participantType || p.type || fromMessages?.type || (id.includes('agent') ? 'agent' : 'human'),
+              type: participantType as 'human' | 'agent',
             };
           })
-          .filter((p: Participant | null): p is Participant => p !== null);
-        console.log('[ParticipantsModal] Participant list with names:', participantList.map((p: Participant) => ({ id: p.id, name: p.name })));
-        setParticipants(participantList);
+        );
+        
+        const filteredList = participantList.filter((p: Participant | null): p is Participant => p !== null);
+        console.log('[ParticipantsModal] Participant list with names:', filteredList.map((p: Participant) => ({ id: p.id, name: p.name, type: p.type })));
+        setParticipants(filteredList);
         setLoading(false);
         return;
       }
