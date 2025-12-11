@@ -11,6 +11,7 @@ export const AVATAR_CONFIG = {
   
   // 3D Providers
   READY_PLAYER_ME_API_KEY: process.env.READY_PLAYER_ME_API_KEY || '',
+  READY_PLAYER_ME_APP_ID: process.env.READY_PLAYER_ME_APP_ID || '',
   MESHY_API_KEY: process.env.MESHY_API_KEY || '',
   MESHY_API_BASE_URL: process.env.MESHY_API_BASE_URL || 'https://api.meshy.ai',
   

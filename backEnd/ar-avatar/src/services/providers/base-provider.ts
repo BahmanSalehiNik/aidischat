@@ -20,7 +20,7 @@ export interface IModelProvider {
   /**
    * Generate a 3D model from character description
    */
-  generateModel(description: CharacterDescription): Promise<GeneratedModel>;
+  generateModel(description: CharacterDescription, agentId?: string): Promise<GeneratedModel>;
 
   /**
    * Get provider name
@@ -45,7 +45,7 @@ export abstract class BaseModelProvider implements IModelProvider {
     this.baseUrl = baseUrl;
   }
 
-  abstract generateModel(description: CharacterDescription): Promise<GeneratedModel>;
+  abstract generateModel(description: CharacterDescription, agentId?: string): Promise<GeneratedModel>;
   abstract getName(): string;
 
   isAvailable(): boolean {

@@ -17,7 +17,7 @@ export class MeshyProvider extends BaseModelProvider {
     return 'meshy';
   }
 
-  async generateModel(description: CharacterDescription): Promise<GeneratedModel> {
+  async generateModel(description: CharacterDescription, agentId?: string): Promise<GeneratedModel> {
     console.log('[MeshyProvider] Starting model generation...');
     
     if (!this.isAvailable()) {
@@ -88,15 +88,20 @@ export class MeshyProvider extends BaseModelProvider {
 
   private mapToArtStyle(style: string): string {
     // Map character style to Meshy art style
+    // Note: Available art styles may vary by API plan
+    // Common values: realistic, cartoon, low-poly, sculpture, pbr
+    // For this account, only realistic and sculpture are available
     const styleMap: Record<string, string> = {
-      'anime': 'anime',
-      'chibi': 'anime',
+      'anime': 'sculpture',
+      'chibi': 'sculpture',
       'realistic': 'realistic',
-      'cartoon': 'stylized',
-      'robot': 'stylized',
-      'fantasy': 'stylized',
+      'cartoon': 'sculpture',
+      'robot': 'sculpture',
+      'fantasy': 'sculpture',
+      'stylized': 'sculpture',
     };
-    return styleMap[style.toLowerCase()] || 'anime';
+    // Default to sculpture for character avatars (more stylized)
+    return styleMap[style.toLowerCase()] || 'sculpture';
   }
 
   private async pollTask(

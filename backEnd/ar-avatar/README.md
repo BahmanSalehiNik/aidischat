@@ -110,26 +110,62 @@ npm start
 - TTS service is backend-based in Phase 1, will migrate to client-side in Phase 2
 - Storage and provider integrations are placeholders - need actual API implementations
 
-## Next Steps
+## Prerequisites
 
 ### 1. Set Up Kubernetes Secrets
 
-Before deploying, create the required Kubernetes secrets:
+**⚠️ IMPORTANT: You must create the required secrets before deploying the service.**
+
+#### AR Avatar Service Secrets
+
+Create the `ar-avatar-secrets` secret with 3D provider API keys:
 
 ```bash
 kubectl create secret generic ar-avatar-secrets \
   --from-literal=ready-player-me-api-key='YOUR_READY_PLAYER_ME_API_KEY' \
   --from-literal=meshy-api-key='YOUR_MESHY_API_KEY' \
-  --from-literal=llm-api-key='YOUR_LLM_API_KEY' \
-  --from-literal=openai-api-key='YOUR_OPENAI_API_KEY' \
   --from-literal=google-tts-api-key='YOUR_GOOGLE_TTS_API_KEY' \
   --from-literal=azure-tts-key='YOUR_AZURE_TTS_KEY'
 ```
 
-**Minimum Required Secrets:**
-- `ready-player-me-api-key` - For 3D model generation (default provider)
-- `llm-api-key` - For character description generation
-- `openai-api-key` - For TTS generation
+**Required Secrets for AR Avatar:**
+- `ready-player-me-api-key` - **REQUIRED** - For 3D model generation (default provider)
+  - Get your API key from: https://readyplayer.me/developers
+  - This is the only real API key needed for current testing
+
+**Optional Secrets (can use dummy tokens for testing):**
+- `meshy-api-key` - Optional - For alternative 3D model generation
+  - Currently not actively used, can use dummy token: `dummy-meshy-token-for-testing`
+  - Get your API key from: https://www.meshy.ai/ when ready to use
+- `google-tts-api-key` - Optional - Only needed if using Google Cloud TTS
+  - Can use dummy token: `dummy-google-tts-token` for testing
+- `azure-tts-key` - Optional - Only needed if using Azure TTS
+  - Can use dummy token: `dummy-azure-tts-token` for testing
+
+**Quick Test Setup:**
+```bash
+kubectl create secret generic ar-avatar-secrets \
+  --from-literal=ready-player-me-api-key='YOUR_REAL_READY_PLAYER_ME_KEY' \
+  --from-literal=meshy-api-key='dummy-meshy-token-for-testing' \
+  --from-literal=google-tts-api-key='dummy-google-tts-token' \
+  --from-literal=azure-tts-key='dummy-azure-tts-token'
+```
+
+#### AI Provider Secrets (Shared with AI Gateway)
+
+The service also uses the shared `ai-provider-secrets` for LLM and TTS:
+
+```bash
+kubectl create secret generic ai-provider-secrets \
+  --from-literal=OPENAI_API_KEY='YOUR_OPENAI_API_KEY' \
+  --from-literal=ANTHROPIC_API_KEY='YOUR_ANTHROPIC_API_KEY' \
+  --from-literal=COHERE_API_KEY='YOUR_COHERE_API_KEY'
+```
+
+**Required for AR Avatar:**
+- `OPENAI_API_KEY` - **Required** - Used for both LLM character description generation and TTS
+
+**Note:** If `ai-provider-secrets` already exists (from AI Gateway setup), you don't need to recreate it.
 
 See `infra/k8s/ar-avatar-secrets-setup.md` for detailed instructions.
 

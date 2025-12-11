@@ -17,6 +17,13 @@ const startService = async () => {
         throw new Error("KAFKA_BROKER_URL must be defined!");
     }
     
+    // Start HTTP server FIRST (for health checks) - like other services
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+        console.log(`✅ [AI Chat Host] Service listening on port ${PORT}`);
+    });
+
+    // Connect to dependencies in the background (non-blocking)
     try {
         // ------------ Mongoose ----------
         console.log("🔌 [AI Chat Host] Connecting to MongoDB...");
@@ -69,16 +76,11 @@ const startService = async () => {
         });
 
         console.log("✅ [AI Chat Host] All Kafka listeners started");
-
-        // Start HTTP server (for health checks)
-        const PORT = process.env.PORT || 3000;
-        app.listen(PORT, () => {
-            console.log(`✅ [AI Chat Host] Service listening on port ${PORT}`);
-        });
         
     } catch (err) {
-        console.error("❌ [AI Chat Host] Error starting service:", err);
-        process.exit(1);
+        console.error("❌ [AI Chat Host] Error connecting to dependencies:", err);
+        // Don't exit - let the service continue running and retry connections
+        // The health endpoint is already available
     }
 };
 

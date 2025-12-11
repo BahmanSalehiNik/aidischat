@@ -39,7 +39,8 @@ export class ModelGenerator {
 
     // Step 3: Generate model using provider
     console.log(`[ModelGenerator] Step 2: Generating model using ${provider.getName()}...`);
-    const model = await provider.generateModel(description);
+    const agentId = agentProfile.id || agentProfile.agentId;
+    const model = await provider.generateModel(description, agentId);
 
     console.log(`[ModelGenerator] Model generation completed: ${model.modelId}`);
     return model;
@@ -52,16 +53,15 @@ export class ModelGenerator {
     description: CharacterDescription,
     preferredStyle?: '3d' | 'anime'
   ): IModelProvider {
-    // Default to Ready Player Me
-    // Can be customized based on style preferences
-    if (preferredStyle === 'anime' || description.style === 'anime' || description.style === 'chibi') {
-      // Prefer Meshy for anime style if available
-      if (ProviderFactory.isProviderAvailable('meshy')) {
-        return ProviderFactory.createProvider('meshy');
-      }
+    // Meshy supports text-to-3D from descriptions (works for all styles)
+    // Ready Player Me only supports photo-based generation or web builder
+    // So we prefer Meshy by default
+    if (ProviderFactory.isProviderAvailable('meshy')) {
+      return ProviderFactory.createProvider('meshy');
     }
     
-    // Default to Ready Player Me
+    // Fallback to Ready Player Me if Meshy is not available
+    // Note: Ready Player Me requires photo-based generation, not programmatic creation
     return this.defaultProvider;
   }
 }

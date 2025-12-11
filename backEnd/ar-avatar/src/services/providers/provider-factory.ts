@@ -13,7 +13,10 @@ export class ProviderFactory {
   static createProvider(providerName: 'ready-player-me' | 'meshy'): IModelProvider {
     switch (providerName) {
       case 'ready-player-me':
-        return new ReadyPlayerMeProvider(AVATAR_CONFIG.READY_PLAYER_ME_API_KEY);
+        return new ReadyPlayerMeProvider(
+          AVATAR_CONFIG.READY_PLAYER_ME_API_KEY,
+          AVATAR_CONFIG.READY_PLAYER_ME_APP_ID
+        );
       
       case 'meshy':
         return new MeshyProvider(AVATAR_CONFIG.MESHY_API_KEY);
@@ -27,7 +30,12 @@ export class ProviderFactory {
    * Get the default provider
    */
   static getDefaultProvider(): IModelProvider {
-    // Default to Ready Player Me
+    // Default to Meshy (supports text-to-3D from descriptions)
+    // Ready Player Me requires photo-based generation or web builder
+    if (AVATAR_CONFIG.MESHY_API_KEY) {
+      return this.createProvider('meshy');
+    }
+    // Fallback to Ready Player Me if Meshy is not available
     return this.createProvider('ready-player-me');
   }
 

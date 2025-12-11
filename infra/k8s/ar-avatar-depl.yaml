@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
         - name: ar-avatar
-          image: bahmansalehinic4/ar-avatar
+          image: bahmansalehinic4/ar-avatar:latest
+          imagePullPolicy: Always
           resources:
             requests:
               memory: "512Mi"
@@ -45,11 +46,19 @@ spec:
                 secretKeyRef:
                   name: ar-avatar-secrets
                   key: ready-player-me-api-key
+                  optional: true
+            - name: READY_PLAYER_ME_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ar-avatar-secrets
+                  key: ready-player-me-app-id
+                  optional: true
             - name: MESHY_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: ar-avatar-secrets
                   key: meshy-api-key
+                  optional: true
             - name: MESHY_API_BASE_URL
               value: "https://api.meshy.ai"
             
@@ -61,8 +70,9 @@ spec:
             - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: ar-avatar-secrets
-                  key: llm-api-key
+                  name: ai-provider-secrets
+                  key: OPENAI_API_KEY
+                  optional: true
             
             # TTS Provider Configuration
             - name: TTS_PROVIDER
@@ -70,8 +80,9 @@ spec:
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: ar-avatar-secrets
-                  key: openai-api-key
+                  name: ai-provider-secrets
+                  key: OPENAI_API_KEY
+                  optional: true
             - name: GOOGLE_TTS_API_KEY
               valueFrom:
                 secretKeyRef:
