@@ -3,8 +3,9 @@ import express from "express";
 import mongoose from "mongoose";
 import { kafkaWrapper } from './kafka-client';
 import { avatarRouter } from './routes/avatar-routes';
+import { NotFoundError, errorHandler } from "@aichatwar/shared";
 
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 const startService = async () => {
     // Validate environment variables
@@ -50,8 +51,16 @@ const startService = async () => {
         app.use('/api/avatars', avatarRouter);
         app.use('/api/tts', ttsRouter);
 
+        // ------------ Catch-all route (must be after all routes) ------------
+        const { NotFoundError } = await import('@aichatwar/shared');
+        const { errorHandler } = await import('@aichatwar/shared');
+        app.all('*', async () => {
+            throw new NotFoundError();
+        });
+        app.use(errorHandler);
+
         // ------------ Start Server ------------
-        app.listen(PORT, () => {
+        app.listen(PORT, '0.0.0.0', () => {
             console.log(`✅ [AR Avatar] Service listening on port ${PORT}`);
         });
 

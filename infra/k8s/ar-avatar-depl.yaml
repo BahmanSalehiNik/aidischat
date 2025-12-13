@@ -37,8 +37,20 @@ spec:
             # Storage Configuration
             - name: STORAGE_PROVIDER
               value: "azure"  # or "s3"
+            - name: STORAGE_CONTAINER
+              value: "avatars"  # Container/bucket name for avatar models
+            - name: AZURE_STORAGE_ACCOUNT
+              valueFrom:
+                secretKeyRef:
+                  name: azure-storage
+                  key: AZURE_STORAGE_ACCOUNT
+            - name: AZURE_STORAGE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: azure-storage
+                  key: AZURE_STORAGE_KEY
             - name: CDN_BASE_URL
-              value: ""  # Set your CDN base URL
+              value: ""  # Set your CDN base URL (optional)
             
             # 3D Provider Configuration
             - name: READY_PLAYER_ME_API_KEY
@@ -107,6 +119,18 @@ spec:
               value: "glb"  # "glb" | "vrm" | "live2d"
             - name: GENERATION_STRATEGY
               value: "hybrid"  # "pre-generate" | "on-demand" | "hybrid"
+            
+            # Storage Retry Configuration
+            - name: STORAGE_DOWNLOAD_RETRIES
+              value: "3"  # Number of retry attempts for downloads
+            - name: STORAGE_UPLOAD_RETRIES
+              value: "3"  # Number of retry attempts for uploads
+            - name: STORAGE_RETRY_DELAY_MS
+              value: "1000"  # Initial retry delay in milliseconds
+            - name: STORAGE_MAX_RETRY_DELAY_MS
+              value: "30000"  # Maximum retry delay in milliseconds
+            - name: STORAGE_DOWNLOAD_TIMEOUT_MS
+              value: "300000"  # 5 minutes timeout for large file downloads
             
             # Token Service Configuration (for Phase 2)
             - name: TOKEN_LIFETIME_SECONDS

@@ -36,6 +36,7 @@ export interface AgentDoc extends mongoose.Document {
   provisionedAt?: Date;
   lastProvisioningFailedAt?: Date;
   agentProfileId?: string;
+  eventPublishedAt?: Date; // Timestamp when agent.ingested event was successfully published
   // Model configuration
   modelProvider: string;
   modelName: string;
@@ -72,6 +73,7 @@ const agentSchema = new mongoose.Schema(
     provisionedAt: { type: Date },
     lastProvisioningFailedAt: { type: Date },
     agentProfileId: { type: String, index: true, default: null },
+    eventPublishedAt: { type: Date, default: null, index: true }, // Track when event was published
     // Model configuration
     modelProvider: { 
       type: String, 

@@ -7,7 +7,14 @@ export const AVATAR_CONFIG = {
   
   // Storage
   STORAGE_PROVIDER: process.env.STORAGE_PROVIDER || 'azure', // 'azure' | 's3'
+  STORAGE_CONTAINER: process.env.STORAGE_CONTAINER || 'avatars', // Container/bucket name
   CDN_BASE_URL: process.env.CDN_BASE_URL || '',
+  // Storage retry configuration
+  STORAGE_DOWNLOAD_RETRIES: parseInt(process.env.STORAGE_DOWNLOAD_RETRIES || '3', 10),
+  STORAGE_UPLOAD_RETRIES: parseInt(process.env.STORAGE_UPLOAD_RETRIES || '3', 10),
+  STORAGE_RETRY_DELAY_MS: parseInt(process.env.STORAGE_RETRY_DELAY_MS || '1000', 10),
+  STORAGE_MAX_RETRY_DELAY_MS: parseInt(process.env.STORAGE_MAX_RETRY_DELAY_MS || '30000', 10),
+  STORAGE_DOWNLOAD_TIMEOUT_MS: parseInt(process.env.STORAGE_DOWNLOAD_TIMEOUT_MS || '300000', 10), // 5 minutes
   
   // 3D Providers
   READY_PLAYER_ME_API_KEY: process.env.READY_PLAYER_ME_API_KEY || '',

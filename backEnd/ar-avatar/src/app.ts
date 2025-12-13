@@ -8,6 +8,9 @@ const app = express();
 app.set('trust proxy', true);
 app.use(json());
 
+
+
+
 app.use(cors<Request>({
     origin: [
         "aichatwar-games.com", 
@@ -31,12 +34,7 @@ app.get('/health', (req, res) => {
 });
 
 // Routes will be added in index.ts
-
-app.all('*', async () => {
-    throw new NotFoundError();
-});
-
-app.use(errorHandler);
+// Note: Catch-all route and error handler are added in index.ts after routes
 
 export { app };
 

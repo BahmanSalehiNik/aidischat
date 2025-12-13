@@ -15,6 +15,7 @@ spec:
       containers:
         - name: agent
           image: bahmansalehinic4/agent
+          imagePullPolicy: Always
           resources:
             requests:
               memory: "512Mi"

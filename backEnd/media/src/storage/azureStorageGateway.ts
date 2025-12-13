@@ -38,7 +38,30 @@ export class AzureStorageGateway {
     const containerClient = this.client.getContainerClient(containerName);
     const exists = await containerClient.exists();
     if (!exists) {
-      await containerClient.create();
+      try {
+        // Create container without public access (private container)
+        // We'll use SAS URLs for accessing blobs
+        await containerClient.create();
+        console.log(`[AzureStorageGateway] Created container: ${containerName} (private, using SAS URLs)`);
+      } catch (error: any) {
+        // If creation fails, check if container was created by another process
+        const stillExists = await containerClient.exists();
+        if (stillExists) {
+          console.log(`[AzureStorageGateway] Container ${containerName} already exists`);
+          return;
+        }
+        
+        // If error is about public access, log and continue (container might be created manually)
+        if (error.code === 'PublicAccessNotPermitted' || error.message?.includes('Public access is not permitted')) {
+          console.warn(`[AzureStorageGateway] Cannot create container ${containerName} with public access. Container may need to be created manually, or will use SAS URLs.`);
+          // Don't throw - we'll use SAS URLs for access
+          return;
+        }
+        
+        // For other errors, throw
+        console.error(`[AzureStorageGateway] Failed to create container ${containerName}:`, error);
+        throw error;
+      }
     }
   }
 

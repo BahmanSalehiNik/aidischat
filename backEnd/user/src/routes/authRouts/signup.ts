@@ -30,12 +30,20 @@ async (req: Request, res: Response)=>{
     const user =  User.add({email, password});
     await user.save();
 
-    await new UserCreatedPublisher(kafkaWrapper.producer).publish({
+    // Publish to Kafka - don't block signup if Kafka is unavailable
+    try {
+      await new UserCreatedPublisher(kafkaWrapper.producer).publish({
         id:user.id,
         email:user.email,
         status:user.status,
         version: user.version
-    })
+      });
+      console.log(`[signup] Successfully published user.created event for user ${user.id}`);
+    } catch (error: any) {
+      // Log error but don't fail signup - user is already saved to DB
+      console.error(`[signup] Failed to publish user.created event for user ${user.id}:`, error.message || error);
+      // Signup will still succeed even if Kafka publish fails
+    }
     
     // creating the jwt 
     const userJwt = jwt.

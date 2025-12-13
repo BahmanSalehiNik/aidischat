@@ -37,7 +37,7 @@ const startMongoose = async ()=>{
         await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
         console.log("Kafka connected successfully");
 
-        app.listen(3000, ()=>{
+        app.listen(3000, '0.0.0.0', ()=>{
             console.log("app listening on port 3000! user service")
         });
         

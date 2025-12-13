@@ -1,5 +1,6 @@
-import axios from 'axios';
 import { AVATAR_CONFIG } from '../config/constants';
+import { StorageFactory, StorageProvider } from '../storage/storageFactory';
+import { StorageGateway } from '../storage/storageGateway';
 
 export interface UploadResult {
   url: string;
@@ -8,6 +9,17 @@ export interface UploadResult {
 }
 
 export class StorageService {
+  private storageGateway: StorageGateway;
+  private containerName: string;
+
+  constructor() {
+    // Initialize storage gateway using factory
+    const provider = StorageFactory.getProviderFromEnv();
+    this.storageGateway = StorageFactory.create(provider);
+    this.containerName = AVATAR_CONFIG.STORAGE_CONTAINER;
+    console.log(`[StorageService] Initialized with provider: ${provider}, container: ${this.containerName}`);
+  }
+
   /**
    * Upload model file to object storage (Azure Blob / S3)
    */
@@ -16,80 +28,100 @@ export class StorageService {
     fileName: string,
     contentType: string = 'application/octet-stream'
   ): Promise<UploadResult> {
-    if (AVATAR_CONFIG.STORAGE_PROVIDER === 'azure') {
-      return this.uploadToAzure(fileBuffer, fileName, contentType);
-    } else if (AVATAR_CONFIG.STORAGE_PROVIDER === 's3') {
-      return this.uploadToS3(fileBuffer, fileName, contentType);
-    } else {
-      throw new Error(`Unsupported storage provider: ${AVATAR_CONFIG.STORAGE_PROVIDER}`);
-    }
+    // Generate blob key: avatars/{timestamp}/{fileName}
+    const timestamp = Date.now();
+    const key = `avatars/${timestamp}/${fileName}`;
+
+    console.log(`[StorageService] Uploading ${fileName} (${fileBuffer.length} bytes) to ${this.containerName}/${key}`);
+
+    // Upload using storage gateway
+    const url = await this.storageGateway.uploadBuffer(
+      this.containerName,
+      key,
+      fileBuffer,
+      contentType
+    );
+
+    // Generate CDN URL if configured
+    const finalUrl = this.generateCDNUrl(key) || url;
+
+    return {
+      url: finalUrl,
+      key,
+      container: this.containerName,
+    };
   }
 
   /**
    * Generate CDN URL from storage key
+   * Returns CDN URL if configured, otherwise returns empty string (caller should use storage URL)
    */
   generateCDNUrl(key: string): string {
     if (AVATAR_CONFIG.CDN_BASE_URL) {
       return `${AVATAR_CONFIG.CDN_BASE_URL}/${key}`;
     }
-    // Fallback: return storage URL (will be replaced with CDN later)
-    return key;
-  }
-
-  private async uploadToAzure(
-    fileBuffer: Buffer,
-    fileName: string,
-    contentType: string
-  ): Promise<UploadResult> {
-    // TODO: Implement Azure Blob Storage upload
-    // For now, return placeholder
-    console.log('[StorageService] Azure upload (placeholder)');
-    
-    const key = `avatars/${Date.now()}/${fileName}`;
-    const url = `https://storage.example.com/${key}`;
-    
-    return {
-      url,
-      key,
-      container: 'avatars',
-    };
-  }
-
-  private async uploadToS3(
-    fileBuffer: Buffer,
-    fileName: string,
-    contentType: string
-  ): Promise<UploadResult> {
-    // TODO: Implement S3 upload
-    // For now, return placeholder
-    console.log('[StorageService] S3 upload (placeholder)');
-    
-    const key = `avatars/${Date.now()}/${fileName}`;
-    const url = `https://s3.example.com/${key}`;
-    
-    return {
-      url,
-      key,
-    };
+    // Return empty string - caller should use the storage URL from uploadResult
+    return '';
   }
 
   /**
    * Download model from provider URL and upload to storage
+   * Supports progress tracking and automatic retries
    */
-  async downloadAndStore(providerUrl: string, fileName: string): Promise<UploadResult> {
+  async downloadAndStore(
+    providerUrl: string, 
+    fileName: string,
+    onProgress?: (bytesDownloaded: number, totalBytes?: number) => void
+  ): Promise<UploadResult> {
     console.log(`[StorageService] Downloading from ${providerUrl}...`);
     
-    // Download from provider
-    const response = await axios.get(providerUrl, {
-      responseType: 'arraybuffer',
-      timeout: 30000, // 30 seconds
-    });
+    // Generate blob key
+    const timestamp = Date.now();
+    const key = `avatars/${timestamp}/${fileName}`;
 
-    const fileBuffer = Buffer.from(response.data);
-    const contentType = response.headers['content-type'] || 'application/octet-stream';
+    // Use storage gateway's uploadFromUrl method with progress tracking
+    const url = await this.storageGateway.uploadFromUrl(
+      this.containerName,
+      key,
+      providerUrl,
+      undefined, // contentType will be inferred
+      onProgress
+    );
 
-    // Upload to storage
-    return this.uploadModel(fileBuffer, fileName, contentType);
+    // Generate CDN URL if configured
+    const finalUrl = this.generateCDNUrl(key) || url;
+
+    return {
+      url: finalUrl,
+      key,
+      container: this.containerName,
+    };
+  }
+
+  /**
+   * Generate a signed download URL (useful for private containers)
+   */
+  async generateDownloadUrl(key: string, expiresSeconds: number = 900): Promise<string> {
+    return this.storageGateway.generateDownloadUrl(this.containerName, key, expiresSeconds);
+  }
+
+  /**
+   * Generate a signed download URL for any container/blob (for media service)
+   * This allows the AR avatar service to sign URLs for media stored in other containers
+   */
+  async generateSignedUrlForBlob(
+    containerName: string,
+    blobName: string,
+    expiresSeconds: number = 900
+  ): Promise<string> {
+    return this.storageGateway.generateDownloadUrl(containerName, blobName, expiresSeconds);
+  }
+
+  /**
+   * Delete a model from storage
+   */
+  async deleteModel(key: string): Promise<void> {
+    await this.storageGateway.deleteObject(this.containerName, key);
   }
 }
 

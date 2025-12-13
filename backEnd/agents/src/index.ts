@@ -11,6 +11,7 @@ import {
     GroupIdAgentCreationReplyFailed
 } from './events/listeners/queGroupNames';
 import { AgentCreationReplySuccessListener, AgentCreationReplyFailedListener } from './events/listeners/agentProvisionListeners';
+import { eventRetryWorker } from './workers/event-retry-worker';
 
 
 
@@ -53,7 +54,10 @@ const startMongoose = async ()=>{
         new AgentCreationReplySuccessListener(kafkaWrapper.consumer(GroupIdAgentCreationReplySuccess)).listen();
         new AgentCreationReplyFailedListener(kafkaWrapper.consumer(GroupIdAgentCreationReplyFailed)).listen();
 
-        app.listen(3000, ()=>{
+        // Start background worker to retry publishing events for agents created during Kafka outages
+        eventRetryWorker.start();
+
+        app.listen(3000, '0.0.0.0', ()=>{
             console.log("app listening on port 3000! agents service")
         });
         
@@ -64,14 +68,3 @@ const startMongoose = async ()=>{
 }
 
 startMongoose()
-
-
-
-app.use(function (req: express.Request, res: express.Response, next) {
-    next({ status: 404 });
-});
-
-app.use(function (err: any, req: express.Request, res: express.Response, next: express.NextFunction) {
-    console.error(err);
-    res.status(err.status || 500).json();
-});

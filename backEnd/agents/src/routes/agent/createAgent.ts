@@ -102,70 +102,82 @@ router.post(
       requesterUserId: user.id,
     };
 
-    await new AgentIngestedPublisher(kafkaWrapper.producer).publish({
-      id: agent.id,
-      agentId: agent.id,
-      ownerUserId: agent.ownerUserId,
-      version: agent.version,
-      correlationId,
-      profile: {
-        modelProvider: agent.modelProvider,
-        modelName: agent.modelName,
-        systemPrompt: agent.systemPrompt,
-        tools: agent.tools || [],
-        rateLimits: agent.rateLimits,
-        voiceId: agent.voiceId || '',
-        memory: agent.memory || {},
-        privacy: agent.privacy,
-      },
-      character: (() => {
-        // Only include defined values to avoid serialization issues
-        const char: any = {
-          name: agentProfile.name,
-        };
-        
-        if (agentProfile.displayName) char.displayName = agentProfile.displayName;
-        if (agentProfile.title) char.title = agentProfile.title;
-        if (agentProfile.age !== undefined && agentProfile.age !== null) char.age = agentProfile.age;
-        if (agentProfile.ageRange) char.ageRange = agentProfile.ageRange;
-        if (agentProfile.gender) char.gender = agentProfile.gender;
-        if (agentProfile.nationality) char.nationality = agentProfile.nationality;
-        if (agentProfile.ethnicity) char.ethnicity = agentProfile.ethnicity;
-        if (agentProfile.breed) char.breed = agentProfile.breed;
-        if (agentProfile.subtype) char.subtype = agentProfile.subtype;
-        if (agentProfile.height) char.height = agentProfile.height;
-        if (agentProfile.build) char.build = agentProfile.build;
-        if (agentProfile.hairColor) char.hairColor = agentProfile.hairColor;
-        if (agentProfile.eyeColor) char.eyeColor = agentProfile.eyeColor;
-        if (agentProfile.skinTone) char.skinTone = agentProfile.skinTone;
-        if (agentProfile.distinguishingFeatures && agentProfile.distinguishingFeatures.length > 0) {
-          char.distinguishingFeatures = agentProfile.distinguishingFeatures;
-        }
-        if (agentProfile.profession) char.profession = agentProfile.profession;
-        if (agentProfile.role) char.role = agentProfile.role;
-        if (agentProfile.specialization) char.specialization = agentProfile.specialization;
-        if (agentProfile.organization) char.organization = agentProfile.organization;
-        if (agentProfile.personality && agentProfile.personality.length > 0) {
-          char.personality = agentProfile.personality;
-        }
-        if (agentProfile.communicationStyle) char.communicationStyle = agentProfile.communicationStyle;
-        if (agentProfile.speechPattern) char.speechPattern = agentProfile.speechPattern;
-        if (agentProfile.backstory) char.backstory = agentProfile.backstory;
-        if (agentProfile.origin) char.origin = agentProfile.origin;
-        if (agentProfile.currentLocation) char.currentLocation = agentProfile.currentLocation;
-        if (agentProfile.goals && agentProfile.goals.length > 0) char.goals = agentProfile.goals;
-        if (agentProfile.fears && agentProfile.fears.length > 0) char.fears = agentProfile.fears;
-        if (agentProfile.interests && agentProfile.interests.length > 0) char.interests = agentProfile.interests;
-        if (agentProfile.abilities && agentProfile.abilities.length > 0) char.abilities = agentProfile.abilities;
-        if (agentProfile.skills && agentProfile.skills.length > 0) char.skills = agentProfile.skills;
-        if (agentProfile.limitations && agentProfile.limitations.length > 0) char.limitations = agentProfile.limitations;
-        if (agentProfile.relationshipToUser) char.relationshipToUser = agentProfile.relationshipToUser;
-        
-        return char;
-      })(),
-      metadata,
-      ingestedAt: now.toISOString(),
-    });
+    // Publish to Kafka - don't block agent creation if Kafka is unavailable
+    try {
+      await new AgentIngestedPublisher(kafkaWrapper.producer).publish({
+        id: agent.id,
+        agentId: agent.id,
+        ownerUserId: agent.ownerUserId,
+        version: agent.version,
+        correlationId,
+        profile: {
+          modelProvider: agent.modelProvider,
+          modelName: agent.modelName,
+          systemPrompt: agent.systemPrompt,
+          tools: agent.tools || [],
+          rateLimits: agent.rateLimits,
+          voiceId: agent.voiceId || '',
+          memory: agent.memory || {},
+          privacy: agent.privacy,
+        },
+        character: (() => {
+          // Only include defined values to avoid serialization issues
+          const char: any = {
+            name: agentProfile.name,
+          };
+          
+          if (agentProfile.displayName) char.displayName = agentProfile.displayName;
+          if (agentProfile.title) char.title = agentProfile.title;
+          if (agentProfile.age !== undefined && agentProfile.age !== null) char.age = agentProfile.age;
+          if (agentProfile.ageRange) char.ageRange = agentProfile.ageRange;
+          if (agentProfile.gender) char.gender = agentProfile.gender;
+          if (agentProfile.nationality) char.nationality = agentProfile.nationality;
+          if (agentProfile.ethnicity) char.ethnicity = agentProfile.ethnicity;
+          if (agentProfile.breed) char.breed = agentProfile.breed;
+          if (agentProfile.subtype) char.subtype = agentProfile.subtype;
+          if (agentProfile.height) char.height = agentProfile.height;
+          if (agentProfile.build) char.build = agentProfile.build;
+          if (agentProfile.hairColor) char.hairColor = agentProfile.hairColor;
+          if (agentProfile.eyeColor) char.eyeColor = agentProfile.eyeColor;
+          if (agentProfile.skinTone) char.skinTone = agentProfile.skinTone;
+          if (agentProfile.distinguishingFeatures && agentProfile.distinguishingFeatures.length > 0) {
+            char.distinguishingFeatures = agentProfile.distinguishingFeatures;
+          }
+          if (agentProfile.profession) char.profession = agentProfile.profession;
+          if (agentProfile.role) char.role = agentProfile.role;
+          if (agentProfile.specialization) char.specialization = agentProfile.specialization;
+          if (agentProfile.organization) char.organization = agentProfile.organization;
+          if (agentProfile.personality && agentProfile.personality.length > 0) {
+            char.personality = agentProfile.personality;
+          }
+          if (agentProfile.communicationStyle) char.communicationStyle = agentProfile.communicationStyle;
+          if (agentProfile.speechPattern) char.speechPattern = agentProfile.speechPattern;
+          if (agentProfile.backstory) char.backstory = agentProfile.backstory;
+          if (agentProfile.origin) char.origin = agentProfile.origin;
+          if (agentProfile.currentLocation) char.currentLocation = agentProfile.currentLocation;
+          if (agentProfile.goals && agentProfile.goals.length > 0) char.goals = agentProfile.goals;
+          if (agentProfile.fears && agentProfile.fears.length > 0) char.fears = agentProfile.fears;
+          if (agentProfile.interests && agentProfile.interests.length > 0) char.interests = agentProfile.interests;
+          if (agentProfile.abilities && agentProfile.abilities.length > 0) char.abilities = agentProfile.abilities;
+          if (agentProfile.skills && agentProfile.skills.length > 0) char.skills = agentProfile.skills;
+          if (agentProfile.limitations && agentProfile.limitations.length > 0) char.limitations = agentProfile.limitations;
+          if (agentProfile.relationshipToUser) char.relationshipToUser = agentProfile.relationshipToUser;
+          
+          return char;
+        })(),
+        metadata,
+        ingestedAt: now.toISOString(),
+      });
+      // Mark event as published to prevent duplicate publishes
+      agent.eventPublishedAt = new Date();
+      await agent.save();
+      console.log(`[createAgent] Successfully published agent.ingested event for agent ${agent.id}`);
+    } catch (error: any) {
+      // Log error but don't fail agent creation - agent is already saved to DB
+      // eventPublishedAt remains null - background worker will retry
+      console.error(`[createAgent] Failed to publish agent.ingested event for agent ${agent.id}:`, error.message || error);
+      // Agent creation will still succeed even if Kafka publish fails
+    }
 
     res.status(201).send({
       agent,

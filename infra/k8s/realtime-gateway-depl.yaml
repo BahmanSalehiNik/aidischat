@@ -26,26 +26,38 @@ spec:
               # Required topics for realtime-gateway
               required_topics=("message.created" "chat.message.reaction.created" "chat.message.reaction.removed" "chat.message.reply.created")
               
-              # Wait for Kafka broker to be ready first
+              # Wait for Kafka broker to be ready first (faster check with shorter timeout)
               echo "Waiting for Kafka broker..."
-              for i in {1..60}; do
+              for i in {1..30}; do
                 if rpk cluster info --brokers $KAFKA_BROKER &>/dev/null; then
                   echo "✅ Kafka broker is ready"
                   break
                 fi
-                if [ $i -eq 60 ]; then
-                  echo "❌ Kafka broker not ready after 60 seconds"
+                if [ $i -eq 30 ]; then
+                  echo "❌ Kafka broker not ready after 30 seconds"
                   exit 1
                 fi
                 sleep 1
               done
               
-              # Wait for all required topics to exist
-              max_attempts=120
+              # Wait for all required topics to exist (optimized - check all at once)
+              max_attempts=60
               for attempt in $(seq 1 $max_attempts); do
+                # Get topic list once per attempt (more efficient)
+                topic_list=$(rpk topic list --brokers $KAFKA_BROKER 2>/dev/null || echo "")
+                
+                if [ -z "$topic_list" ]; then
+                  if [ $attempt -lt $max_attempts ]; then
+                    echo "Waiting for Kafka to respond... (attempt $attempt/$max_attempts)"
+                    sleep 2
+                    continue
+                  fi
+                fi
+                
+                # Check all topics at once
                 all_exist=true
                 for topic in "${required_topics[@]}"; do
-                  if ! rpk topic list --brokers $KAFKA_BROKER 2>/dev/null | grep -q "^$topic "; then
+                  if ! echo "$topic_list" | grep -q "^$topic "; then
                     all_exist=false
                     break
                   fi

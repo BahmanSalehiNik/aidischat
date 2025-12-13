@@ -235,7 +235,12 @@ manifests:
     # Phase 3: Ingress (deployed last)
     - ./infra/k8s/ingress-srv.yaml
 deploy:
+  statusCheckDeadlineSeconds: 300  # 5 minutes timeout for status checks
   kubectl:
     # Manifests are applied in order, and services use readiness/startup probes
     # to wait for dependencies automatically
+    flags:
+      global: []
+      apply: []
+      delete: []
 

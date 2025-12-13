@@ -36,14 +36,26 @@ export class AvatarService {
       // Step 2: Generate model
       const generatedModel = await modelGenerator.generateModel(agentProfile);
 
-      // Step 3: Download and store model
+      // Step 3: Download and store model (with progress tracking)
       const uploadResult = await storageService.downloadAndStore(
         generatedModel.modelUrl,
-        `${agentId}_${Date.now()}.${generatedModel.format}`
+        `${agentId}_${Date.now()}.${generatedModel.format}`,
+        (bytesDownloaded, totalBytes) => {
+          if (totalBytes) {
+            const progress = Math.round((bytesDownloaded / totalBytes) * 100);
+            const mbDownloaded = (bytesDownloaded / 1024 / 1024).toFixed(2);
+            const mbTotal = (totalBytes / 1024 / 1024).toFixed(2);
+            console.log(`[AvatarService] Download progress: ${progress}% (${mbDownloaded} MB / ${mbTotal} MB)`);
+          } else {
+            const mbDownloaded = (bytesDownloaded / 1024 / 1024).toFixed(2);
+            console.log(`[AvatarService] Downloaded: ${mbDownloaded} MB`);
+          }
+        }
       );
 
       // Step 4: Update avatar record
-      avatar.modelUrl = storageService.generateCDNUrl(uploadResult.key);
+      // Use the URL from uploadResult (already includes CDN URL if configured)
+      avatar.modelUrl = uploadResult.url || storageService.generateCDNUrl(uploadResult.key);
       avatar.format = generatedModel.format;
       avatar.modelType = this.determineModelType(description);
       avatar.provider = generatedModel.modelId.split('_')[0]; // Extract provider from modelId
@@ -87,22 +99,39 @@ export class AvatarService {
   }
 
   /**
-   * Get avatar generation status
+   * Get avatar generation status with detailed progress
    */
   async getAvatarStatus(agentId: string): Promise<{
     status: AvatarStatus;
     progress?: number;
     error?: string;
+    modelUrl?: string;
+    format?: string;
+    modelType?: string;
+    estimatedTimeRemaining?: number; // seconds
   }> {
     const avatar = await Avatar.findByAgentId(agentId);
     if (!avatar) {
       return { status: AvatarStatus.Pending };
     }
 
+    const progress = this.calculateProgress(avatar);
+    let estimatedTimeRemaining: number | undefined;
+
+    if (avatar.status === AvatarStatus.Generating && avatar.generationStartedAt) {
+      const elapsed = Date.now() - avatar.generationStartedAt.getTime();
+      const estimatedTotal = 30000; // 30 seconds estimated
+      estimatedTimeRemaining = Math.max(0, Math.round((estimatedTotal - elapsed) / 1000));
+    }
+
     return {
       status: avatar.status,
       error: avatar.generationError,
-      progress: this.calculateProgress(avatar),
+      progress,
+      modelUrl: avatar.modelUrl,
+      format: avatar.format,
+      modelType: avatar.modelType,
+      estimatedTimeRemaining,
     };
   }
 
