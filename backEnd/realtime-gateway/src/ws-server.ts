@@ -85,8 +85,19 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
   console.log('🔧 [WS Server] Redis subscriber ready state:', redisSubscriber.status);
   
   redisSubscriber.on('message', (channel: string, raw: string) => {
-    // Normalize roomId extraction (trim whitespace)
-    const roomId = channel.replace('room:', '').trim();
+    // Handle both regular rooms and AR rooms
+    let roomId: string;
+    let isARRoom = false;
+    
+    if (channel.startsWith('ar-room:')) {
+      // AR room channel
+      roomId = channel.replace('ar-room:', '').trim();
+      isARRoom = true;
+    } else {
+      // Regular room channel
+      roomId = channel.replace('room:', '').trim();
+    }
+    
     const sockets = roomMembers.get(roomId);
     
     console.log(`📡 [Redis→WS] Received message on channel "${channel}", extracted roomId: "${roomId}", sockets in room: ${sockets?.size || 0}`);
@@ -127,7 +138,9 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
     
     // Determine message type based on event structure
     let wsMessageType = 'message';
-    if (msg.type === 'message.reaction.created') {
+    if (msg.type === 'ar-stream-chunk') {
+      wsMessageType = 'ar-stream-chunk';
+    } else if (msg.type === 'message.reaction.created') {
       wsMessageType = 'message.reaction.created';
     } else if (msg.type === 'message.reaction.removed') {
       wsMessageType = 'message.reaction.removed';
@@ -146,6 +159,21 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
         roomId: msg.roomId,
       });
       return;
+    }
+    
+    // For AR stream chunks, validate required fields
+    if (wsMessageType === 'ar-stream-chunk') {
+      if (!msg.streamId || !msg.messageId || !msg.roomId) {
+        console.warn(`⚠️ [Redis→WS] Invalid AR stream chunk data, skipping:`, {
+          hasStreamId: !!msg.streamId,
+          hasMessageId: !!msg.messageId,
+          hasRoomId: !!msg.roomId,
+          type: msg.type,
+          roomId: channel,
+        });
+        return;
+      }
+      console.log(`📡 [Redis→WS] Broadcasting ${wsMessageType} for stream ${msg.streamId} (chunk ${msg.chunkIndex}) in room ${msg.roomId} to ${sockets.size} socket(s)`);
     }
     
     // For reaction events, validate required fields
@@ -471,6 +499,19 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
               roomId,
               channel: `room:${roomId}`,
             });
+          }
+          
+          // Also subscribe to AR room channel if this is an AR room
+          // Client can indicate via msg.isARRoom, or we can check room type from Room Service
+          const isARRoom = msg.isARRoom || false; // TODO: Fetch from Room Service to verify room type
+          if (isARRoom) {
+            const arChannel = `ar-room:${roomId}`;
+            try {
+              await redisSubscriber.subscribe(arChannel);
+              console.log(`📡 [WS] ✅ Subscribed to AR Redis channel "${arChannel}" (first socket on this pod)`);
+            } catch (error) {
+              console.error(`❌ [WS] Failed to subscribe to AR Redis channel "${arChannel}":`, error);
+            }
           }
         } else {
           console.log(`📡 [WS] Socket added to room ${roomId} (${set.size} total sockets on this pod, already subscribed)`);

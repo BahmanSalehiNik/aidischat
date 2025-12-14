@@ -40,6 +40,21 @@ class KafkaWrapper {
     this._client = new Kafka({ 
       clientId, 
       brokers,
+      // Connection timeout settings
+      connectionTimeout: 10000, // 10 seconds
+      requestTimeout: 30000, // 30 seconds
+      retry: {
+        retries: 8,
+        initialRetryTime: 100,
+        maxRetryTime: 30000,
+        multiplier: 2,
+        restartOnFailure: async (e: any) => {
+          // Retry on connection errors
+          return e.name === 'KafkaJSConnectionError' || 
+                 e.name === 'KafkaJSRequestTimeoutError' ||
+                 e.name === 'KafkaJSNonRetriableError';
+        },
+      },
       // Suppress noisy partition errors - they're often transient and harmless
       logLevel: 2, // WARN level
       logCreator: () => ({ level, log, namespace, label }) => {

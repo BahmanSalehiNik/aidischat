@@ -16,125 +16,146 @@ import { UserUpdatedListener } from './events/listeners/user-updated-listener';
 import { UserCreatedListener } from './events/listeners/user-created-listener';
 import { ProfileCreatedListener } from './events/listeners/profile-created-listener';
 import { ProfileUpdatedListener } from './events/listeners/profile-updated-listener';
+import { retryWithBackoff } from './utils/connection-retry';
 
-
-
-const startMongoose = async ()=>{
-    if(!process.env.JWT_DEV){
-        throw new Error("JWT_DEV must be defined!")
-    }
-    if(!process.env.MONGO_URI){
-        throw new Error("MONGO_URI must be defined!")
-    }
-    if(!process.env.KAFKA_CLIENT_ID){
-        throw new Error("KAFKA_CLIENT_ID must be defined!")
-    }
-    if(!process.env.KAFKA_BROKER_URL){
-        throw new Error("KAFKA_BROKER_URL must be defined!")
-    }
-    
-    try{
-        // ------------ Mongoose ----------
-        await mongoose.connect(process.env.MONGO_URI);
-        console.log("Connected to MongoDB");
-
-        // ------------ Kafka ------------
-        console.log("Connecting to Kafka at:", process.env.KAFKA_BROKER_URL);
-        const brokers = process.env.KAFKA_BROKER_URL
-            ? process.env.KAFKA_BROKER_URL.split(',').map(host => host.trim())
-            : [];
-
-        if (!brokers.length) {
-            throw new Error('❌ KAFKA_BROKERS is not defined or is empty.');
-        }
-
-        await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
-        console.log("Kafka connected successfully");
-
-        // ------------- Event Listeners ------------
-        // Each listener uses its own consumer group to avoid partition assignment conflicts
-        console.log("Starting Kafka listeners...");
-        
-        // Message ingest listener (uses dedicated consumer group)
-        console.log("Starting MessageIngestListener...");
-        new MessageIngestListener(kafkaWrapper.consumer('chat-service-message-ingest')).listen().catch(err => {
-            console.error("❌ Failed to start MessageIngestListener:", err);
-        });
-
-        // Message reaction and reply listeners
-        console.log("Starting MessageReactionIngestedListener...");
-        new MessageReactionIngestedListener(kafkaWrapper.consumer('chat-service-message-reaction-ingested')).listen().catch(err => {
-            console.error("❌ Failed to start MessageReactionIngestedListener:", err);
-        });
-        console.log("Starting MessageReplyIngestedListener...");
-        new MessageReplyIngestedListener(kafkaWrapper.consumer('chat-service-message-reply-ingested')).listen().catch(err => {
-            console.error("❌ Failed to start MessageReplyIngestedListener:", err);
-        });
-
-        // AI message reply listener (uses dedicated consumer group)
-        console.log("Starting AiMessageReplyListener...");
-        new AiMessageReplyListener(kafkaWrapper.consumer('chat-service-ai-message-reply')).listen().catch(err => {
-            console.error("❌ Failed to start AiMessageReplyListener:", err);
-        });
-
-        // Room event listeners - each with separate consumer group
-        console.log("Starting RoomCreatedListener...");
-        new RoomCreatedListener(kafkaWrapper.consumer('chat-service-room-created')).listen().catch(err => {
-            console.error("❌ Failed to start RoomCreatedListener:", err);
-        });
-        console.log("Starting RoomDeletedListener...");
-        new RoomDeletedListener(kafkaWrapper.consumer('chat-service-room-deleted')).listen().catch(err => {
-            console.error("❌ Failed to start RoomDeletedListener:", err);
-        });
-        // RoomParticipantAdded is idempotent - use higher maxInFlightRequests to avoid blocking
-        console.log("Starting RoomParticipantAddedListener...");
-        new RoomParticipantAddedListener(kafkaWrapper.consumer('chat-service-room-participant-added', 5)).listen().catch(err => {
-            console.error("❌ Failed to start RoomParticipantAddedListener:", err);
-        });
-
-        // Agent and user listeners - each with separate consumer group
-        console.log("Starting AgentIngestedListener...");
-        new AgentIngestedListener(kafkaWrapper.consumer('chat-service-agent-ingested')).listen().catch(err => {
-            console.error("❌ Failed to start AgentIngestedListener:", err);
-        });
-        console.log("Starting AgentCreatedListener...");
-        new AgentCreatedListener(kafkaWrapper.consumer('chat-service-agent-created')).listen().catch(err => {
-            console.error("❌ Failed to start AgentCreatedListener:", err);
-        });
-        console.log("Starting AgentUpdatedListener...");
-        new AgentUpdatedListener(kafkaWrapper.consumer('chat-service-agent-updated')).listen().catch(err => {
-            console.error("❌ Failed to start AgentUpdatedListener:", err);
-        });
-        console.log("Starting UserCreatedListener...");
-        new UserCreatedListener(kafkaWrapper.consumer('chat-service-user-created')).listen().catch(err => {
-            console.error("❌ Failed to start UserCreatedListener:", err);
-        });
-        console.log("Starting UserUpdatedListener...");
-        new UserUpdatedListener(kafkaWrapper.consumer('chat-service-user-updated')).listen().catch(err => {
-            console.error("❌ Failed to start UserUpdatedListener:", err);
-        });
-        console.log("Starting ProfileCreatedListener...");
-        new ProfileCreatedListener(kafkaWrapper.consumer('chat-service-profile-created')).listen().catch(err => {
-            console.error("❌ Failed to start ProfileCreatedListener:", err);
-        });
-        console.log("Starting ProfileUpdatedListener...");
-        new ProfileUpdatedListener(kafkaWrapper.consumer('chat-service-profile-updated')).listen().catch(err => {
-            console.error("❌ Failed to start ProfileUpdatedListener:", err);
-        });
-
-        console.log("✅ All Kafka listeners initialization calls completed (check logs above for connection status)");
-
-        app.listen(3000, ()=>{
-            console.log("app listening on port 3000! chat service")
-        });
-        
-    } catch(err) {
-        console.error("Error starting service:", err);
-        process.exit(1);
-    }
+// Validate environment variables
+if(!process.env.JWT_DEV){
+    throw new Error("JWT_DEV must be defined!")
+}
+if(!process.env.MONGO_URI){
+    throw new Error("MONGO_URI must be defined!")
+}
+if(!process.env.KAFKA_CLIENT_ID){
+    throw new Error("KAFKA_CLIENT_ID must be defined!")
+}
+if(!process.env.KAFKA_BROKER_URL){
+    throw new Error("KAFKA_BROKER_URL must be defined!")
 }
 
-startMongoose()
+// Start HTTP server FIRST so startup probe passes immediately
+app.listen(3000, '0.0.0.0', () => {
+    console.log("✅ Chat service HTTP server listening on port 3000");
+});
+
+// Connect to dependencies in background with retry logic
+const connectMongoDB = async () => {
+    await retryWithBackoff(
+        async () => {
+            await mongoose.connect(process.env.MONGO_URI!);
+            console.log("✅ Connected to MongoDB");
+        },
+        { maxRetries: 30, initialDelayMs: 2000 },
+        "MongoDB"
+    );
+};
+
+const connectKafka = async () => {
+    const brokers = process.env.KAFKA_BROKER_URL!
+        .split(',')
+        .map(host => host.trim())
+        .filter(Boolean);
+
+    if (!brokers.length) {
+        throw new Error('❌ KAFKA_BROKER_URL is not defined or is empty.');
+    }
+
+    await retryWithBackoff(
+        async () => {
+            await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID!);
+            console.log("✅ Kafka connected successfully");
+        },
+        { maxRetries: 30, initialDelayMs: 2000 },
+        "Kafka"
+    );
+};
+
+// Start listeners with retry logic
+const startListeners = async () => {
+    // Wait a bit for Kafka to be fully ready
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    console.log("Starting Kafka listeners...");
+    
+    // Helper to start a listener with retry (non-blocking)
+    const startListenerWithRetry = (name: string, listenerFactory: () => any) => {
+        // Start in background - don't wait for it
+        (async () => {
+            try {
+                await retryWithBackoff(
+                    async () => {
+                        const listener = listenerFactory();
+                        await listener.listen();
+                        console.log(`✅ ${name} started successfully`);
+                    },
+                    { maxRetries: 15, initialDelayMs: 3000 },
+                    name
+                );
+            } catch (err) {
+                console.error(`❌ Failed to start ${name} after retries:`, err);
+                // Don't throw - continue with other listeners
+            }
+        })();
+    };
+    
+    // Start all listeners in parallel (each with its own retry logic)
+    startListenerWithRetry("MessageIngestListener", 
+        () => new MessageIngestListener(kafkaWrapper.consumer('chat-service-message-ingest')));
+
+    startListenerWithRetry("MessageReactionIngestedListener",
+        () => new MessageReactionIngestedListener(kafkaWrapper.consumer('chat-service-message-reaction-ingested')));
+    startListenerWithRetry("MessageReplyIngestedListener",
+        () => new MessageReplyIngestedListener(kafkaWrapper.consumer('chat-service-message-reply-ingested')));
+
+    startListenerWithRetry("AiMessageReplyListener",
+        () => new AiMessageReplyListener(kafkaWrapper.consumer('chat-service-ai-message-reply')));
+
+    startListenerWithRetry("RoomCreatedListener",
+        () => new RoomCreatedListener(kafkaWrapper.consumer('chat-service-room-created')));
+    startListenerWithRetry("RoomDeletedListener",
+        () => new RoomDeletedListener(kafkaWrapper.consumer('chat-service-room-deleted')));
+    startListenerWithRetry("RoomParticipantAddedListener",
+        () => new RoomParticipantAddedListener(kafkaWrapper.consumer('chat-service-room-participant-added', 5)));
+
+    startListenerWithRetry("AgentIngestedListener",
+        () => new AgentIngestedListener(kafkaWrapper.consumer('chat-service-agent-ingested')));
+    startListenerWithRetry("AgentCreatedListener",
+        () => new AgentCreatedListener(kafkaWrapper.consumer('chat-service-agent-created')));
+    startListenerWithRetry("AgentUpdatedListener",
+        () => new AgentUpdatedListener(kafkaWrapper.consumer('chat-service-agent-updated')));
+    startListenerWithRetry("UserCreatedListener",
+        () => new UserCreatedListener(kafkaWrapper.consumer('chat-service-user-created')));
+    startListenerWithRetry("UserUpdatedListener",
+        () => new UserUpdatedListener(kafkaWrapper.consumer('chat-service-user-updated')));
+    startListenerWithRetry("ProfileCreatedListener",
+        () => new ProfileCreatedListener(kafkaWrapper.consumer('chat-service-profile-created')));
+    startListenerWithRetry("ProfileUpdatedListener",
+        () => new ProfileUpdatedListener(kafkaWrapper.consumer('chat-service-profile-updated')));
+
+    console.log("✅ All Kafka listeners initialization calls completed (starting in background with retry)");
+};
+
+// Initialize connections and listeners in background
+(async () => {
+    try {
+        // Connect to MongoDB and Kafka in parallel
+        await Promise.all([
+            connectMongoDB(),
+            connectKafka(),
+        ]);
+
+        // Start listeners after connections are established
+        startListeners().catch(err => {
+            console.error("❌ Error starting listeners:", err);
+            // Don't exit - service can still handle HTTP requests
+        });
+
+        console.log("✅ Chat service fully initialized");
+    } catch (err) {
+        console.error("❌ Error initializing chat service:", err);
+        // Don't exit - service can still handle HTTP requests
+        // Connections will retry in background
+    }
+})();
 
 
 

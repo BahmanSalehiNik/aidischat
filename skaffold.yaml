@@ -16,22 +16,6 @@ build:
           - dest: .
             src: 'src/**/*.ts'
     
-    - image: bahmansalehinic4/ecommerce-models
-      context: backEnd/ecommerce/aiModelCards
-      docker:
-        dockerfile: Dockerfile
-      sync:
-        manual:
-          - dest: .
-            src: 'src/**/*.ts'  
-    - image: bahmansalehinic4/ecommerce-orders
-      context: backEnd/ecommerce/orders
-      docker:
-        dockerfile: Dockerfile
-      sync:
-        manual:
-          - dest: .
-            src: 'src/**/*.ts'  
     - image: bahmansalehinic4/order-expiration
       context: backEnd/ecommerce/expiration
       docker:
@@ -198,7 +182,6 @@ manifests:
     - ./infra/k8s/kafka-topics-init.yaml  # Initialize Kafka topics after Redpanda is ready
     - ./infra/k8s/nats-depl.yaml
     - ./infra/k8s/*-mongo-depl.yaml
-    - ./infra/k8s/*-mongo.yaml
     - ./infra/k8s/expiration-redis-depl.yaml
     - ./infra/k8s/realtime-redis-depl.yaml
     - ./infra/k8s/redis-room-depl.yaml
@@ -229,13 +212,11 @@ manifests:
     - ./infra/k8s/ai-gateway-depl.yaml
     - ./infra/k8s/realtime-gateway-depl.yaml
     - ./infra/k8s/api-gateway-depl.yaml
-    - ./infra/k8s/ecommerce-orders-depl.yaml
-    - ./infra/k8s/ecommerece-models-depl.yaml
     - ./infra/k8s/expiration-depl.yaml
     # Phase 3: Ingress (deployed last)
     - ./infra/k8s/ingress-srv.yaml
 deploy:
-  statusCheckDeadlineSeconds: 300  # 5 minutes timeout for status checks
+  statusCheckDeadlineSeconds: 600  # 10 minutes timeout for status checks (increased for slow-starting services)
   kubectl:
     # Manifests are applied in order, and services use readiness/startup probes
     # to wait for dependencies automatically

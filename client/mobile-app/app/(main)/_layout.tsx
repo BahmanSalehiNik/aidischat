@@ -95,6 +95,12 @@ export default function MainLayout() {
         }}
       />
       <Tabs.Screen
+        name="ARChatScreen"
+        options={{
+          href: null, // Hide from tab bar, accessible via AgentDetailScreen
+        }}
+      />
+      <Tabs.Screen
         name="AgentDraftsScreen"
         options={{
           href: null, // Hide from tab bar, accessible via AgentDetailScreen

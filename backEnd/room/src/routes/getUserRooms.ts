@@ -8,21 +8,32 @@ const router = express.Router();
 
 router.get('/api/users/rooms', extractJWTPayload, loginRequired, async (req: Request, res: Response) => {
   const userId = req.jwtPayload!.id;
-  const { page = '1', limit = '20' } = req.query;
+  const { page = '1', limit = '20', excludeAR = 'true', type } = req.query;
   
   const pageNum = parseInt(page as string, 10);
   const limitNum = parseInt(limit as string, 10);
   const skip = (pageNum - 1) * limitNum;
 
-  // Get all rooms (not deleted), limited to first 20 for now
-  // TODO: Implement proper algorithm for which rooms users should see
-  // Note: deletedAt has default: null in schema, so we check for null or not existing
-  const rooms = await Room.find({
+  // Build query: exclude AR rooms by default unless explicitly requested
+  const query: any = {
     $or: [
       { deletedAt: null },
       { deletedAt: { $exists: false } }
     ]
-  })
+  };
+
+  // Filter by type if specified
+  if (type) {
+    query.type = type;
+  } else if (excludeAR === 'true') {
+    // Exclude AR rooms by default
+    query.type = { $ne: 'ar' };
+  }
+
+  // Get all rooms (not deleted), limited to first 20 for now
+  // TODO: Implement proper algorithm for which rooms users should see
+  // Note: deletedAt has default: null in schema, so we check for null or not existing
+  const rooms = await Room.find(query)
     .sort({ createdAt: -1 })
     .limit(limitNum)
     .skip(skip);
@@ -62,13 +73,8 @@ router.get('/api/users/rooms', extractJWTPayload, loginRequired, async (req: Req
     };
   });
 
-  // Get total count for pagination
-  const total = await Room.countDocuments({
-    $or: [
-      { deletedAt: null },
-      { deletedAt: { $exists: false } }
-    ]
-  });
+  // Get total count for pagination (with same query)
+  const total = await Room.countDocuments(query);
 
   console.log(`[getUserRooms] Returning ${roomsWithParticipantInfo.length} rooms, total: ${total}`);
 

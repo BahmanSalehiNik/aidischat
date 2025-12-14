@@ -53,6 +53,22 @@ export abstract class BaseAiProvider {
    */
   abstract createAgent(request: AgentCreationRequest): Promise<AgentCreationResponse>;
 
+  /**
+   * Stream response from AI provider (optional - providers can implement if they support streaming)
+   * @param request AI provider request
+   * @param onChunk Callback for each chunk received
+   */
+  async streamResponse?(
+    request: AiProviderRequest,
+    onChunk: (chunk: string) => Promise<void>
+  ): Promise<void> {
+    // Default implementation: generate full response and call onChunk with it
+    const response = await this.generateResponse(request);
+    if (response.content) {
+      await onChunk(response.content);
+    }
+  }
+
   protected validateRequest(request: AiProviderRequest): void {
     if (!request.message || !request.message.trim()) {
       throw new Error('Message content is required');

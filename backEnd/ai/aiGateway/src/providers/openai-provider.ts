@@ -355,5 +355,88 @@ export class OpenAIProvider extends BaseAiProvider {
     // Default to retryable for unknown errors
     return true;
   }
+
+  /**
+   * Stream response from OpenAI (supports both Chat Completions and Assistants API)
+   */
+  async streamResponse(
+    request: AiProviderRequest,
+    onChunk: (chunk: string) => Promise<void>
+  ): Promise<void> {
+    this.validateRequest(request);
+
+    try {
+      if (request.assistantId && request.threadId) {
+        // Use Assistants API with streaming
+        await this.streamResponseWithAssistant(request, onChunk);
+      } else {
+        // Use Chat Completions API with streaming
+        await this.streamResponseWithChatCompletions(request, onChunk);
+      }
+    } catch (error: any) {
+      console.error('[OpenAI Provider] Streaming error:', error);
+      throw error;
+    }
+  }
+
+  private async streamResponseWithChatCompletions(
+    request: AiProviderRequest,
+    onChunk: (chunk: string) => Promise<void>
+  ): Promise<void> {
+    const stream = await this.client.chat.completions.create({
+      model: request.modelName,
+      messages: [
+        { role: 'system', content: request.systemPrompt || 'You are a helpful assistant.' },
+        { role: 'user', content: request.message },
+      ],
+      temperature: request.temperature ?? 0.7,
+      max_tokens: request.maxTokens,
+      stream: true, // Enable streaming
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) {
+        await onChunk(content);
+      }
+    }
+  }
+
+  private async streamResponseWithAssistant(
+    request: AiProviderRequest,
+    onChunk: (chunk: string) => Promise<void>
+  ): Promise<void> {
+    if (!request.assistantId || !request.threadId) {
+      throw new Error('Assistant ID and Thread ID are required for Assistants API streaming');
+    }
+
+    // Add message to thread
+    await this.client.beta.threads.messages.create(request.threadId, {
+      role: 'user',
+      content: request.message,
+    });
+
+    // Create run with stream
+    const stream = await this.client.beta.threads.runs.create(request.threadId, {
+      assistant_id: request.assistantId,
+      stream: true,
+    });
+
+    // Process stream events
+    for await (const event of stream) {
+      if (event.event === 'thread.message.delta') {
+        const content = (event as any).data.delta.content?.[0]?.text?.value || '';
+        if (content) {
+          await onChunk(content);
+        }
+      } else if (event.event === 'thread.run.completed') {
+        // Stream complete
+        break;
+      } else if (event.event === 'thread.run.failed') {
+        const error = (event as any).data.last_error;
+        throw new Error(`Assistant run failed: ${error?.message || 'Unknown error'}`);
+      }
+    }
+  }
 }
 

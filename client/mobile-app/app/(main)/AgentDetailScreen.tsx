@@ -191,6 +191,29 @@ export default function AgentDetailScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* Video Chat Button - Only visible when avatar is ready */}
+          {avatarStatus === 'ready' && (
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#5856D6',
+                borderRadius: 12,
+                padding: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              onPress={() => {
+                router.push({
+                  pathname: '/(main)/ARChatScreen',
+                  params: { agentId: agent.agent.id },
+                });
+              }}
+            >
+              <Ionicons name="videocam" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Video Chat</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={{
               backgroundColor: '#007AFF',

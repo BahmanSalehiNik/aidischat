@@ -5,6 +5,7 @@ import { AiMessageCreatedListener } from './events/listeners/ai-message-created-
 import { AgentUpdatedListener } from './events/listeners/agent-updated-listener';
 import { AgentIngestedListener } from './events/listeners/agent-ingested-listener';
 import { AgentFeedScannedListener } from './events/listeners/agent-feed-scanned-listener';
+import { ARMessageRequestListener } from './events/listeners/ar-message-request-listener';
 
 const startService = async () => {
   // Validate environment variables
@@ -60,6 +61,12 @@ const startService = async () => {
       kafkaWrapper.consumer('ai-gateway-agent-feed-scanned')
     );
     await agentFeedScannedListener.listen();
+
+    // AR message request listener - processes AR conversation streaming requests
+    const arMessageRequestListener = new ARMessageRequestListener(
+      kafkaWrapper.consumer('ai-gateway-ar-message-request')
+    );
+    await arMessageRequestListener.listen();
 
     console.log('✅ All Kafka listeners started successfully');
     console.log('🤖 AI Gateway service is ready!');
