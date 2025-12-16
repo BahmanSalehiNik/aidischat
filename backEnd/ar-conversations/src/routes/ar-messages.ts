@@ -66,7 +66,7 @@ router.post('/api/ar-rooms/:roomId/messages', extractJWTPayload, loginRequired, 
     return res.status(500).send({ error: 'Failed to trigger AI streaming' });
   }
 
-  res.status(201).send(arMessage);
+  res.status(201).send(arMessage.toJSON());
 });
 
 /**

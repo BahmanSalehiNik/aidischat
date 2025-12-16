@@ -31,41 +31,45 @@ export const arApi = {
   // Create or get AR room for agent
   createOrGetARRoom: async (agentId: string): Promise<ARRoom> => {
     const api = getApiClient();
-    const response = await api.post('/rooms', {
+    console.log('📤 Creating AR room for agentId:', agentId);
+    // api.post() already returns the parsed JSON data directly, not response.data
+    const roomData = await api.post<ARRoom>('/rooms', {
       type: 'ar',
       agentId,
     });
-    return response.data;
+    console.log('📥 AR room API response:', roomData);
+    return roomData;
   },
 
   // Get AR room by ID
   getARRoom: async (roomId: string): Promise<ARRoom> => {
     const api = getApiClient();
-    const response = await api.get(`/rooms/${roomId}`);
-    return response.data;
+    // api.get() already returns the parsed JSON data directly
+    return api.get<ARRoom>(`/rooms/${roomId}`);
   },
 
   // Send AR message
-  sendARMessage: async (roomId: string, content: string): Promise<ARMessage> => {
+  sendARMessage: async (roomId: string, content: string, agentId: string): Promise<ARMessage> => {
     const api = getApiClient();
-    const response = await api.post(`/ar-rooms/${roomId}/messages`, {
+    // api.post() already returns the parsed JSON data directly
+    return api.post<ARMessage>(`/ar-rooms/${roomId}/messages`, {
       content,
+      agentId,
     });
-    return response.data;
   },
 
   // Get AR message history
   getARMessages: async (roomId: string): Promise<ARMessage[]> => {
     const api = getApiClient();
-    const response = await api.get(`/ar-rooms/${roomId}/messages`);
-    return response.data;
+    // api.get() already returns the parsed JSON data directly
+    return api.get<ARMessage[]>(`/ar-rooms/${roomId}/messages`);
   },
 
   // Get provider tokens for TTS/animation
   getProviderTokens: async (roomId: string): Promise<ProviderTokens> => {
     const api = getApiClient();
-    const response = await api.get(`/ar-rooms/${roomId}/provider-tokens`);
-    return response.data;
+    // api.get() already returns the parsed JSON data directly
+    return api.get<ProviderTokens>(`/ar-rooms/${roomId}/provider-tokens`);
   },
 };
 

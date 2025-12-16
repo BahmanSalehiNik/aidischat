@@ -104,6 +104,8 @@ router.post(
 
     // Publish to Kafka - don't block agent creation if Kafka is unavailable
     try {
+      // Ensure producer is connected before publishing
+      await kafkaWrapper.ensureProducerConnected();
       await new AgentIngestedPublisher(kafkaWrapper.producer).publish({
         id: agent.id,
         agentId: agent.id,

@@ -1,18 +1,18 @@
 // src/events/listeners/ar-message-request-listener.ts
-import { Listener, Subjects, ARMessageRequestEvent } from '@aichatwar/shared';
+import { Listener, ARMessageRequestEvent, Subjects, EachMessagePayload } from '@aichatwar/shared';
 import { AgentProfile, AgentProfileStatus } from '../../models/agent-profile';
 import { AssistantThread } from '../../models/assistant-thread';
 import { ProviderFactory } from '../../providers/provider-factory';
-import { kafkaWrapper } from '../../kafka-client';
 import { PromptBuilder, CharacterAttributes } from '../../prompt-engineering';
 import { ARStreamStartPublisher, ARStreamChunkPublisher, ARStreamEndPublisher } from '../publishers/ar-stream-publishers';
+import { kafkaWrapper } from '../../kafka-client';
 import crypto from 'crypto';
 
 export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
   readonly topic = Subjects.ARMessageRequest;
   readonly groupId = 'ai-gateway-ar-message-request';
 
-  async onMessage(data: ARMessageRequestEvent['data'], payload: any) {
+  async onMessage(data: ARMessageRequestEvent['data'], payload: EachMessagePayload) {
     const { messageId, roomId, agentId, userId, content } = data;
 
     console.log(`📥 [ARMessageRequestListener] Received AR message request:`, {
@@ -27,8 +27,8 @@ export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
       await this.processARMessage(messageId, roomId, agentId, userId, content);
     } catch (error: any) {
       console.error(`❌ [ARMessageRequestListener] Error processing AR message:`, error);
-      // Don't throw - ack the message to prevent retries
-      await this.ack();
+      // Error is logged, Kafka will retry if needed
+      throw error; // Re-throw to prevent auto-ack, allowing retry
     }
   }
 
@@ -47,7 +47,7 @@ export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
     }
 
     // Get provider
-    const provider = ProviderFactory.create(agentProfile.modelProvider, agentProfile.apiKey);
+    const provider = ProviderFactory.createProvider(agentProfile.modelProvider, agentProfile.apiKey, agentProfile.endpoint);
     if (!provider) {
       console.error(`❌ [ARMessageRequestListener] Failed to create provider for ${agentProfile.modelProvider}`);
       return;
@@ -64,8 +64,9 @@ export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
     }
 
     // Build system prompt with AR marker instructions
-    const characterAttributes = agentProfile.characterAttributes as CharacterAttributes | undefined;
-    const baseSystemPrompt = PromptBuilder.buildSystemPrompt(characterAttributes, agentProfile.systemPrompt);
+    // characterAttributes might be in metadata, otherwise use empty
+    const characterAttributes = (agentProfile.metadata?.characterAttributes || agentProfile.metadata?.character) as CharacterAttributes | undefined;
+    const baseSystemPrompt = PromptBuilder.buildSystemPrompt(agentProfile.systemPrompt || '', characterAttributes);
     
     const arSystemPrompt = `${baseSystemPrompt}
 

@@ -263,7 +263,10 @@ router.get('/api/feeds', shared_1.loginRequired, shared_1.extractJWTPayload, (re
         const id = typeof u._id === 'string' ? u._id : u._id.toString();
         return [id, u];
     }));
-    const postMap = new Map(posts.map(p => [p._id, p]));
+    const postMap = new Map(posts.map(p => {
+        const id = typeof p._id === 'string' ? p._id : p._id.toString();
+        return [id, p];
+    }));
     const feedMap = new Map(feeds.map(f => [f.postId, f]));
     // Note: We don't fetch current user's reactions here because they're not stored in feed database
     // The feed service maintains reactionsSummary in its Post projection, but not individual user reactions

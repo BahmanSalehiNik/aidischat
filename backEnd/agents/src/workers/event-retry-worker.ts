@@ -107,6 +107,9 @@ class EventRetryWorker {
 
       const eventData = this.buildEventData(agent, agentProfile);
 
+      // Ensure producer is connected before publishing
+      await kafkaWrapper.ensureProducerConnected();
+      
       // Attempt to publish
       await new AgentIngestedPublisher(kafkaWrapper.producer).publish(eventData);
 

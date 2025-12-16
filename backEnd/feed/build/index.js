@@ -25,79 +25,101 @@ const queGroupNames_1 = require("./events/queGroupNames");
 const agentFeedAnswerReceivedListener_1 = require("./events/listeners/agentFeedAnswerReceived/agentFeedAnswerReceivedListener");
 const trendingWorker_1 = require("./modules/trending/trendingWorker");
 const agent_feed_scanner_1 = require("./workers/agent-feed-scanner");
-const startMongoose = () => __awaiter(void 0, void 0, void 0, function* () {
-    if (!process.env.JWT_DEV) {
-        throw new Error("JWT_DEV must be defined!");
-    }
-    if (!process.env.MONGO_URI) {
-        throw new Error("MONGO_URI must be defined!");
-    }
-    if (!process.env.KAFKA_CLIENT_ID) {
-        throw new Error("KAFKA_CLIENT_ID must be defined!");
-    }
-    if (!process.env.KAFKA_BROKER_URL) {
-        throw new Error("KAFKA_BROKER_URL must be defined!");
-    }
-    // Azure Storage credentials are optional - feed service can work without them
-    // but signed URL generation for media will be disabled if not provided
-    if (process.env.AZURE_STORAGE_ACCOUNT && process.env.AZURE_STORAGE_KEY) {
-        console.log("Azure Storage credentials found - signed URL generation enabled");
-    }
-    else {
-        console.log("Azure Storage credentials not found - signed URL generation disabled");
-    }
-    try {
-        // ------------ Mongoose ----------
+const connection_retry_1 = require("./utils/connection-retry");
+// Validate environment variables
+if (!process.env.JWT_DEV) {
+    throw new Error("JWT_DEV must be defined!");
+}
+if (!process.env.MONGO_URI) {
+    throw new Error("MONGO_URI must be defined!");
+}
+if (!process.env.KAFKA_CLIENT_ID) {
+    throw new Error("KAFKA_CLIENT_ID must be defined!");
+}
+if (!process.env.KAFKA_BROKER_URL) {
+    throw new Error("KAFKA_BROKER_URL must be defined!");
+}
+// Azure Storage credentials are optional - feed service can work without them
+// but signed URL generation for media will be disabled if not provided
+if (process.env.AZURE_STORAGE_ACCOUNT && process.env.AZURE_STORAGE_KEY) {
+    console.log("Azure Storage credentials found - signed URL generation enabled");
+}
+else {
+    console.log("Azure Storage credentials not found - signed URL generation disabled");
+}
+// Start HTTP server FIRST so startup probe passes immediately
+app_1.app.listen(3000, '0.0.0.0', () => {
+    console.log("✅ Feed service HTTP server listening on port 3000");
+});
+// Connect to dependencies in background with retry logic
+const connectMongoDB = () => __awaiter(void 0, void 0, void 0, function* () {
+    yield (0, connection_retry_1.retryWithBackoff)(() => __awaiter(void 0, void 0, void 0, function* () {
         yield mongoose_1.default.connect(process.env.MONGO_URI);
-        console.log("Connected to MongoDB");
-        // ------------ Kafka ------------
-        console.log("Connecting to Kafka at:", process.env.KAFKA_BROKER_URL);
-        const brokers = process.env.KAFKA_BROKER_URL
-            ? process.env.KAFKA_BROKER_URL.split(',').map(host => host.trim())
-            : [];
-        if (!brokers.length) {
-            throw new Error('❌ KAFKA_BROKERS is not defined or is empty.');
-        }
+        console.log("✅ Connected to MongoDB");
+    }), { maxRetries: 30, initialDelayMs: 2000 }, "MongoDB");
+});
+const connectKafka = () => __awaiter(void 0, void 0, void 0, function* () {
+    const brokers = process.env.KAFKA_BROKER_URL
+        .split(',')
+        .map(host => host.trim())
+        .filter(Boolean);
+    if (!brokers.length) {
+        throw new Error('❌ KAFKA_BROKER_URL is not defined or is empty.');
+    }
+    yield (0, connection_retry_1.retryWithBackoff)(() => __awaiter(void 0, void 0, void 0, function* () {
         yield kafka_client_1.kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
-        console.log("Kafka connected successfully");
-        // ------------- Event Listeners ------------
-        // Each listener uses its own consumer group to avoid partition assignment conflicts
-        // User listeners - each with separate consumer group
-        new userListener_1.UserCreatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdUserCreated)).listen();
-        new userListener_1.UserUpdatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdUserUpdated)).listen();
-        new userListener_1.UserDeletedListener(kafka_client_1.kafkaWrapper.consumer("feed-user-deleted")).listen();
-        // Profile listeners - each with separate consumer group
-        new profileListener_1.ProfileCreatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdProfileCreated)).listen();
-        new profileListener_1.ProfileUpdatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdProfileUpdated)).listen();
-        new profileListener_1.ProfileDeletedListener(kafka_client_1.kafkaWrapper.consumer("feed-profile-deleted")).listen();
-        // Post listeners - each with separate consumer group
-        new postListener_1.PostCreatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdPostCreated)).listen();
-        new postListener_1.PostUpdatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdPostUpdated)).listen();
-        new postListener_1.PostDeletedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdPostDeleted)).listen();
-        // Comment listeners - each with separate consumer group
-        new commentListener_1.CommentCreatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdCommentCreated)).listen();
-        new commentListener_1.CommentDeletedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdCommentDeleted)).listen();
-        // Reaction listeners - each with separate consumer group
-        new reactionListener_1.ReactionCreatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdReactionCreated)).listen();
-        new reactionListener_1.ReactionDeletedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdReactionDeleted)).listen();
-        // Friendship listeners - each with separate consumer group
-        new friendshipListener_1.FriendshipRequestedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdFreindshipRequested)).listen();
-        new friendshipListener_1.FriendshipAcceptedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdFreindshipAccepted)).listen();
-        new friendshipListener_1.FriendshipUpdatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdFreindshipUpdated)).listen();
-        // Agent feed answer received listener - marks feed entries as seen after processing
-        new agentFeedAnswerReceivedListener_1.AgentFeedAnswerReceivedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdAgentFeedAnswerReceived)).listen();
-        console.log("All Kafka listeners started successfully");
+        console.log("✅ Kafka connected successfully");
+    }), { maxRetries: 30, initialDelayMs: 2000 }, "Kafka");
+});
+const startListeners = () => {
+    // Each listener uses its own consumer group to avoid partition assignment conflicts
+    // User listeners - each with separate consumer group
+    new userListener_1.UserCreatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdUserCreated)).listen();
+    new userListener_1.UserUpdatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdUserUpdated)).listen();
+    new userListener_1.UserDeletedListener(kafka_client_1.kafkaWrapper.consumer("feed-user-deleted")).listen();
+    // Profile listeners - each with separate consumer group
+    new profileListener_1.ProfileCreatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdProfileCreated)).listen();
+    new profileListener_1.ProfileUpdatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdProfileUpdated)).listen();
+    new profileListener_1.ProfileDeletedListener(kafka_client_1.kafkaWrapper.consumer("feed-profile-deleted")).listen();
+    // Post listeners - each with separate consumer group
+    new postListener_1.PostCreatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdPostCreated)).listen();
+    new postListener_1.PostUpdatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdPostUpdated)).listen();
+    new postListener_1.PostDeletedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdPostDeleted)).listen();
+    // Comment listeners - each with separate consumer group
+    new commentListener_1.CommentCreatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdCommentCreated)).listen();
+    new commentListener_1.CommentDeletedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdCommentDeleted)).listen();
+    // Reaction listeners - each with separate consumer group
+    new reactionListener_1.ReactionCreatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdReactionCreated)).listen();
+    new reactionListener_1.ReactionDeletedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdReactionDeleted)).listen();
+    // Friendship listeners - each with separate consumer group
+    new friendshipListener_1.FriendshipRequestedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdFreindshipRequested)).listen();
+    new friendshipListener_1.FriendshipAcceptedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdFreindshipAccepted)).listen();
+    new friendshipListener_1.FriendshipUpdatedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdFreindshipUpdated)).listen();
+    // Agent feed answer received listener - marks feed entries as seen after processing
+    new agentFeedAnswerReceivedListener_1.AgentFeedAnswerReceivedListener(kafka_client_1.kafkaWrapper.consumer(queGroupNames_1.GroupIdAgentFeedAnswerReceived)).listen();
+    console.log("✅ All Kafka listeners started successfully");
+};
+// Initialize connections and listeners in background
+(() => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        // Connect to MongoDB and Kafka in parallel
+        yield Promise.all([
+            connectMongoDB(),
+            connectKafka(),
+        ]);
+        // Start listeners after connections are established
+        startListeners();
+        // Start background workers
         trendingWorker_1.trendingWorker.start();
         agent_feed_scanner_1.agentFeedScannerWorker.start();
-        app_1.app.listen(3000, () => {
-            console.log("app listening on port 3000! feed service");
-        });
+        console.log("✅ Feed service fully initialized");
     }
     catch (err) {
-        console.error("Error starting service:", err);
-        process.exit(1);
+        console.error("❌ Error initializing feed service:", err);
+        // Don't exit - service can still handle HTTP requests
+        // Connections will retry in background
     }
-});
+}))();
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
@@ -108,4 +130,3 @@ process.on('uncaughtException', (error) => {
     console.error('Uncaught Exception:', error);
     // Don't exit immediately - log and let error handler try to handle it
 });
-startMongoose();

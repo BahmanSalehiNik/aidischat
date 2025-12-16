@@ -56,7 +56,7 @@ const startListeners = async () => {
       }
 
       // Start AR stream chunk listener
-      const arStreamChunkListener = new ARStreamChunkListener(kafkaWrapper);
+      const arStreamChunkListener = new ARStreamChunkListener(kafkaWrapper.consumer('ar-conversations-service'));
       await arStreamChunkListener.listen();
       console.log('✅ AR Stream Chunk Listener started');
     },

@@ -15,6 +15,7 @@ spec:
       containers:
         - name: ai-gateway
           image: bahmansalehinic4/ai-gateway
+          imagePullPolicy: Always
           resources:
             requests:
               memory: "512Mi"

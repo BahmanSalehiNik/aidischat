@@ -1,0 +1,70 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Node modules - THE BIGGEST WIN (exclude all)
+**/node_modules
+node_modules
+
+# Build artifacts
+**/build
+**/dist
+**/.next
+**/out
+**/.cache
+build
+dist
+
+# Logs
+**/*.log
+**/logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+**/.env
+**/.env.local
+**/.env.*.local
+.env*
+
+# IDE
+**/.vscode
+**/.idea
+**/*.swp
+**/*.swo
+**/.DS_Store
+.vscode
+.idea
+
+# Testing
+**/coverage
+**/.nyc_output
+coverage
+
+# Temporary files
+**/tmp
+**/temp
+**/*.tmp
+tmp
+temp
+tempNats
+tsTemop
+bckp
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Client and frontend (not needed for backend builds)
+client
+frontEnd
+
+# Skaffold and infra
+skaffold.yaml
+skaffold.yaml.bak
+infra
+
+# Keep shared and backend services - Docker will only copy what COPY commands specify

@@ -32,6 +32,8 @@ const regex = {
   // AR Avatar routes - TODO: Remove internal routes in Phase 2 (TTS routes will be client-side)
   avatars: /^\/api\/avatars(?:\/.*)?$/i,
   tts: /^\/api\/tts(?:\/.*)?$/i,
+  // AR Conversations routes
+  arRooms: /^\/api\/ar-rooms(?:\/.*)?$/i,
 };
 
 export const routeRules: RouteRule[] = [
@@ -135,6 +137,11 @@ export const routeRules: RouteRule[] = [
     name: 'ar-avatar-tts-service',
     targetEnv: 'AR_AVATAR_SERVICE_URL',
     patterns: [regex.tts],
+  },
+  {
+    name: 'ar-conversations-service',
+    targetEnv: 'AR_CONVERSATIONS_SERVICE_URL',
+    patterns: [regex.arRooms],
   },
 ];
 

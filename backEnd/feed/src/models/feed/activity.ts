@@ -43,7 +43,7 @@ const activitySchema = new mongoose.Schema<ActivityDoc>(
     toJSON: {
       transform(_, ret) {
         ret.id = ret._id;
-        delete ret._id;
+        delete (ret as any)._id;
       },
     },
   }

@@ -12,6 +12,33 @@ spec:
       labels:
         app: chat-recommendation
     spec:
+      initContainers:
+        - name: wait-for-kafka
+          image: redpandadata/redpanda:latest
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Waiting for Kafka broker to be ready..."
+              KAFKA_BROKER=${KAFKA_BROKER:-redpanda-srv:9092}
+              
+              # Wait for Kafka broker to be ready
+              for i in {1..60}; do
+                if rpk cluster info --brokers $KAFKA_BROKER &>/dev/null; then
+                  echo "✅ Kafka broker is ready"
+                  exit 0
+                fi
+                if [ $i -eq 60 ]; then
+                  echo "❌ Kafka broker not ready after 60 seconds"
+                  exit 1
+                fi
+                echo "Waiting for Kafka broker... (attempt $i/60)"
+                sleep 1
+              done
+          env:
+            - name: KAFKA_BROKER
+              value: 'redpanda-srv:9092'
       containers:
         - name: chat-recommendation
           image: bahmansalehinic4/chat-recommendation

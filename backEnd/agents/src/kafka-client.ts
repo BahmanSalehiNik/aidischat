@@ -19,6 +19,63 @@ class KafkaWrapper {
     return this._producer;
   }
 
+  /**
+   * Ensure producer is connected, reconnect if needed
+   * This handles cases where the producer connection is lost
+   */
+  async ensureProducerConnected(): Promise<void> {
+    if (!this._producer || !this._client) {
+      throw new Error("Kafka client not initialized. Call connect() first.");
+    }
+
+    // Try a lightweight operation to check connection
+    // If it fails with connection error, reconnect
+    try {
+      // Use sendBatch with empty array as a lightweight connection check
+      // This is cheaper than sending actual messages
+      await Promise.race([
+        this._producer.sendBatch({ topicMessages: [] }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Connection check timeout')), 1000)
+        )
+      ]).catch(() => {
+        // Ignore errors - we just want to check if producer is alive
+      });
+    } catch (error: any) {
+      // If connection check fails, reconnect
+      await this.reconnectProducer();
+    }
+  }
+
+  /**
+   * Reconnect the producer
+   */
+  private async reconnectProducer(): Promise<void> {
+    if (!this._client) {
+      throw new Error("Kafka client not initialized. Call connect() first.");
+    }
+
+    console.warn('[KafkaWrapper] Producer disconnected, reconnecting...');
+    try {
+      // Disconnect existing producer if it exists
+      if (this._producer) {
+        try {
+          await this._producer.disconnect();
+        } catch (e) {
+          // Ignore disconnect errors - producer might already be disconnected
+        }
+      }
+      
+      // Create new producer and connect
+      this._producer = this._client.producer();
+      await this._producer.connect();
+      console.log('[KafkaWrapper] ✅ Producer reconnected successfully');
+    } catch (error: any) {
+      console.error('[KafkaWrapper] ❌ Failed to reconnect producer:', error.message || error);
+      throw error;
+    }
+  }
+
   consumer(groupId: string) {
     if (!this._client) {
       throw new Error("Cannot access Kafka client before connecting");

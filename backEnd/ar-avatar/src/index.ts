@@ -2,6 +2,7 @@ import { app } from "./app";
 import express from "express";
 import mongoose from "mongoose";
 import { kafkaWrapper } from './kafka-client';
+import { retryWithBackoff } from './utils/connection-retry';
 import { avatarRouter } from './routes/avatar-routes';
 import { NotFoundError, errorHandler } from "@aichatwar/shared";
 
@@ -16,8 +17,14 @@ const startService = async () => {
     try {
         // ------------ Mongoose ----------
         console.log("🔌 [AR Avatar] Connecting to MongoDB...");
-        await mongoose.connect(process.env.MONGO_URI);
-        console.log("✅ [AR Avatar] Connected to MongoDB");
+        await retryWithBackoff(
+            async () => {
+                await mongoose.connect(process.env.MONGO_URI!);
+                console.log("✅ [AR Avatar] Connected to MongoDB");
+            },
+            { maxRetries: 30, initialDelayMs: 2000 },
+            "MongoDB"
+        );
 
         // ------------ Kafka (Optional for Phase 1) ------------
         if (process.env.KAFKA_BROKER_URL) {
@@ -27,20 +34,33 @@ const startService = async () => {
                 : [];
 
             if (brokers.length) {
-                await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID || 'ar-avatar');
-                console.log("✅ [AR Avatar] Connected to Kafka");
+                await retryWithBackoff(
+                    async () => {
+                        await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID || 'ar-avatar');
+                        console.log("✅ [AR Avatar] Connected to Kafka");
+                    },
+                    { maxRetries: 30, initialDelayMs: 2000 },
+                    "Kafka"
+                );
 
                 // ------------ Event Listeners ------------
                 console.log("🚀 [AR Avatar] Starting Kafka listeners...");
                 
                 // Agent ingested listener - triggers avatar generation
-                const { AgentIngestedListener } = await import('./events/listeners/agent-ingested-listener');
-                console.log("📥 [AR Avatar] Starting AgentIngestedListener...");
-                new AgentIngestedListener(
-                    kafkaWrapper.consumer('ar-avatar-agent-ingested')
-                ).listen().catch(err => {
-                    console.error("❌ [AR Avatar] Failed to start AgentIngestedListener:", err);
-                });
+                // Use retry logic for listener setup
+                await retryWithBackoff(
+                    async () => {
+                        const { AgentIngestedListener } = await import('./events/listeners/agent-ingested-listener');
+                        console.log("📥 [AR Avatar] Starting AgentIngestedListener...");
+                        const listener = new AgentIngestedListener(
+                            kafkaWrapper.consumer('ar-avatar-agent-ingested')
+                        );
+                        await listener.listen();
+                        console.log("✅ [AR Avatar] AgentIngestedListener started successfully");
+                    },
+                    { maxRetries: 10, initialDelayMs: 3000 },
+                    "AgentIngestedListener"
+                );
 
                 console.log("✅ [AR Avatar] All Kafka listeners started");
             }

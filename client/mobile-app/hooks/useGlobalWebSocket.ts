@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { WS_URL } from '@env';
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
@@ -18,6 +18,8 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [ws, setWs] = useState<WebSocket | null>(null);
 
   const wsUrl = WS_URL || 'ws://localhost:3000';
 
@@ -31,6 +33,7 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
+      setWs(null);
     }
 
     try {
@@ -40,9 +43,11 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
       
       const ws = new WebSocket(wsUrlWithToken);
       wsRef.current = ws;
+      setWs(ws);
 
       ws.onopen = () => {
         console.log(`✅ Global WebSocket connected`);
+        setIsConnected(true);
         reconnectAttemptsRef.current = 0;
 
         // Start heartbeat
@@ -100,6 +105,8 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
 
       ws.onclose = (event) => {
         console.log('🔌 Global WebSocket closed', event.code, event.reason);
+        setIsConnected(false);
+        setWs(null);
 
         // Clean up heartbeat
         if (heartbeatIntervalRef.current) {
@@ -145,6 +152,7 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
       if (wsRef.current) {
         wsRef.current.close(1000, 'Token removed');
         wsRef.current = null;
+        setWs(null);
       }
       // Clear any pending reconnection attempts
       if (reconnectTimeoutRef.current) {
@@ -166,7 +174,14 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
         wsRef.current.close(1000, 'Component unmounted');
         wsRef.current = null;
       }
+      setWs(null);
+      setIsConnected(false);
     };
   }, [connect, token]);
+
+  return {
+    ws,
+    isConnected,
+  };
 };
 

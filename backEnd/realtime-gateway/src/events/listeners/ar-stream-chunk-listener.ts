@@ -1,6 +1,19 @@
 import { redisPublisher } from '../../redis';
 import { EachMessagePayload } from 'kafkajs';
-import { ARStreamChunkEvent } from '@aichatwar/shared';
+
+// Temporary local type definition until ARStreamChunkEvent is added to shared package
+interface ARStreamChunkEvent {
+  subject: 'ar.stream.chunk';
+  data: {
+    streamId: string;
+    messageId: string;
+    roomId: string;
+    chunk: string;
+    chunkIndex: number;
+    timestamp: string;
+    isFinal: boolean;
+  };
+}
 
 /**
  * ARStreamChunkListener

@@ -91,14 +91,33 @@ export default function ARChatScreen() {
       
       // 1. Create or get AR room
       const arRoom = await arApi.createOrGetARRoom(params.agentId!);
-      setRoom(arRoom);
+      
+      console.log('📋 AR Room Response:', JSON.stringify(arRoom, null, 2));
+      console.log('📋 AR Room ID:', arRoom?.id);
+      console.log('📋 AR Room _id:', (arRoom as any)?._id);
+      
+      // Handle both 'id' and '_id' formats
+      const roomId = arRoom?.id || (arRoom as any)?._id;
+      
+      if (!arRoom || !roomId) {
+        console.error('❌ Invalid AR room response:', arRoom);
+        throw new Error('Failed to create AR room: Invalid response');
+      }
+      
+      // Normalize the room object to ensure it has 'id'
+      const normalizedRoom = {
+        ...arRoom,
+        id: roomId,
+      };
+      
+      setRoom(normalizedRoom);
 
       // 2. Get provider tokens
-      const tokens = await arApi.getProviderTokens(arRoom.id);
+      const tokens = await arApi.getProviderTokens(normalizedRoom.id);
       setProviderTokens(tokens);
 
       // 3. Load message history
-      const history = await arApi.getARMessages(arRoom.id);
+      const history = await arApi.getARMessages(normalizedRoom.id);
       setMessages(history);
 
       // 4. Get 3D model URL
@@ -120,15 +139,37 @@ export default function ARChatScreen() {
   };
 
   const handleSendMessage = async () => {
-    if (!inputText.trim() || !room || sending) return;
+    if (!inputText.trim() || !room || sending || !params.agentId) return;
 
     const messageContent = inputText.trim();
     setInputText('');
     setSending(true);
 
     try {
-      // Send message to backend
-      const newMessage = await arApi.sendARMessage(room.id, messageContent);
+      // Send message to backend with agentId
+      const response = await arApi.sendARMessage(room.id, messageContent, params.agentId);
+      
+      // Ensure we have a plain object (handle Mongoose documents or wrapped responses)
+      let newMessage: ARMessage;
+      if (response && typeof response === 'object') {
+        // If it has toJSON method (Mongoose document), call it
+        if (typeof (response as any).toJSON === 'function') {
+          newMessage = (response as any).toJSON();
+        } else {
+          // Already a plain object, but ensure it's not an array or other iterable
+          newMessage = Array.isArray(response) ? response[0] : response as ARMessage;
+        }
+      } else {
+        throw new Error('Invalid response format from server');
+      }
+      
+      console.log('📨 New message received:', JSON.stringify(newMessage, null, 2));
+      
+      if (!newMessage || !newMessage.id) {
+        console.error('❌ Invalid message response:', newMessage);
+        throw new Error('Invalid message response from server');
+      }
+      
       setMessages(prev => [...prev, newMessage]);
       setStreamingMessageId(newMessage.id);
       setStreamingContent('');

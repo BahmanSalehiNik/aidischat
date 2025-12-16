@@ -1,0 +1,7 @@
+# Exclude node_modules (installed via npm install in Docker)
+node_modules
+npm-debug.log
+.DS_Store
+.env
+.env.local
+*.log

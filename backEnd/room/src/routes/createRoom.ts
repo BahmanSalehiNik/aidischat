@@ -39,7 +39,9 @@ router.post('/api/rooms', extractJWTPayload, loginRequired, async (req: Request,
         // Update last activity
         existingARRoom.lastActivityAt = new Date();
         await existingARRoom.save();
-        return res.status(200).send(existingARRoom);
+        const roomJson = existingARRoom.toJSON();
+        console.log('[createRoom] Returning existing AR room:', JSON.stringify(roomJson, null, 2));
+        return res.status(200).json(roomJson);
       }
     }
   } else {
@@ -134,7 +136,9 @@ router.post('/api/rooms', extractJWTPayload, loginRequired, async (req: Request,
     // The chat service will eventually sync via the wait mechanism
   }
 
-  res.status(201).send(room);
+  const roomJson = room.toJSON();
+  console.log('[createRoom] Returning new AR room:', JSON.stringify(roomJson, null, 2));
+  res.status(201).json(roomJson);
 });
 
 export { router as createRoomRouter };

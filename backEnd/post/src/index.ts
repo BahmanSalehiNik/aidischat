@@ -3,6 +3,7 @@ import express from "express";
 import mongoose from "mongoose";
 import { app } from "./app";
 import { kafkaWrapper } from './kafka-client';
+import { retryWithBackoff } from './utils/connection-retry';
 import { UserCreatedListener, UserUpdatedListener } from "./events/listeners/user/userListener";
 import { ProfileCreatedListener, ProfileUpdatedListener } from "./events/listeners/user/profileListener";
 import { FriendshipAcceptedListener, FriendshipRequestedListener, FriendshipUpdatedListener} from "./events/listeners/friendship/friendshipListener";
@@ -35,8 +36,14 @@ const startMongoose = async ()=>{
     
     try{
         // ------------ Mongoose ----------
-        await mongoose.connect(process.env.MONGO_URI);
-        console.log("Connected to MongoDB");
+        await retryWithBackoff(
+            async () => {
+                await mongoose.connect(process.env.MONGO_URI!);
+                console.log("Connected to MongoDB");
+            },
+            { maxRetries: 30, initialDelayMs: 2000 },
+            "MongoDB"
+        );
 
         // ------------- Kafka ------------
         console.log("Connecting to Kafka at:", process.env.KAFKA_BROKER_URL);
@@ -48,8 +55,14 @@ const startMongoose = async ()=>{
             throw new Error('❌ KAFKA_BROKERS is not defined or is empty.');
         }
 
-        await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
-        console.log("Kafka connected successfully");
+        await retryWithBackoff(
+            async () => {
+                await kafkaWrapper.connect(brokers, process.env.KAFKA_CLIENT_ID);
+                console.log("Kafka connected successfully");
+            },
+            { maxRetries: 30, initialDelayMs: 2000 },
+            "Kafka"
+        );
 
         // ------------- Event Listeners ------------
         // Each listener uses its own consumer group to avoid partition assignment conflicts

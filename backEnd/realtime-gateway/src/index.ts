@@ -74,7 +74,7 @@ const connectKafkaConsumer = async () => {
       const reactionCreatedListener = new MessageReactionCreatedListener(consumer);
       const reactionRemovedListener = new MessageReactionRemovedListener(consumer);
       const replyCreatedListener = new MessageReplyCreatedListener(consumer);
-      const arStreamChunkListener = new ARStreamChunkListener(consumer);
+      const arStreamChunkListener = new ARStreamChunkListener();
       
       // Helper function to acknowledge messages manually
       const ackMessage = async (payload: any) => {

@@ -44,7 +44,8 @@ spec:
               max_attempts=60
               for attempt in $(seq 1 $max_attempts); do
                 # Get topic list once per attempt (more efficient)
-                topic_list=$(rpk topic list --brokers $KAFKA_BROKER 2>/dev/null || echo "")
+                # Skip header line (NAME, PARTITIONS, REPLICAS) and empty lines
+                topic_list=$(rpk topic list --brokers $KAFKA_BROKER 2>/dev/null | grep -v "^NAME" | grep -v "^$" || echo "")
                 
                 if [ -z "$topic_list" ]; then
                   if [ $attempt -lt $max_attempts ]; then
@@ -57,7 +58,8 @@ spec:
                 # Check all topics at once
                 all_exist=true
                 for topic in "${required_topics[@]}"; do
-                  if ! echo "$topic_list" | grep -q "^$topic "; then
+                  # Check if topic exists (match topic name at start of line followed by space or end of line)
+                  if ! echo "$topic_list" | grep -qE "^$topic[[:space:]]"; then
                     all_exist=false
                     break
                   fi

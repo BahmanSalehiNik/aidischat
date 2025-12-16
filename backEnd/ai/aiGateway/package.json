@@ -11,7 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@aichatwar/shared": "^1.0.134",
+    "@aichatwar/shared": "^1.0.136",
     "@anthropic-ai/sdk": "^0.24.0",
     "axios": "^1.6.0",
     "cohere-ai": "^7.19.0",
