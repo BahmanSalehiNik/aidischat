@@ -160,6 +160,20 @@ WARNING: If you do not include markers, the 3D avatar will not display emotions 
             }
           }
         );
+        
+        // CRITICAL: Send final chunk with isFinal=true after streaming completes
+        // This triggers TTS on the client side
+        console.log(`🎯 [ARMessageRequestListener] Streaming complete, sending final chunk with isFinal=true`);
+        await new ARStreamChunkPublisher(kafkaWrapper.producer).publish({
+          streamId,
+          messageId,
+          roomId,
+          chunk: '', // Empty chunk, just to signal completion
+          chunkIndex,
+          timestamp: new Date().toISOString(),
+          isFinal: true,
+        });
+        console.log(`✅ [ARMessageRequestListener] Final chunk published with isFinal=true`);
       } else {
         // Fallback: Generate full response and split into chunks
         const response = await provider.generateResponse({

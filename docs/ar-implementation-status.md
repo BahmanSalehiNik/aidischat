@@ -50,7 +50,10 @@ This document tracks the implementation status of the AR streaming chat feature.
 - ✅ Streaming support in `OpenAIProvider`:
   - `streamResponseWithChatCompletions()` - Chat Completions API streaming
   - `streamResponseWithAssistant()` - Assistants API streaming
-- ✅ AR system prompt with marker instructions
+- ✅ **Enhanced AR system prompt with explicit marker requirements**
+- ✅ **Message formatting with username (username: message)**
+- ✅ **OpenAI Assistants API marker instruction injection**
+- ✅ **Debug logging for marker generation**
 - ✅ Publishers:
   - `ARStreamStartPublisher`
   - `ARStreamChunkPublisher`
@@ -89,6 +92,11 @@ This document tracks the implementation status of the AR streaming chat feature.
 - ✅ Input area for sending messages
 - ✅ Connection status indicator
 - ✅ Streaming content display
+- ✅ **Subtitle display for messages (user and agent)**
+- ✅ **Real-time marker parsing from streaming chunks**
+- ✅ **Emotion and movement markers extraction**
+- ✅ **Keyboard-aware subtitle positioning**
+- ✅ **Room-based message filtering (no cross-room messages)**
 
 **Files:**
 - `client/mobile-app/app/(main)/ARChatScreen.tsx`
@@ -107,8 +115,10 @@ This document tracks the implementation status of the AR streaming chat feature.
 ---
 
 #### 7. Client-Side Utilities
-- ✅ Marker parser (`parseMarkers()`)
+- ✅ Marker parser (`parseMarkers()`) - Supports both `['value']` and `[type:value]` formats
 - ✅ Phoneme-to-viseme converter (`generateVisemes()`)
+- ✅ **Real-time marker extraction during streaming**
+- ✅ **Sequential marker extraction for animations**
 
 **Files:**
 - `client/mobile-app/utils/markerParser.ts`
@@ -214,17 +224,28 @@ export enum RoomType {
 ### High Priority
 
 #### 2. AR Rendering Integration
-**Status:** 🔄 Not Started
+**Status:** 🎯 **NEXT STEP** - Ready to implement
+
+**Current State:**
+- ✅ 3D model URL is fetched and available (`modelUrl` in ARChatScreen)
+- ✅ `Model3DViewer` component exists with Three.js integration
+- ✅ `ARViewer` component foundation exists
+- ⚠️ AR rendering placeholder in ARChatScreen (line 433: "AR rendering will be implemented here")
 
 **Tasks:**
-- Integrate Expo AR or Three.js for AR rendering
-- Load 3D model in AR space
-- Handle AR session lifecycle
-- Camera permissions
-- AR plane detection
-- Model positioning and scaling
+- [ ] Replace placeholder with `Model3DViewer` component in ARChatScreen
+- [ ] Integrate 3D model loading from `modelUrl`
+- [ ] Connect marker parsing to animation system
+- [ ] Apply emotion markers to 3D model blend shapes
+- [ ] Apply movement/gesture markers to animations
+- [ ] Handle AR session lifecycle (if using AR mode)
+- [ ] Camera permissions (if using AR mode)
+- [ ] AR plane detection (if using AR mode)
+- [ ] Model positioning and scaling in AR space
 
 **Estimated Time:** 3-5 days
+
+**Note:** The 3D viewer component (`Model3DViewer.tsx`) is already implemented and ready to use. It needs to be integrated into `ARChatScreen.tsx` to replace the placeholder.
 
 ---
 
@@ -343,7 +364,11 @@ Realtime Gateway: Forwards to Redis → WebSocket
   ↓
 Client: Receives stream chunks
   ↓
-[PENDING: TTS, Animations, AR Rendering]
+Client: Parses markers from chunks (✅ Working)
+  ↓
+Client: Displays subtitle with messages (✅ Working)
+  ↓
+[PENDING: 3D Model Rendering, TTS, Animations, AR Mode]
 ```
 
 ---
@@ -383,22 +408,43 @@ Client: Receives stream chunks
 
 ## 🎯 Next Steps
 
-### Current Phase: Testing & Debugging
-1. **Immediate**: Test current implementation
-2. **Immediate**: Debug any issues found
-3. **Immediate**: Update @aichatwar/shared package with AR event interfaces
-4. **Immediate**: Verify end-to-end flow
+### Current Phase: ✅ Message Display Complete
+1. ✅ **Messages visible in UI** - Subtitle display working
+2. ✅ **Emotions and markers working** - Markers are parsed and extracted
+3. ✅ **Real-time streaming** - Chunks received and displayed
+4. ✅ **Username formatting** - Messages formatted as "username: message"
+5. ⚠️ **Shared package update** - Still needed for production
 
-### Next Phase: Core Feature Implementation
-See `docs/ar-remaining-steps.md` for detailed implementation plan:
-1. **AR Rendering** (3D model in AR space)
-2. **TTS Integration** (ElevenLabs/Azure Speech)
-3. **Animation System** (emotions, gestures, poses)
-4. **Viseme Synchronization** (lip-sync with audio)
+### Next Phase: 🎯 3D Model Rendering (IMMEDIATE NEXT STEP)
+**Status:** Ready to implement - All prerequisites complete
+
+**Implementation Steps:**
+1. **Integrate Model3DViewer into ARChatScreen** (1-2 hours)
+   - Replace placeholder with `<Model3DViewer modelUrl={modelUrl} />`
+   - Position in the AR view container
+   
+2. **Connect Markers to Animations** (2-3 days)
+   - Apply emotion markers to blend shapes
+   - Apply movement markers to animations
+   - Create animation state management
+   
+3. **TTS Integration** (2-3 days)
+   - Integrate ElevenLabs/Azure Speech
+   - Stream audio playback
+   - Sync with visemes
+   
+4. **Viseme Synchronization** (2-3 days)
+   - Sync visemes with audio
+   - Apply to 3D model blend shapes
+
+### Future Phase: AR Mode
+- AR plane detection
+- Model placement in real world
+- AR session management
 
 ---
 
-**Last Updated:** [Current Date]  
-**Status:** Foundation Complete, Testing Phase  
-**Remaining Steps:** See `docs/ar-remaining-steps.md`
+**Last Updated:** December 19, 2025  
+**Status:** ✅ Messages & Markers Working, 🎯 Ready for 3D Rendering  
+**Next Step:** Integrate Model3DViewer component into ARChatScreen
 

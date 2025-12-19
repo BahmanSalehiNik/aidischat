@@ -156,18 +156,27 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({ agentId, onClose }) 
 
   return (
     <View style={styles.container}>
+      {/* Header with back button - Always visible */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => {
+          console.log('🔙 [AvatarViewer] Back button pressed, calling onClose');
+          if (onClose) {
+            onClose();
+          } else {
+            console.warn('⚠️ [AvatarViewer] onClose is not defined');
+          }
+        }} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>Avatar Viewer</Text>
+        <View style={styles.spacer} />
+      </View>
+      
       {status === 'ready' ? (
         renderModel()
       ) : (
         <>
-          <View style={styles.header}>
-            <Text style={styles.title}>Avatar Viewer</Text>
-            {onClose && (
-              <TouchableOpacity onPress={onClose}>
-                <Ionicons name="close" size={24} color="#000" />
-              </TouchableOpacity>
-            )}
-          </View>
           {status === 'generating' && (
             <View style={styles.generatingContainer}>
               <ActivityIndicator size="large" color="#007AFF" />
@@ -194,24 +203,46 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    backgroundColor: '#000000',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333333',
+    zIndex: 1000,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  backButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    marginLeft: 4,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    flex: 1,
+    textAlign: 'center',
+  },
+  spacer: {
+    width: 80,
+  },
   generatingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
     backgroundColor: '#FFFFFF',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
   },
   statusText: {
     marginTop: 16,
