@@ -18,10 +18,16 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const onRoomCreatedRef = useRef(onRoomCreated);
   const [isConnected, setIsConnected] = useState(false);
   const [ws, setWs] = useState<WebSocket | null>(null);
 
   const wsUrl = WS_URL || 'ws://localhost:3000';
+
+  // Update ref when callback changes (without causing re-renders)
+  useEffect(() => {
+    onRoomCreatedRef.current = onRoomCreated;
+  }, [onRoomCreated]);
 
   const connect = useCallback(() => {
     if (!token) {
@@ -70,10 +76,10 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
 
             case 'room.created':
               console.log(`📢 [GlobalWS] Room created event received: ${msg.payload?.roomId}`);
-              // Trigger room list refresh
-              if (onRoomCreated) {
+              // Trigger room list refresh using ref to avoid dependency issues
+              if (onRoomCreatedRef.current) {
                 console.log(`🔄 [GlobalWS] Calling onRoomCreated callback`);
-                onRoomCreated();
+                onRoomCreatedRef.current();
               } else {
                 console.warn(`⚠️ [GlobalWS] onRoomCreated callback not provided`);
               }
@@ -141,7 +147,7 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
     } catch (error) {
       console.error('Failed to create global WebSocket connection:', error);
     }
-  }, [token, onRoomCreated, removeRoom, wsUrl]);
+  }, [token, removeRoom, wsUrl]); // Removed onRoomCreated from dependencies - using ref instead
 
   useEffect(() => {
     // Only connect if we have a token

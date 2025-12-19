@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,12 +19,15 @@ import { avatarApi } from '../../utils/avatarApi';
 import { useGlobalWebSocket } from '../../hooks/useGlobalWebSocket';
 import { parseMarkers } from '../../utils/markerParser';
 import { generateVisemes } from '../../utils/phonemeToViseme';
+import { useAuthStore } from '../../store/authStore';
 
 export default function ARChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ agentId: string }>();
   const { ws, isConnected } = useGlobalWebSocket();
+  const { user } = useAuthStore();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const [room, setRoom] = useState<ARRoom | null>(null);
   const [messages, setMessages] = useState<ARMessage[]>([]);
@@ -34,12 +38,33 @@ export default function ARChatScreen() {
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState('');
+  const streamingMessageIdRef = useRef<string | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    streamingMessageIdRef.current = streamingMessageId;
+  }, [streamingMessageId]);
 
   useEffect(() => {
     if (params.agentId) {
       initializeARChat();
     }
   }, [params.agentId]);
+
+  // Track keyboard height
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (ws && isConnected && room) {
@@ -57,12 +82,83 @@ export default function ARChatScreen() {
           
           if (data.type === 'ar-stream-chunk') {
             const chunkData = data.data;
-            if (chunkData.messageId === streamingMessageId) {
+            // Use ref to get current streamingMessageId without causing re-renders
+            const currentStreamingId = streamingMessageIdRef.current;
+            
+            console.log('📥 [ARChatScreen] Received AR stream chunk:', {
+              messageId: chunkData.messageId,
+              currentStreamingId,
+              chunkIndex: chunkData.chunkIndex,
+              isFinal: chunkData.isFinal,
+            });
+            
+            // Chunks use the user's messageId, but we need to create/update an agent message
+            // Also verify the chunk is for the current room
+            if (chunkData.messageId === currentStreamingId && chunkData.roomId === room?.id) {
               setStreamingContent(prev => {
                 const newContent = prev + chunkData.chunk;
                 
+                // Parse markers from streaming content (for real-time display)
+                const { text: cleanText, markers } = parseMarkers(newContent);
+                
+                // Log markers if found
+                if (markers.length > 0) {
+                  console.log('🎭 [ARChatScreen] Markers found in stream:', markers);
+                }
+                
+                // Update the message in the messages list with streaming content
+                setMessages(prevMessages => {
+                  const prevArray = Array.isArray(prevMessages) ? prevMessages : [];
+                  
+                  // Look for existing agent message for this user message (agent-{messageId})
+                  const agentMessageId = `agent-${currentStreamingId}`;
+                  const agentMessageIndex = prevArray.findIndex(msg => msg.id === agentMessageId);
+                  
+                  if (agentMessageIndex >= 0) {
+                    // Update existing agent message with streaming content and markers
+                    console.log('📝 [ARChatScreen] Updating existing agent message:', agentMessageId);
+                    const updatedMessages = [...prevArray];
+                    updatedMessages[agentMessageIndex] = {
+                      ...updatedMessages[agentMessageIndex],
+                      content: newContent, // Keep raw content with markers for final parsing
+                      markers: markers, // Update markers in real-time
+                      status: chunkData.isFinal ? 'completed' : 'streaming',
+                    };
+                    return updatedMessages;
+                  } else {
+                    // Check if there's a user message with this ID
+                    const userMessageIndex = prevArray.findIndex(msg => msg.id === currentStreamingId);
+                    const isUserMessage = userMessageIndex >= 0 && 
+                      (prevArray[userMessageIndex].senderType === 'human' || 
+                       (user && prevArray[userMessageIndex].senderId === user.id));
+                    
+                    // Create new agent message for the response
+                    console.log('📝 [ARChatScreen] Creating new agent message:', {
+                      agentMessageId,
+                      isUserMessage,
+                      chunkIndex: chunkData.chunkIndex,
+                      contentLength: newContent.length,
+                      markersFound: markers.length,
+                    });
+                    
+                    const agentMessage: ARMessage = {
+                      id: agentMessageId,
+                      roomId: chunkData.roomId || room?.id || '',
+                      senderId: params.agentId || '',
+                      senderType: 'agent',
+                      content: newContent, // Keep raw content with markers
+                      markers: markers, // Include parsed markers
+                      status: chunkData.isFinal ? 'completed' : 'streaming',
+                      createdAt: new Date().toISOString(),
+                    };
+                    return [...prevArray, agentMessage];
+                  }
+                });
+                
                 // If final chunk, process markers and trigger TTS/animations
                 if (chunkData.isFinal) {
+                  console.log('✅ [ARChatScreen] Final chunk received, processing complete message');
+                  console.log('🎭 [ARChatScreen] Final markers:', markers);
                   // Use setTimeout to ensure state is updated
                   setTimeout(() => {
                     processStreamComplete(newContent);
@@ -70,6 +166,11 @@ export default function ARChatScreen() {
                 }
                 
                 return newContent;
+              });
+            } else {
+              console.warn('⚠️ [ARChatScreen] Received chunk for different message:', {
+                chunkMessageId: chunkData.messageId,
+                currentStreamingId,
               });
             }
           }
@@ -83,11 +184,19 @@ export default function ARChatScreen() {
         ws.removeEventListener('message', handleMessage);
       };
     }
-  }, [ws, isConnected, room, streamingMessageId]);
+    // Note: processStreamComplete is defined in the component but doesn't need to be in deps
+    // since it's only called from within the handler closure
+  }, [ws, isConnected, room]); // Removed streamingMessageId from dependencies to prevent handler recreation
 
   const initializeARChat = async () => {
     try {
       setLoading(true);
+      
+      // Clear any previous messages and streaming state when starting/rejoining
+      setMessages([]);
+      setStreamingMessageId(null);
+      setStreamingContent('');
+      streamingMessageIdRef.current = null;
       
       // 1. Create or get AR room
       const arRoom = await arApi.createOrGetARRoom(params.agentId!);
@@ -116,9 +225,14 @@ export default function ARChatScreen() {
       const tokens = await arApi.getProviderTokens(normalizedRoom.id);
       setProviderTokens(tokens);
 
-      // 3. Load message history
-      const history = await arApi.getARMessages(normalizedRoom.id);
-      setMessages(history);
+      // 3. For AR chat, start with empty messages - subtitle will be empty until new messages arrive
+      // This ensures a clean slate when joining/rejoining a room
+      setMessages([]);
+      
+      // Also clear any streaming state
+      setStreamingMessageId(null);
+      setStreamingContent('');
+      streamingMessageIdRef.current = null;
 
       // 4. Get 3D model URL
       try {
@@ -170,7 +284,11 @@ export default function ARChatScreen() {
         throw new Error('Invalid message response from server');
       }
       
-      setMessages(prev => [...prev, newMessage]);
+      setMessages(prev => {
+        const prevArray = Array.isArray(prev) ? prev : [];
+        return [...prevArray, newMessage];
+      });
+      // Note: streamingMessageId is set to user's message ID, but agent response will create a new message
       setStreamingMessageId(newMessage.id);
       setStreamingContent('');
     } catch (error: any) {
@@ -182,36 +300,79 @@ export default function ARChatScreen() {
   };
 
   const processStreamComplete = async (fullContent: string) => {
-    if (!streamingMessageId) return;
+    const currentStreamingId = streamingMessageIdRef.current;
+    if (!currentStreamingId) return;
 
     try {
       // Parse markers from content
       const { cleanText, markers } = parseMarkers(fullContent);
 
-      // Update message in state
-      setMessages(prev => prev.map(msg => 
-        msg.id === streamingMessageId 
-          ? { ...msg, content: cleanText, markers, status: 'completed' as const }
-          : msg
-      ));
+      // Find and update the agent message (it should have ID starting with "agent-")
+      const agentMessageId = `agent-${currentStreamingId}`;
+      setMessages(prev => {
+        const prevArray = Array.isArray(prev) ? prev : [];
+        const updated = prevArray.map(msg => {
+          // Match by agent message ID or find the last streaming agent message
+          if (msg.id === agentMessageId) {
+            return { ...msg, content: cleanText, markers, status: 'completed' as const };
+          }
+          // Fallback: if no exact match, update last streaming agent message
+          return msg;
+        });
+        
+        // If we didn't find the exact match, try to find last streaming agent message
+        const foundExact = updated.some(msg => msg.id === agentMessageId);
+        if (!foundExact) {
+          // Find last streaming agent message and update it
+          for (let i = updated.length - 1; i >= 0; i--) {
+            if (updated[i].senderType === 'agent' && updated[i].status === 'streaming') {
+              updated[i] = { ...updated[i], content: cleanText, markers, status: 'completed' as const };
+              break;
+            }
+          }
+        }
+        
+        return updated;
+      });
 
       // TODO: Call TTS provider with cleanText
       // TODO: Generate visemes from phonemes
       // TODO: Apply markers to 3D model (emotions, gestures, poses)
       // TODO: Play audio and sync with visemes
 
-      console.log('✅ Stream complete:', { cleanText, markers });
+      console.log('✅ Stream complete:', { 
+        cleanText, 
+        markers,
+        markersCount: markers.length,
+        markerTypes: markers.map(m => `${m.type}:${m.value}`).join(', '),
+      });
+      
+      // Log if no markers were found (potential issue)
+      if (markers.length === 0) {
+        console.warn('⚠️ [ARChatScreen] No markers found in agent response! The AI may not be generating markers.');
+        console.warn('⚠️ [ARChatScreen] Raw content (first 200 chars):', fullContent.substring(0, 200));
+      }
+      
+      // Clear streaming state
+      setStreamingMessageId(null);
+      setStreamingContent('');
+      streamingMessageIdRef.current = null;
     } catch (error) {
       console.error('Error processing stream complete:', error);
       // Update message status to failed
-      setMessages(prev => prev.map(msg => 
-        msg.id === streamingMessageId 
-          ? { ...msg, status: 'failed' as const }
-          : msg
-      ));
-    } finally {
+      const currentStreamingId = streamingMessageIdRef.current;
+      setMessages(prev => {
+        const prevArray = Array.isArray(prev) ? prev : [];
+        return prevArray.map(msg => 
+          msg.id === currentStreamingId 
+            ? { ...msg, status: 'failed' as const }
+            : msg
+        );
+      });
+      // Clear streaming state even on error
       setStreamingMessageId(null);
       setStreamingContent('');
+      streamingMessageIdRef.current = null;
     }
   };
 
@@ -280,94 +441,129 @@ export default function ARChatScreen() {
             </Text>
           </View>
         )}
-
-        {/* Streaming indicator */}
-        {streamingMessageId && (
-          <View style={{
-            position: 'absolute',
-            bottom: 100,
-            backgroundColor: 'rgba(88, 86, 214, 0.9)',
-            paddingHorizontal: 16,
-            paddingVertical: 8,
-            borderRadius: 20,
-          }}>
-            <Text style={{ color: '#FFFFFF', fontSize: 14 }}>
-              {streamingContent || 'Agent is thinking...'}
-            </Text>
-          </View>
-        )}
       </View>
 
-      {/* Messages List */}
-      {messages.length > 0 && (
-        <View style={{
-          maxHeight: 200,
-          backgroundColor: '#1C1C1E',
-          borderTopWidth: 1,
-          borderTopColor: '#333333',
-          paddingVertical: 8,
-        }}>
-          {messages.slice(-5).map((msg) => (
-            <View
-              key={msg.id}
-              style={{
-                paddingHorizontal: 16,
-                paddingVertical: 8,
-                flexDirection: 'row',
-                alignItems: 'flex-start',
-              }}
-            >
-              <View style={{
-                width: 32,
-                height: 32,
-                borderRadius: 16,
-                backgroundColor: msg.senderType === 'agent' ? '#5856D6' : '#007AFF',
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginRight: 8,
+      {/* Subtitle Display - Last Message Only */}
+      {(() => {
+        // Debug: Log current state
+        console.log('📝 [Subtitle] Render check:', {
+          messagesCount: messages.length,
+          hasStreamingContent: !!streamingContent,
+          streamingContentLength: streamingContent?.length || 0,
+          streamingMessageId,
+        });
+        
+        // Filter messages to only show messages from current room (safety check)
+        const currentRoomMessages = room 
+          ? messages.filter(msg => msg.roomId === room.id)
+          : messages;
+        
+        // Always show if we have messages OR streaming content
+        const hasMessages = currentRoomMessages.length > 0;
+        const hasStreaming = !!streamingContent && streamingContent.trim().length > 0;
+        
+        let displayText = '';
+        let isAgent = false;
+        
+        if (hasMessages) {
+          // Show the last message regardless of sender (user or agent)
+          const lastMessage = currentRoomMessages[currentRoomMessages.length - 1];
+          isAgent = lastMessage.senderType === 'agent';
+          
+          console.log('📝 [Subtitle] Last message (any sender):', {
+            id: lastMessage.id,
+            status: lastMessage.status,
+            contentLength: lastMessage.content?.length || 0,
+            senderType: lastMessage.senderType,
+            isAgent,
+          });
+          
+          console.log('📝 [Subtitle] Last message:', {
+            id: lastMessage.id,
+            status: lastMessage.status,
+            contentLength: lastMessage.content?.length || 0,
+            senderType: lastMessage.senderType,
+            streamingMessageId,
+            isAgentMessage: lastMessage.senderType === 'agent',
+            hasStreamingContent: !!streamingContent,
+            streamingContentLength: streamingContent?.length || 0,
+          });
+          
+          // Prefer streaming content if message is streaming and matches current streaming ID
+          if (lastMessage.status === 'streaming' && streamingContent && 
+              (lastMessage.id === streamingMessageId || lastMessage.id === `agent-${streamingMessageId}`)) {
+            displayText = streamingContent;
+            console.log('📝 [Subtitle] Using streaming content');
+          } else if (lastMessage.content && lastMessage.content.trim()) {
+            displayText = lastMessage.content;
+            console.log('📝 [Subtitle] Using message content');
+          } else if (lastMessage.status === 'streaming') {
+            displayText = '...';
+            console.log('📝 [Subtitle] Showing placeholder');
+          }
+        } else if (hasStreaming) {
+          // Show streaming content even if message not in array yet (assume it's agent response)
+          displayText = streamingContent;
+          isAgent = true; // Assume agent if streaming
+          console.log('📝 [Subtitle] Using streaming content (no message in array)');
+        }
+        
+        console.log('📝 [Subtitle] Final displayText:', displayText ? `${displayText.substring(0, 50)}...` : 'EMPTY');
+        
+        if (!displayText || displayText.trim() === '') {
+          console.log('📝 [Subtitle] Returning null - no text to display');
+          return null;
+        }
+
+        // Calculate bottom position: above input area (60px) + keyboard height + some padding
+        const inputAreaHeight = 60; // Approximate input area height
+        const padding = 20;
+        const bottomPosition = keyboardHeight > 0 
+          ? keyboardHeight + inputAreaHeight + padding
+          : inputAreaHeight + padding + 100; // Default position when keyboard is hidden
+
+        return (
+          <View 
+            key={`subtitle-${displayText.length}-${isAgent ? 'agent' : 'user'}`}
+            style={{
+              position: 'absolute',
+              bottom: bottomPosition,
+              left: 0,
+              right: 0,
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingHorizontal: 32,
+              zIndex: 1000,
+              pointerEvents: 'none', // Allow touches to pass through
+            }}>
+            <View style={{
+              backgroundColor: isAgent 
+                ? 'rgba(88, 86, 214, 0.9)' // Purple for agent
+                : 'rgba(0, 122, 255, 0.9)', // Blue for user
+              paddingHorizontal: 20,
+              paddingVertical: 12,
+              borderRadius: 12,
+              maxWidth: '90%',
+              minWidth: 100,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.5,
+              shadowRadius: 8,
+              elevation: 10,
+            }}>
+              <Text style={{
+                color: '#FFFFFF',
+                fontSize: 16,
+                textAlign: 'center',
+                fontWeight: '500',
+                lineHeight: 22,
               }}>
-                <Ionicons
-                  name={msg.senderType === 'agent' ? 'sparkles' : 'person'}
-                  size={16}
-                  color="#FFFFFF"
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 4 }}>
-                  {msg.senderType === 'agent' ? 'Agent' : 'You'}
-                </Text>
-                <Text style={{ color: '#FFFFFF', fontSize: 14 }}>
-                  {msg.content || (msg.status === 'streaming' ? 'Streaming...' : '')}
-                </Text>
-                {msg.markers && msg.markers.length > 0 && (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 4 }}>
-                    {msg.markers.map((marker, idx) => (
-                      <View
-                        key={idx}
-                        style={{
-                          backgroundColor: '#333333',
-                          paddingHorizontal: 6,
-                          paddingVertical: 2,
-                          borderRadius: 4,
-                        }}
-                      >
-                        <Text style={{ color: '#8E8E93', fontSize: 10 }}>
-                          {marker.type}:{marker.value}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-                {msg.status === 'streaming' && (
-                  <View style={{ marginTop: 4 }}>
-                    <ActivityIndicator size="small" color="#5856D6" />
-                  </View>
-                )}
-              </View>
+                {displayText.trim() || '...'}
+              </Text>
             </View>
-          ))}
-        </View>
-      )}
+          </View>
+        );
+      })()}
 
       {/* Input Area */}
       <KeyboardAvoidingView

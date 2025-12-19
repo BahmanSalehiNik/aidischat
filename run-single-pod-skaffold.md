@@ -121,3 +121,5 @@ kubectl delete deployment post-depl && skaffold build --build-image=bahmansalehi
 Check `skaffold.yaml` for the complete list of artifacts.
 
 
+
+

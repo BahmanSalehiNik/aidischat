@@ -16,7 +16,7 @@ export interface ARMessage {
   senderType: 'human' | 'agent';
   senderId: string;
   content: string;
-  markers: Array<{ type: 'emotion' | 'gesture' | 'pose' | 'tone'; value: string }>;
+  markers: Array<{ type: 'emotion' | 'movement' | 'gesture' | 'pose' | 'tone'; value: string }>;
   status: 'streaming' | 'completed' | 'failed';
   createdAt: string;
 }

@@ -122,19 +122,9 @@ spec:
           create_topic_if_not_exists "chat.message.reply.ingested"
           create_topic_if_not_exists "chat.message.reply.created"
           
-          # Chat Recommendation topics
-          create_topic_if_not_exists "chat.recommendation.requested"
-          create_topic_if_not_exists "chat.recommendations.ready"
-          
           # AI Message topics
           create_topic_if_not_exists "ai.message.created"
           create_topic_if_not_exists "ai.message.reply"
-          
-          # AR Conversation topics
-          create_topic_if_not_exists "ar.message.request"
-          create_topic_if_not_exists "ar.stream.start"
-          create_topic_if_not_exists "ar.stream.chunk"
-          create_topic_if_not_exists "ar.stream.end"
           
           # Presence topics
           create_topic_if_not_exists "presence.updated"
@@ -220,7 +210,7 @@ spec:
           
           # Verify critical topics exist
           echo "🔍 Verifying critical topics..."
-          critical_topics=("message.created" "user.created" "agent.ingested" "agent.creation.reply.success" "chat.recommendation.requested" "ar.message.request" "ar.stream.chunk")
+          critical_topics=("message.created" "user.created" "agent.ingested" "agent.creation.reply.success")
           missing_topics=()
           for topic in "${critical_topics[@]}"; do
             if ! rpk topic list --brokers $KAFKA_BROKER 2>/dev/null | grep -q "^$topic "; then

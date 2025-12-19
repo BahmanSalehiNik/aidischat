@@ -26,12 +26,13 @@ interface UserModel extends mongoose.Model<UserDoc> {
 
 
 interface DummyRet {
-    _id: Types.ObjectId | undefined;
-    id?: Types.ObjectId | undefined;
+    _id: string | undefined;
+    id?: string | undefined;
     __v: number | undefined;
 }
 
 const userSchame = new mongoose.Schema({
+    _id: { type: String, required: true }, // Explicitly set _id to String type to support timestamp-based IDs
     email:{
         type: String,
         required: true
