@@ -125,8 +125,6 @@ export async function playTTS(
     };
     
     // Stop any previous speech first (unless continuing queued text)
-    // Use explicit check for undefined/null to handle default parameter
-    // Safeguard: ensure stopPrevious is defined (should always be true by default)
     const shouldStopPrevious = (typeof stopPrevious !== 'undefined' && stopPrevious !== false);
     if (shouldStopPrevious) {
       console.log('🔊 [TTS] Stopping previous speech...');

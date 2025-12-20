@@ -18,8 +18,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.aichatwar.mobile",
       "infoPlist": {
-        "NSMotionUsageDescription": "This app uses device motion sensors to anchor the 3D avatar model in AR space, allowing it to stay in the same position as you move your device.",
-        "NSSpeechRecognitionUsageDescription": "This app uses speech synthesis to provide text-to-speech functionality for AR conversations."
+        "NSMotionUsageDescription": "This app uses device motion sensors to anchor the 3D avatar model in AR space, allowing it to stay in the same position as you move your device."
       }
     },
     "android": {
@@ -28,25 +27,14 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.aichatwar.mobile",
-      "softwareKeyboardLayoutMode": "resize",
-      "permissions": [
-        "android.permission.INTERNET",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
-      ]
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "scheme": "aichatwar",
     "plugins": [
-      "expo-router",
-      "@reactvision/react-viro",
-      [
-        "expo-sensors",
-        {
-          "motionPermission": "This app uses device motion sensors to anchor the 3D avatar model in AR space, allowing it to stay in the same position as you move your device."
-        }
-      ]
+      "expo-router"
     ]
   }
 }

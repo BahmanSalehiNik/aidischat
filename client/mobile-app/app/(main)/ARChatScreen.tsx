@@ -25,7 +25,7 @@ import { useAuthStore } from '../../store/authStore';
 import { Model3DViewer } from '../../components/avatar/Model3DViewer';
 import { playTTS } from '../../utils/ttsClient';
 import * as Speech from 'expo-speech';
-import { Audio, Sound } from 'expo-av';
+import { Audio } from 'expo-av';
 
 export default function ARChatScreen() {
   const router = useRouter();
@@ -50,13 +50,15 @@ export default function ARChatScreen() {
   const [viewMode, setViewMode] = useState<'vr' | 'ar'>('vr'); // VR = 3D space, AR = camera background
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const streamingMessageIdRef = useRef<string | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const soundRef = useRef<Audio.Sound | null>(null);
   const [currentVisemes, setCurrentVisemes] = useState<VisemeData[]>([]);
   const [currentVisemeId, setCurrentVisemeId] = useState<number | null>(null);
-  const visemeUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const ttsPlayingRef = useRef<boolean>(false);
+  const ttsQueuedTextRef = useRef<string>('');
+  const ttsStartedTextRef = useRef<string>('');
   const streamTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Timeout for auto-triggering TTS if no final chunk
-  const ttsPlayingRef = useRef<boolean>(false); // Track if TTS is currently playing
-  const ttsQueuedTextRef = useRef<string>(''); // Queue for text that arrives while TTS is playing
-  const ttsStartedTextRef = useRef<string>(''); // Track what text we've already started speaking
 
   // Re-check camera permission when switching to AR mode
   useEffect(() => {
@@ -118,33 +120,15 @@ export default function ARChatScreen() {
               currentStreamingId,
               chunkIndex: chunkData.chunkIndex,
               isFinal: chunkData.isFinal,
-              chunkLength: chunkData.chunk?.length || 0,
             });
-            
-            // Log if this is the final chunk
-            if (chunkData.isFinal) {
-              console.log('🎯🎯🎯 [ARChatScreen] FINAL CHUNK DETECTED! isFinal=true');
-            }
             
             // Chunks use the user's messageId, but we need to create/update an agent message
             // Also verify the chunk is for the current room
             if (chunkData.messageId === currentStreamingId && chunkData.roomId === room?.id) {
-              console.log('✅ [ARChatScreen] Chunk matches current stream and room');
-              
               // Clear any existing timeout (new chunk received, reset timer)
               if (streamTimeoutRef.current) {
                 clearTimeout(streamTimeoutRef.current);
                 streamTimeoutRef.current = null;
-              }
-              
-              // If this is the first chunk (chunkIndex 0), reset TTS state for new message
-              if (chunkData.chunkIndex === 0) {
-                console.log('🔄 [ARChatScreen] First chunk of new message - resetting TTS state');
-                ttsPlayingRef.current = false;
-                ttsQueuedTextRef.current = '';
-                ttsStartedTextRef.current = '';
-                (ttsQueuedTextRef as any).cleanText = '';
-                Speech.stop(); // Stop any ongoing TTS from previous message
               }
               
               setStreamingContent(prev => {
@@ -152,152 +136,6 @@ export default function ARChatScreen() {
                 
                 // Parse markers from streaming content (for real-time display)
                 const { text: cleanText, markers } = parseMarkers(newContent);
-                
-                // Store latest content for TTS queue checking
-                const currentStreamingId = streamingMessageIdRef.current;
-                
-                // REAL-TIME TTS: Start speaking early if we have enough text
-                // Simplified approach: Start early, but let timeout fallback handle continuation
-                // This is more reliable than trying to queue mid-speech
-                const hasCompleteSentence = /[.!?]\s/.test(cleanText);
-                const shouldStartTTS = !ttsPlayingRef.current && 
-                                      ttsStartedTextRef.current.length === 0 &&
-                                      ((hasCompleteSentence && cleanText.length >= 80) || 
-                                       cleanText.length >= 150);
-                
-                if (shouldStartTTS) {
-                  console.log('🎤 [ARChatScreen] Starting REAL-TIME TTS (early start)');
-                  console.log('🎤 [ARChatScreen] Text so far:', cleanText.substring(0, 200));
-                  console.log('🎤 [ARChatScreen] Will play full message via timeout fallback if needed');
-                  
-                  // Store the raw content (with markers) for later full playback
-                  ttsQueuedTextRef.current = newContent; // Store raw content
-                  
-                  // Start TTS with current text - this will play the first part
-                  const currentStreamingId = streamingMessageIdRef.current;
-                  if (currentStreamingId) {
-                    ttsPlayingRef.current = true;
-                    ttsStartedTextRef.current = cleanText;
-                    
-                    // Play the current text - when it finishes, check for remaining text
-                    playTTS(cleanText, (visemeId) => {
-                      setCurrentVisemeId(visemeId);
-                    }, true).then(async () => {
-                      console.log('✅ [ARChatScreen] Early TTS segment completed');
-                      ttsPlayingRef.current = false;
-                      
-                      // Wait a moment for processStreamComplete to finish setting the queue
-                      await new Promise(resolve => setTimeout(resolve, 100));
-                      
-                      // Check if there's queued text to play (from processStreamComplete)
-                      // Try multiple sources: queue ref, stored cleanText, or streamingContent state
-                      const queuedContent = ttsQueuedTextRef.current;
-                      const storedCleanText = (ttsQueuedTextRef as any).cleanText;
-                      const currentStreamingContent = streamingContent; // Get from state as fallback
-                      
-                      // Use stored cleanText if available (most reliable), otherwise parse queue or use streamingContent
-                      let contentToUse: string | null = null;
-                      let queuedCleanText: string | null = null;
-                      
-                      if (storedCleanText && storedCleanText.length > 0) {
-                        // Use stored clean text directly (most reliable)
-                        queuedCleanText = storedCleanText;
-                        contentToUse = queuedContent || currentStreamingContent; // For reference
-                        console.log('🔍 [ARChatScreen] Using stored cleanText from queue');
-                      } else if (queuedContent && queuedContent.length > 0) {
-                        // Parse queued content
-                        const queuedParsed = parseMarkers(queuedContent);
-                        queuedCleanText = queuedParsed.text;
-                        contentToUse = queuedContent;
-                        console.log('🔍 [ARChatScreen] Parsed queued content');
-                      } else if (currentStreamingContent && currentStreamingContent.length > 0) {
-                        // Use streamingContent as fallback
-                        const streamParsed = parseMarkers(currentStreamingContent);
-                        queuedCleanText = streamParsed.text;
-                        contentToUse = currentStreamingContent;
-                        console.log('🔍 [ARChatScreen] Using streamingContent as fallback');
-                      }
-                      
-                      console.log('🔍 [ARChatScreen] Checking queued content after early TTS completed:', {
-                        hasQueuedContent: !!queuedContent,
-                        queuedContentLength: queuedContent?.length || 0,
-                        hasStoredCleanText: !!storedCleanText,
-                        storedCleanTextLength: storedCleanText?.length || 0,
-                        hasStreamingContent: !!currentStreamingContent,
-                        streamingContentLength: currentStreamingContent?.length || 0,
-                        queuedCleanTextLength: queuedCleanText?.length || 0,
-                        alreadySpokenLength: cleanText.length,
-                        alreadySpokenPreview: cleanText.substring(0, 50)
-                      });
-                      
-                      if (queuedCleanText && queuedCleanText.length > 0) {
-                        // Use the text we actually just finished speaking (cleanText from closure)
-                        const alreadySpoken = cleanText; // This is what we just finished speaking
-                        
-                        console.log('🔍 [ARChatScreen] Parsed queued content:', {
-                          queuedCleanTextLength: queuedCleanText.length,
-                          queuedCleanTextPreview: queuedCleanText.substring(0, 50),
-                          alreadySpokenLength: alreadySpoken.length,
-                          alreadySpokenPreview: alreadySpoken.substring(0, 50),
-                          hasMore: queuedCleanText.length > alreadySpoken.length
-                        });
-                        
-                        if (queuedCleanText.length > alreadySpoken.length) {
-                          // Calculate remaining text from what we actually spoke
-                          const remainingText = queuedCleanText.substring(alreadySpoken.length).trim();
-                          console.log('🔍 [ARChatScreen] Remaining text calculation:', {
-                            remainingTextLength: remainingText.length,
-                            remainingTextPreview: remainingText.substring(0, 100)
-                          });
-                          
-                          if (remainingText.length > 0) {
-                            console.log('🎤 [ARChatScreen] ===== FOUND REMAINING TEXT IN QUEUE, PLAYING NOW =====');
-                            console.log('🎤 [ARChatScreen] Remaining text:', remainingText.substring(0, 150));
-                            ttsPlayingRef.current = true;
-                            ttsStartedTextRef.current = queuedCleanText;
-                            ttsQueuedTextRef.current = ''; // Clear queue
-                            (ttsQueuedTextRef as any).cleanText = ''; // Clear stored cleanText
-                            
-                            // Generate visemes for remaining text
-                            const wordCount = remainingText.split(/\s+/).length;
-                            const estimatedDurationMs = wordCount * 400;
-                            const visemes = generateVisemes(remainingText, estimatedDurationMs);
-                            setCurrentVisemes(visemes);
-                            
-                            playTTS(remainingText, (visemeId) => {
-                              setCurrentVisemeId(visemeId);
-                            }, false).then(() => {
-                              console.log('✅ [ARChatScreen] Remaining text TTS completed - FULL MESSAGE DONE');
-                              ttsPlayingRef.current = false;
-                            }).catch((error) => {
-                              console.error('❌ [ARChatScreen] Remaining text TTS error:', error);
-                              ttsPlayingRef.current = false;
-                            });
-                            return; // Exit early since we're playing remaining text
-                          } else {
-                            console.log('⚠️ [ARChatScreen] Remaining text is empty after trim');
-                          }
-                        } else {
-                          console.log('⚠️ [ARChatScreen] Queued text is not longer than already spoken text');
-                        }
-                      } else {
-                        console.log('⚠️ [ARChatScreen] No queued content found in ttsQueuedTextRef');
-                      }
-                      
-                      // If no queued text, the timeout fallback will handle it
-                      console.log('⏳ [ARChatScreen] No queued text found or no remaining text. Timeout fallback will handle remaining text if any.');
-                    }).catch((error) => {
-                      console.error('❌ [ARChatScreen] Early TTS error:', error);
-                      ttsPlayingRef.current = false;
-                    });
-                  }
-                } else if (ttsPlayingRef.current) {
-                  // TTS is already playing - update queue with latest text (for timeout fallback)
-                  if (newContent.length > (ttsQueuedTextRef.current?.length || 0)) {
-                    ttsQueuedTextRef.current = newContent; // Store raw content with markers
-                    console.log('📝 [ARChatScreen] TTS playing, updated queue for timeout fallback (total:', newContent.length, 'chars)');
-                  }
-                }
                 
                 // Log markers if found
                 if (markers.length > 0) {
@@ -369,70 +207,60 @@ export default function ARChatScreen() {
                 
                 // If final chunk, process markers and trigger TTS/animations
                 if (chunkData.isFinal) {
-                  console.log('✅✅✅ [ARChatScreen] FINAL CHUNK RECEIVED - Processing complete message');
-                  
-                  // Clear timeout since we got the final chunk
-                  if (streamTimeoutRef.current) {
-                    clearTimeout(streamTimeoutRef.current);
-                    streamTimeoutRef.current = null;
-                  }
-                  
+                  console.log('✅✅✅ [ARChatScreen] FINAL CHUNK RECEIVED!');
+                  console.log('✅ [ARChatScreen] Final chunk received, processing complete message');
                   console.log('🎭 [ARChatScreen] Final markers:', markers);
                   console.log('📝 [ARChatScreen] Full content length:', newContent.length);
                   console.log('📝 [ARChatScreen] Full content preview:', newContent.substring(0, 200));
-                  console.log('🔍 [ARChatScreen] streamingMessageIdRef.current:', streamingMessageIdRef.current);
-                  console.log('🔍 [ARChatScreen] streamingMessageId state:', streamingMessageId);
                   
-                  // Use setTimeout to ensure state is updated, then call processStreamComplete
-                  setTimeout(() => {
-                    console.log('🔄 [ARChatScreen] About to call processStreamComplete...');
-                    console.log('🔍 [ARChatScreen] streamingMessageIdRef.current at call time:', streamingMessageIdRef.current);
-                    processStreamComplete(newContent).catch((error) => {
-                      console.error('❌ [ARChatScreen] processStreamComplete error:', error);
-                    });
-                  }, 100); // Small delay to ensure state updates
-                } else {
-                  // Not final chunk - set up timeout to auto-trigger TTS if no final chunk arrives
-                  // This is a fallback in case backend doesn't send final chunk
+                  // Clear timeout since we got final chunk
                   if (streamTimeoutRef.current) {
                     clearTimeout(streamTimeoutRef.current);
+                    streamTimeoutRef.current = null;
                   }
                   
-                  streamTimeoutRef.current = setTimeout(() => {
-                    console.log('⏰ [ARChatScreen] TIMEOUT: No final chunk received after 2 seconds, triggering TTS anyway');
-                    console.log('⏰ [ARChatScreen] This is a fallback mechanism in case backend doesn\'t send final chunk');
-                    
-                    // Get the latest content from state
-                    setStreamingContent(currentContent => {
-                      if (currentContent && currentContent.trim().length > 0) {
-                        console.log('⏰ [ARChatScreen] Triggering processStreamComplete with timeout fallback');
-                        processStreamComplete(currentContent).catch((error) => {
-                          console.error('❌ [ARChatScreen] processStreamComplete error (timeout fallback):', error);
-                        });
-                      }
-                      return currentContent; // Don't modify content
-                    });
-                    
-                    streamTimeoutRef.current = null;
-                  }, 2000); // 2 seconds after last chunk
+                  // Call processStreamComplete IMMEDIATELY (no delay)
+                  console.log('🔄 [ARChatScreen] Calling processStreamComplete NOW...');
+                  processStreamComplete(newContent).catch((error) => {
+                    console.error('❌ [ARChatScreen] processStreamComplete error:', error);
+                  });
                 }
+                // Note: Timeout for non-final chunks is set up OUTSIDE this if/else block
                 
                 return newContent;
               });
-            } else {
-              console.warn('⚠️ [ARChatScreen] Received chunk for different message or room:', {
-                chunkMessageId: chunkData.messageId,
-                chunkRoomId: chunkData.roomId,
-                currentStreamingId,
-                currentRoomId: room?.id,
-                isFinal: chunkData.isFinal,
-              });
               
-              // If this is a final chunk but for wrong message, still log it
-              if (chunkData.isFinal) {
-                console.error('❌❌❌ [ARChatScreen] FINAL CHUNK RECEIVED BUT FOR WRONG MESSAGE/ROOM!');
-                console.error('❌ [ARChatScreen] This means TTS will NOT trigger!');
+              // Set up timeout AFTER state update (for non-final chunks only)
+              // This timeout will fire 2 seconds after the last chunk if no final chunk arrives
+              if (!chunkData.isFinal) {
+                // Use a function to get the latest content from state when timeout fires
+                console.log('⏰ [ARChatScreen] Setting timeout for 2 seconds (chunkIndex:', chunkData.chunkIndex, ')');
+                streamTimeoutRef.current = setTimeout(() => {
+                  console.log('⏰⏰⏰ [ARChatScreen] TIMEOUT FIRED: No final chunk received after 2 seconds');
+                  
+                  // Get the latest content from state
+                  setStreamingContent(currentContent => {
+                    if (currentContent && currentContent.trim().length > 0) {
+                      console.log('⏰ [ARChatScreen] Triggering TTS with timeout fallback');
+                      console.log('⏰ [ARChatScreen] Content length:', currentContent.length);
+                      console.log('⏰ [ARChatScreen] Content preview:', currentContent.substring(0, 200));
+                      processStreamComplete(currentContent).catch((error) => {
+                        console.error('❌ [ARChatScreen] processStreamComplete error (timeout fallback):', error);
+                      });
+                    } else {
+                      console.warn('⏰ [ARChatScreen] No content to process in timeout fallback');
+                    }
+                    return currentContent; // Don't modify content
+                  });
+                  
+                  streamTimeoutRef.current = null;
+                }, 2000);
               }
+            } else {
+              console.warn('⚠️ [ARChatScreen] Received chunk for different message:', {
+                chunkMessageId: chunkData.messageId,
+                currentStreamingId,
+              });
             }
           }
         } catch (error) {
@@ -443,11 +271,6 @@ export default function ARChatScreen() {
       ws.addEventListener('message', handleMessage);
       return () => {
         ws.removeEventListener('message', handleMessage);
-        // Cleanup timeout on unmount
-        if (streamTimeoutRef.current) {
-          clearTimeout(streamTimeoutRef.current);
-          streamTimeoutRef.current = null;
-        }
       };
     }
     // Note: processStreamComplete is defined in the component but doesn't need to be in deps
@@ -463,16 +286,6 @@ export default function ARChatScreen() {
       setStreamingMessageId(null);
       setStreamingContent('');
       streamingMessageIdRef.current = null;
-      // Reset TTS state
-      ttsPlayingRef.current = false;
-      ttsQueuedTextRef.current = '';
-      ttsStartedTextRef.current = '';
-      Speech.stop(); // Stop any ongoing TTS
-      // Reset TTS state
-      ttsPlayingRef.current = false;
-      ttsQueuedTextRef.current = '';
-      ttsStartedTextRef.current = '';
-      Speech.stop(); // Stop any ongoing TTS
       
       // 1. Create or get AR room
       const arRoom = await arApi.createOrGetARRoom(params.agentId!);
@@ -509,11 +322,6 @@ export default function ARChatScreen() {
       setStreamingMessageId(null);
       setStreamingContent('');
       streamingMessageIdRef.current = null;
-      // Reset TTS state
-      ttsPlayingRef.current = false;
-      ttsQueuedTextRef.current = '';
-      ttsStartedTextRef.current = '';
-      Speech.stop(); // Stop any ongoing TTS
 
       // 4. Get 3D model URL
       try {
@@ -530,74 +338,6 @@ export default function ARChatScreen() {
       router.back();
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleBeepTest = async () => {
-    try {
-      console.log('🔊 [ARChatScreen] Testing audio with beep...');
-      
-      // Configure audio session FIRST - this is critical
-      try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true, // Critical: allows audio in silent mode
-          staysActiveInBackground: false,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-        console.log('✅ [ARChatScreen] Audio mode configured');
-      } catch (audioError) {
-        console.error('❌ [ARChatScreen] Audio mode configuration failed:', audioError);
-        Alert.alert('Audio Config Error', `Failed to configure audio: ${audioError}`);
-        return;
-      }
-      
-      // Stop any previous speech/audio
-      Speech.stop();
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      // Try expo-speech
-      console.log('🔊 [ARChatScreen] Attempting beep with expo-speech...');
-      
-      let speechStarted = false;
-      let speechError: any = null;
-      
-      Speech.speak('beep beep beep', {
-        language: 'en-US',
-        pitch: 1.0,
-        rate: 0.8,
-        volume: 1.0,
-        onStart: () => {
-          speechStarted = true;
-          console.log('✅✅✅ [ARChatScreen] Beep onStart fired - audio should be playing NOW!');
-        },
-        onDone: () => {
-          console.log('✅ [ARChatScreen] Beep onDone fired');
-        },
-        onError: (error: any) => {
-          speechError = error;
-          console.error('❌❌❌ [ARChatScreen] Beep error:', error);
-        },
-      });
-      
-      // Wait to see if it works
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      if (speechError) {
-        Alert.alert('Beep Error', `Error: ${speechError?.message || speechError}\n\nCheck console for details.`);
-      } else if (speechStarted) {
-        Alert.alert('Beep Test', 'Beep should be playing!\n\nIf no sound:\n- Check device volume\n- Toggle silent mode (iOS)\n- Check if other apps play sound');
-      } else {
-        Alert.alert('Beep Test', 'Beep callbacks not firing.\n\nThis suggests expo-speech is not working.\nCheck console for errors.');
-      }
-      
-    } catch (error: any) {
-      console.error('❌ [ARChatScreen] Beep test error:', error);
-      Alert.alert(
-        'Audio Test Failed', 
-        `Error: ${error?.message || 'Unknown'}\n\nCheck console logs.`
-      );
     }
   };
 
@@ -640,13 +380,6 @@ export default function ARChatScreen() {
       // Note: streamingMessageId is set to user's message ID, but agent response will create a new message
       setStreamingMessageId(newMessage.id);
       setStreamingContent('');
-      // Reset TTS state for new message
-      ttsPlayingRef.current = false;
-      ttsQueuedTextRef.current = '';
-      ttsStartedTextRef.current = '';
-      (ttsQueuedTextRef as any).cleanText = '';
-      Speech.stop(); // Stop any ongoing TTS from previous message
-      console.log('🔄 [ARChatScreen] Reset TTS state for new message');
     } catch (error: any) {
       console.error('Error sending message:', error);
       Alert.alert('Error', 'Failed to send message. Please try again.');
@@ -672,7 +405,6 @@ export default function ARChatScreen() {
     }
     
     console.log('✅ [ARChatScreen] Using streamingId:', currentStreamingId);
-
     console.log('✅ [ARChatScreen] processStreamComplete proceeding:', {
       contentLength: fullContent.length,
       streamingId: currentStreamingId,
@@ -748,109 +480,80 @@ export default function ARChatScreen() {
         console.log('🎭 [ARChatScreen] Applying movement:', latestMovement);
       }
 
-      // Generate TTS and visemes
-      // If TTS already started in real-time, play only the remaining text
-      if (cleanText && cleanText.trim().length > 0) {
-        if (ttsPlayingRef.current) {
-          // TTS is currently playing - queue the full text for later
-          console.log('📝 [ARChatScreen] TTS already playing, will play remaining text after current segment');
-          console.log('📝 [ARChatScreen] Setting queue with fullContent:', {
-            fullContentLength: fullContent.length,
-            fullContentPreview: fullContent.substring(0, 100),
-            cleanTextLength: cleanText.length,
-            cleanTextPreview: cleanText.substring(0, 100)
-          });
-          // Store BOTH raw content and clean text to ensure we have it
-          ttsQueuedTextRef.current = fullContent; // Store full raw content
-          // Also store the clean text separately in a way that won't be cleared
-          (ttsQueuedTextRef as any).cleanText = cleanText; // Store clean text as well
-          console.log('📝 [ARChatScreen] Queue set! ttsQueuedTextRef.current length:', ttsQueuedTextRef.current.length);
-          console.log('📝 [ARChatScreen] Also stored cleanText length:', cleanText.length);
-        } else if (ttsStartedTextRef.current.length > 0) {
-          // TTS was playing but finished - play remaining text now
-          const alreadySpoken = ttsStartedTextRef.current;
-          const alreadySpokenLength = alreadySpoken.length;
-          const remainingText = cleanText.substring(alreadySpokenLength).trim();
-          
-          console.log('🔊 [ARChatScreen] TTS check in processStreamComplete:', {
-            cleanTextLength: cleanText.length,
-            alreadySpokenLength: alreadySpokenLength,
-            hasRemaining: cleanText.length > alreadySpokenLength,
-            alreadySpokenPreview: alreadySpoken.substring(0, 50),
-            cleanTextPreview: cleanText.substring(0, 50),
-            remainingTextLength: remainingText.length
-          });
-          
-          if (remainingText.length > 0) {
-            console.log('🎤 [ARChatScreen] ===== PLAYING REMAINING TEXT =====');
-            console.log('🎤 [ARChatScreen] Already spoke:', alreadySpokenLength, 'chars');
-            console.log('🎤 [ARChatScreen] Remaining text:', remainingText.substring(0, 150));
-            console.log('🎤 [ARChatScreen] Full text length:', cleanText.length);
-            
-            ttsPlayingRef.current = true;
-            ttsStartedTextRef.current = cleanText; // Update to full text
-            
-            // Generate visemes for remaining text
-            const wordCount = remainingText.split(/\s+/).length;
-            const estimatedDurationMs = wordCount * 400;
-            const visemes = generateVisemes(remainingText, estimatedDurationMs);
-            setCurrentVisemes(visemes);
-            
-            playTTS(remainingText, (visemeId) => {
-              setCurrentVisemeId(visemeId);
-            }, false).then(() => {
-              console.log('✅ [ARChatScreen] Remaining text TTS completed - FULL MESSAGE DONE');
-              ttsPlayingRef.current = false;
-            }).catch((error) => {
-              console.error('❌ [ARChatScreen] Remaining text TTS error:', error);
-              ttsPlayingRef.current = false;
-            });
-          } else {
-            console.log('✅ [ARChatScreen] No remaining text - message already fully spoken');
-          }
-        } else {
-          // TTS hasn't started yet - start it now with full text
-          try {
-            console.log('🔊 [ARChatScreen] ===== STARTING TTS (final chunk) =====');
-            console.log('🔊 [ARChatScreen] Text to speak:', cleanText.substring(0, 150));
-            console.log('🔊 [ARChatScreen] Text length:', cleanText.length);
-            
-            // Generate visemes from text
-            const wordCount = cleanText.split(/\s+/).length;
-            const estimatedDurationMs = wordCount * 400; // ~400ms per word
-            const visemes = generateVisemes(cleanText, estimatedDurationMs);
-            setCurrentVisemes(visemes);
-            
-            console.log('🔊 [ARChatScreen] Visemes generated:', { 
-              visemeCount: visemes.length,
-              estimatedDuration: `${(estimatedDurationMs / 1000).toFixed(1)}s`
-            });
-            
-            ttsPlayingRef.current = true;
-            ttsStartedTextRef.current = cleanText;
-            
-            // Play TTS using expo-speech (now with audio session config)
-            console.log('🔊 [ARChatScreen] Calling playTTS()...');
-            playTTS(cleanText, (visemeId) => {
-              setCurrentVisemeId(visemeId);
-              // Don't log every viseme update (too verbose)
-            }).then(() => {
-              console.log('✅ [ARChatScreen] playTTS() completed successfully');
-              ttsPlayingRef.current = false;
-            }).catch((error) => {
-              console.error('❌ [ARChatScreen] TTS playback error:', error);
-              ttsPlayingRef.current = false;
-              Alert.alert('TTS Error', `Failed to play message: ${error?.message || error}`);
-              // Continue with visemes even if TTS fails
-            });
-          } catch (error) {
-            console.error('❌ [ARChatScreen] TTS generation error:', error);
-            ttsPlayingRef.current = false;
-            Alert.alert('TTS Error', `Failed to generate TTS: ${error}`);
-          }
-        }
-      } else {
-        console.warn('⚠️ [ARChatScreen] No clean text for TTS (cleanText is empty or whitespace)');
+      // Play TTS audio - EXACTLY like beep button (simple, direct call)
+      console.log('🔊 [ARChatScreen] TTS check:', {
+        audioEnabled,
+        hasCleanText: !!cleanText && cleanText.trim().length > 0,
+        cleanTextLength: cleanText?.length || 0,
+        cleanTextPreview: cleanText?.substring(0, 50) || '(empty)',
+        cleanTextType: typeof cleanText,
+        cleanTextValue: cleanText
+      });
+      
+      if (!audioEnabled) {
+        console.log('❌ [ARChatScreen] TTS skipped - audio disabled (audioEnabled = false)');
+        return;
+      }
+      
+      if (!cleanText || cleanText.trim().length === 0) {
+        console.log('❌ [ARChatScreen] TTS skipped - no text (cleanText is empty or whitespace)');
+        console.log('❌ [ARChatScreen] cleanText value:', JSON.stringify(cleanText));
+        return;
+      }
+      
+      // We have text and audio is enabled - play it!
+      try {
+        console.log('🔊🔊🔊 [ARChatScreen] ===== STARTING TTS (EXACT like beep button) =====');
+        console.log('🔊 [ARChatScreen] Text to speak:', cleanText);
+        console.log('🔊 [ARChatScreen] Text length:', cleanText.length);
+        console.log('🔊 [ARChatScreen] Text type:', typeof cleanText);
+        
+        // Stop any previous speech first
+        console.log('🔊 [ARChatScreen] Stopping previous speech...');
+        Speech.stop();
+        
+        // Wait a moment for stop to complete
+        await new Promise(resolve => setTimeout(resolve, 300));
+        console.log('🔊 [ARChatScreen] Stop complete, now calling speak()...');
+        
+        // EXACT same call as beep button - simple and direct
+        console.log('🔊🔊🔊 [ARChatScreen] Calling Speech.speak() NOW...');
+        console.log('🔊 [ARChatScreen] Parameters:', {
+          text: cleanText.substring(0, 50) + '...',
+          language: 'en',
+          pitch: 1.0,
+          rate: 0.9
+        });
+        
+        Speech.speak(cleanText.trim(), {
+          language: 'en',
+          pitch: 1.0,
+          rate: 0.9,
+          onStart: () => {
+            console.log('✅✅✅✅✅ [ARChatScreen] TTS STARTED - audio playing NOW!');
+            setIsPlayingAudio(true);
+          },
+          onDone: () => {
+            console.log('✅✅✅ [ARChatScreen] TTS DONE - finished speaking');
+            setIsPlayingAudio(false);
+          },
+          onStopped: () => {
+            console.log('⚠️⚠️⚠️ [ARChatScreen] TTS STOPPED - was interrupted');
+            setIsPlayingAudio(false);
+          },
+          onError: (error: any) => {
+            console.error('❌❌❌❌❌ [ARChatScreen] TTS ERROR:', error);
+            console.error('❌ [ARChatScreen] Error details:', JSON.stringify(error, null, 2));
+            setIsPlayingAudio(false);
+          },
+        });
+        
+        console.log('🔊🔊🔊 [ARChatScreen] Speech.speak() CALLED - waiting for onStart callback...');
+        console.log('🔊 [ARChatScreen] If you see "TTS STARTED" above, audio should be playing!');
+      } catch (error) {
+        console.error('❌❌❌ [ARChatScreen] TTS EXCEPTION (caught in try/catch):', error);
+        console.error('❌ [ARChatScreen] Exception details:', JSON.stringify(error, null, 2));
+        setIsPlayingAudio(false);
       }
 
       console.log('✅ Stream complete:', { 
@@ -870,13 +573,6 @@ export default function ARChatScreen() {
       setStreamingMessageId(null);
       setStreamingContent('');
       streamingMessageIdRef.current = null;
-      // Note: Don't reset TTS state here - let it finish naturally
-      // DON'T clear ttsQueuedTextRef here - we need it for remaining text playback!
-      // Reset TTS state only after TTS completes
-      ttsPlayingRef.current = false;
-      ttsQueuedTextRef.current = '';
-      ttsStartedTextRef.current = '';
-      Speech.stop(); // Stop any ongoing TTS
     } catch (error) {
       console.error('Error processing stream complete:', error);
       // Update message status to failed
@@ -893,13 +589,23 @@ export default function ARChatScreen() {
       setStreamingMessageId(null);
       setStreamingContent('');
       streamingMessageIdRef.current = null;
-      // Reset TTS state
-      ttsPlayingRef.current = false;
-      ttsQueuedTextRef.current = '';
-      ttsStartedTextRef.current = '';
-      Speech.stop(); // Stop any ongoing TTS
     }
   };
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(console.error);
+      }
+      // Clear timeout
+      if (streamTimeoutRef.current) {
+        clearTimeout(streamTimeoutRef.current);
+        streamTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -957,6 +663,128 @@ export default function ARChatScreen() {
             {viewMode === 'ar' ? 'AR' : 'VR'}
           </Text>
         </TouchableOpacity>
+        
+        {/* Audio Toggle Button */}
+        <TouchableOpacity
+          onPress={() => {
+            if (isPlayingAudio) {
+              Speech.stop();
+              setIsPlayingAudio(false);
+            } else {
+              setAudioEnabled(!audioEnabled);
+            }
+          }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: audioEnabled ? '#34C759' : '#FF3B30',
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: 16,
+            marginRight: 12,
+          }}
+        >
+          <Ionicons 
+            name={isPlayingAudio ? 'stop' : audioEnabled ? 'volume-high' : 'volume-mute'} 
+            size={16} 
+            color="#FFFFFF" 
+            style={{ marginRight: 4 }}
+          />
+          <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '600' }}>
+            {isPlayingAudio ? 'Stop' : audioEnabled ? 'Sound' : 'Muted'}
+          </Text>
+        </TouchableOpacity>
+        
+        {/* Beep Test Button */}
+        <TouchableOpacity
+          onPress={async () => {
+            try {
+              console.log('🔊 [ARChatScreen] Beep button pressed');
+              // Play a beep sound using expo-speech
+              Speech.speak('beep beep beep', {
+                language: 'en',
+                pitch: 2.0,
+                rate: 2.0,
+                onStart: () => console.log('✅✅✅ Beep STARTED'),
+                onDone: () => console.log('✅ Beep DONE'),
+                onError: (e) => console.error('❌ Beep ERROR:', e),
+              });
+            } catch (error) {
+              console.error('Error playing beep:', error);
+              Alert.alert('Beep', 'Beep sound played');
+            }
+          }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: '#FF9500',
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: 16,
+            marginRight: 12,
+          }}
+        >
+          <Ionicons 
+            name="musical-notes" 
+            size={16} 
+            color="#FFFFFF" 
+            style={{ marginRight: 4 }}
+          />
+          <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '600' }}>
+            Beep
+          </Text>
+        </TouchableOpacity>
+        
+        {/* Test TTS Button - Direct test */}
+        <TouchableOpacity
+          onPress={async () => {
+            try {
+              console.log('🔊 [ARChatScreen] Test TTS button pressed');
+              const testText = 'Hello, this is a test message. Can you hear me?';
+              console.log('🔊 [ARChatScreen] Speaking test text:', testText);
+              Speech.speak(testText, {
+                language: 'en',
+                pitch: 1.0,
+                rate: 0.9,
+                onStart: () => {
+                  console.log('✅✅✅ Test TTS STARTED - should hear audio NOW!');
+                  setIsPlayingAudio(true);
+                },
+                onDone: () => {
+                  console.log('✅ Test TTS DONE');
+                  setIsPlayingAudio(false);
+                },
+                onError: (e) => {
+                  console.error('❌ Test TTS ERROR:', e);
+                  setIsPlayingAudio(false);
+                },
+              });
+              console.log('🔊 [ARChatScreen] Test Speech.speak() called');
+            } catch (error) {
+              console.error('❌ Test TTS exception:', error);
+            }
+          }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: '#007AFF',
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: 16,
+            marginRight: 12,
+          }}
+        >
+          <Ionicons 
+            name="volume-high" 
+            size={16} 
+            color="#FFFFFF" 
+            style={{ marginRight: 4 }}
+          />
+          <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '600' }}>
+            Test TTS
+          </Text>
+        </TouchableOpacity>
+        
         <View style={{
           width: 8,
           height: 8,
@@ -975,25 +803,27 @@ export default function ARChatScreen() {
           // AR Mode: Camera background with 3D model overlay
           <View style={{ flex: 1 }}>
             {cameraPermission?.granted ? (
-              <View style={{ flex: 1 }}>
-                <CameraView
-                  style={StyleSheet.absoluteFill}
-                  facing="back"
-                />
-                {/* 3D Model Overlay - Transparent background to show camera */}
-                {modelUrl && (
-                  <View style={{ flex: 1, position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'transparent' }}>
-                    <Model3DViewer
-                      modelUrl={modelUrl}
-                      enableAR={true}
-                      markers={currentMarkers}
-                      currentEmotion={currentEmotion || undefined}
-                      currentMovement={currentMovement || undefined}
-                      visemes={currentVisemes}
-                    />
-                  </View>
-                )}
-              </View>
+              // AR Mode: Use Model3DViewer with transparent background and camera overlay
+              modelUrl ? (
+                <View style={{ flex: 1 }}>
+                  <CameraView
+                    style={StyleSheet.absoluteFill}
+                    facing="back"
+                  />
+                  <Model3DViewer
+                    modelUrl={modelUrl}
+                    enableAR={true}
+                    markers={currentMarkers}
+                    currentEmotion={currentEmotion || undefined}
+                    currentMovement={currentMovement || undefined}
+                  />
+                </View>
+              ) : (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1C1C1E' }}>
+                  <ActivityIndicator size="large" color="#5856D6" />
+                  <Text style={{ color: '#FFFFFF', marginTop: 16 }}>Loading 3D model...</Text>
+                </View>
+              )
             ) : (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1C1C1E' }}>
                 <Ionicons name="camera-outline" size={64} color="#8E8E93" />
@@ -1035,7 +865,6 @@ export default function ARChatScreen() {
                 markers={currentMarkers}
                 currentEmotion={currentEmotion || undefined}
                 currentMovement={currentMovement || undefined}
-                visemes={currentVisemes}
               />
             ) : (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1C1C1E' }}>
@@ -1174,12 +1003,12 @@ export default function ARChatScreen() {
       {/* Input Area */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         <View style={{
           paddingHorizontal: 16,
           paddingTop: 12,
-          paddingBottom: Math.max(12, insets.bottom), // Add bottom safe area for Android navigation bar
+          paddingBottom: Math.max(insets.bottom, 12),
           borderTopWidth: 1,
           borderTopColor: '#333333',
           backgroundColor: '#000000',
@@ -1204,20 +1033,6 @@ export default function ARChatScreen() {
             multiline
             maxLength={500}
           />
-          {/* Beep Test Button */}
-          <TouchableOpacity
-            style={{
-              backgroundColor: '#FF9500',
-              borderRadius: 20,
-              width: 44,
-              height: 44,
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-            onPress={handleBeepTest}
-          >
-            <Ionicons name="volume-high" size={20} color="#FFFFFF" />
-          </TouchableOpacity>
           <TouchableOpacity
             style={{
               backgroundColor: inputText.trim() && !sending ? '#5856D6' : '#333333',

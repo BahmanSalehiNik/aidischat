@@ -1,5 +1,5 @@
 // 3D Model Viewer Component using Three.js and expo-gl
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, PanResponder, GestureResponderEvent } from 'react-native';
 import { GLView } from 'expo-gl';
 import { Renderer } from 'expo-three';
@@ -9,6 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { DeviceMotion } from 'expo-sensors';
 
 import { Marker } from '../../utils/markerParser';
+import { AnimationController } from '../../utils/animations/AnimationController';
+import { MovementState } from '../../utils/animations/animationTypes';
 
 interface Model3DViewerProps {
   modelUrl: string;
@@ -18,8 +20,6 @@ interface Model3DViewerProps {
   markers?: Marker[]; // Emotion and movement markers for animations
   currentEmotion?: string; // Current emotion state
   currentMovement?: string; // Current movement state
-  visemes?: Array<{ id: number; offset: number; duration: number }>; // Viseme data for lip sync
-  audioUrl?: string; // TTS audio URL for playback
 }
 
 export const Model3DViewer: React.FC<Model3DViewerProps> = ({
@@ -30,8 +30,6 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
   markers = [],
   currentEmotion,
   currentMovement,
-  visemes = [],
-  audioUrl,
 }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,12 +48,8 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
   const anchorPositionRef = useRef<THREE.Vector3 | null>(null);
   const anchorRotationRef = useRef<{ alpha: number; beta: number; gamma: number } | null>(null);
   const deviceMotionSubscriptionRef = useRef<any>(null);
-  const initialCameraRotationRef = useRef<THREE.Euler | null>(null);
-  const initialModelRotationRef = useRef<THREE.Euler | null>(null);
-  const currentVisemeIdRef = useRef<number | null>(null);
-  const visemeStartTimeRef = useRef<number | null>(null);
-  const visemeUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const morphTargetDictionaryRef = useRef<Map<string, number>>(new Map());
+  const animationControllerRef = useRef<AnimationController | null>(null);
+  const lastUpdateTimeRef = useRef<number>(0);
 
   // Calculate distance between two touches for pinch gesture
   const getDistance = (touches: any[]) => {
@@ -75,34 +69,16 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       setIsAnchored(false);
       anchorPositionRef.current = null;
       anchorRotationRef.current = null;
-      initialCameraRotationRef.current = null;
       if (deviceMotionSubscriptionRef.current) {
         deviceMotionSubscriptionRef.current.remove();
         deviceMotionSubscriptionRef.current = null;
       }
-      // Reset camera rotation to initial state
-      if (cameraRef.current && initialCameraRotationRef.current) {
-        cameraRef.current.rotation.copy(initialCameraRotationRef.current);
-      }
-      // Reset model rotation to initial state
-      if (modelRef.current && initialModelRotationRef.current) {
-        modelRef.current.rotation.copy(initialModelRotationRef.current);
-      }
-      initialModelRotationRef.current = null;
       console.log('🔓 [Model3DViewer] Model unanchored');
     } else {
       // Anchor: lock model position and start tracking device motion
       setIsAnchored(true);
       // Store current model position in world space
       anchorPositionRef.current = modelRef.current.position.clone();
-      // Store initial model rotation
-      if (modelRef.current) {
-        initialModelRotationRef.current = modelRef.current.rotation.clone();
-      }
-      // Store initial camera rotation as Euler (will convert to quaternion when needed)
-      if (cameraRef.current) {
-        initialCameraRotationRef.current = cameraRef.current.rotation.clone();
-      }
       
       // Check if device motion is available, request permissions, and start tracking
       DeviceMotion.isAvailableAsync().then(async (available) => {
@@ -114,27 +90,15 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
         
         // Request permissions (required on iOS)
         try {
-          const permissionResult = await DeviceMotion.requestPermissionsAsync();
-          console.log('📱 [Model3DViewer] Permission result:', permissionResult);
-          
-          if (permissionResult.status !== 'granted') {
-            // Check if we can ask again (Android) or if it's permanently denied
-            if (permissionResult.canAskAgain === false) {
-              console.warn('⚠️ [Model3DViewer] Device motion permission permanently denied. User must enable in settings.');
-            } else {
-              console.warn('⚠️ [Model3DViewer] Device motion permission denied, status:', permissionResult.status);
-            }
-            
-            // On some platforms (like Android), motion sensors might work without explicit permission
-            // Try to proceed anyway - if it fails, the listener won't receive data
-            console.log('ℹ️ [Model3DViewer] Attempting to use device motion anyway (may work on some platforms)');
-          } else {
-            console.log('✅ [Model3DViewer] Device motion permission granted');
+          const { status } = await DeviceMotion.requestPermissionsAsync();
+          if (status !== 'granted') {
+            console.warn('⚠️ [Model3DViewer] Device motion permission denied');
+            setIsAnchored(false);
+            return;
           }
         } catch (error) {
           // Some platforms might not require explicit permissions
-          console.log('ℹ️ [Model3DViewer] Permission request error (may not be required):', error);
-          // Continue anyway - some platforms don't need explicit permission
+          console.log('ℹ️ [Model3DViewer] Permission request not needed or failed:', error);
         }
         
         // Set update interval for smooth tracking
@@ -144,12 +108,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
         
         // Create subscription to device motion
         const subscription = DeviceMotion.addListener((motion) => {
-          if (!motion || !motion.rotation) {
-            console.warn('⚠️ [Model3DViewer] No rotation data in motion event');
-            return;
-          }
-          
-          if (modelRef.current && anchorPositionRef.current && cameraRef.current) {
+          if (motion.rotation && modelRef.current && anchorPositionRef.current) {
             const rotation = motion.rotation;
             
             // Store initial rotation on first reading
@@ -160,78 +119,25 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
                 gamma: rotation.gamma || 0,
               };
               anchorRotationRef.current = initialRotation;
-              console.log('📐 [Model3DViewer] Initial rotation captured:', initialRotation);
               return;
             }
             
-            // Device orientation deltas (in radians)
-            const alphaRad = ((rotation.alpha || 0) - initialRotation.alpha) * (Math.PI / 180);
-            const betaRad = ((rotation.beta || 0) - initialRotation.beta) * (Math.PI / 180);
-            const gammaRad = ((rotation.gamma || 0) - initialRotation.gamma) * (Math.PI / 180);
+            // Calculate rotation delta from initial position (in radians)
+            const deltaAlpha = ((rotation.alpha || 0) - initialRotation.alpha) * (Math.PI / 180);
+            const deltaBeta = ((rotation.beta || 0) - initialRotation.beta) * (Math.PI / 180);
+            const deltaGamma = ((rotation.gamma || 0) - initialRotation.gamma) * (Math.PI / 180);
             
-            // NEW APPROACH: Don't rotate camera, rotate the MODEL instead
-            // When device rotates, rotate model in OPPOSITE direction
-            // This keeps model appearing in same screen position
+            // Convert rotation deltas to position compensation
+            // This keeps the model in the same "world position" as device moves
+            const compensationFactor = 0.2; // Adjust this to fine-tune sensitivity
+            const compensationX = deltaGamma * compensationFactor;
+            const compensationY = deltaBeta * compensationFactor;
+            const compensationZ = deltaAlpha * compensationFactor;
             
-            if (modelRef.current && anchorPositionRef.current && cameraRef.current) {
-              // Create quaternions for INVERSE device rotation (to compensate)
-              const quatZ = new THREE.Quaternion().setFromAxisAngle(
-                new THREE.Vector3(0, 0, 1), // Z-axis for yaw
-                -alphaRad // INVERTED - rotate model opposite to device
-              );
-              
-              const quatX = new THREE.Quaternion().setFromAxisAngle(
-                new THREE.Vector3(1, 0, 0), // X-axis for pitch
-                -betaRad // INVERTED
-              );
-              
-              const quatY = new THREE.Quaternion().setFromAxisAngle(
-                new THREE.Vector3(0, 1, 0), // Y-axis for roll
-                gammaRad // Keep original sign
-              );
-              
-              // Combine: Z * X * Y
-              const compensationQuat = new THREE.Quaternion();
-              compensationQuat.multiplyQuaternions(quatZ, quatX);
-              compensationQuat.multiply(quatY);
-              
-              // Get initial model rotation
-              if (initialModelRotationRef.current) {
-                const initialModelQuat = new THREE.Quaternion().setFromEuler(
-                  initialModelRotationRef.current
-                );
-                
-                // Apply compensation rotation to model (rotate opposite to device)
-                const finalModelQuat = initialModelQuat.clone().multiply(compensationQuat);
-                modelRef.current.quaternion.copy(finalModelQuat);
-              }
-              
-              // Transform model position to compensate for device rotation
-              // Start with anchor position
-              const anchorWorldPos = anchorPositionRef.current.clone();
-              
-              // Apply inverse device rotation to position (compensate for device movement)
-              anchorWorldPos.applyQuaternion(compensationQuat);
-              
-              // Set model position
-              modelRef.current.position.copy(anchorWorldPos);
-            }
-            
-            // Debug logging (reduced frequency)
-            if (Math.abs(alphaRad) > 0.05 || Math.abs(betaRad) > 0.05 || Math.abs(gammaRad) > 0.05) {
-              if (modelRef.current) {
-                const modelEuler = new THREE.Euler().setFromQuaternion(modelRef.current.quaternion);
-                console.log('🔄 [Model3DViewer] Model compensated:', { 
-                  device: {
-                    alpha: ((rotation.alpha || 0) - initialRotation.alpha).toFixed(1) + '°', 
-                    beta: ((rotation.beta || 0) - initialRotation.beta).toFixed(1) + '°', 
-                    gamma: ((rotation.gamma || 0) - initialRotation.gamma).toFixed(1) + '°'
-                  },
-                  modelRot: `(${(modelEuler.x * 180 / Math.PI).toFixed(1)}°, ${(modelEuler.y * 180 / Math.PI).toFixed(1)}°, ${(modelEuler.z * 180 / Math.PI).toFixed(1)}°)`,
-                  modelPos: `(${modelRef.current.position.x.toFixed(2)}, ${modelRef.current.position.y.toFixed(2)}, ${modelRef.current.position.z.toFixed(2)})`
-                });
-              }
-            }
+            // Apply compensation to keep model in same world position
+            modelRef.current.position.x = anchorPositionRef.current.x - compensationX;
+            modelRef.current.position.y = anchorPositionRef.current.y - compensationY;
+            modelRef.current.position.z = anchorPositionRef.current.z - compensationZ;
           }
         });
         
@@ -376,47 +282,29 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       plane.receiveShadow = true;
       scene.add(plane);
 
-      // Load GLB/GLTF model with caching for performance
+      // Load GLB/GLTF model
       const loader = new GLTFLoader();
-      // Use cache to avoid reloading when switching modes
-      const cacheKey = `model_${modelUrl}`;
-      let gltf;
-      
-      // Check if model is already loaded (simple in-memory cache)
-      if ((global as any).__modelCache?.[cacheKey]) {
-        console.log('📦 [Model3DViewer] Using cached model');
-        gltf = (global as any).__modelCache[cacheKey];
-        // Clone the scene to avoid sharing references
-        gltf = { scene: gltf.scene.clone() };
-      } else {
-        console.log('📥 [Model3DViewer] Loading model from URL');
-        gltf = await loader.loadAsync(modelUrl);
-        // Cache the loaded model
-        if (!(global as any).__modelCache) {
-          (global as any).__modelCache = {};
-        }
-        (global as any).__modelCache[cacheKey] = gltf;
-      }
+      const gltf = await loader.loadAsync(modelUrl);
       
       const model = gltf.scene;
       modelRef.current = model;
       
-      // Enable shadows and build morph target dictionary
+      // Enable shadows
       model.traverse((child: THREE.Object3D) => {
         if (child instanceof THREE.Mesh) {
           child.castShadow = true;
           child.receiveShadow = true;
-          
-          // Build morph target dictionary for viseme/blend shape mapping
-          if (child instanceof THREE.SkinnedMesh && child.morphTargetDictionary) {
-            // Store morph target indices for viseme mapping
-            Object.entries(child.morphTargetDictionary).forEach(([name, index]) => {
-              morphTargetDictionaryRef.current.set(name.toLowerCase(), index);
-            });
-            console.log('📋 [Model3DViewer] Morph targets found:', Array.from(morphTargetDictionaryRef.current.keys()));
-          }
         }
       });
+
+      // Initialize animation controller if animations are available
+      if (gltf.animations && gltf.animations.length > 0) {
+        console.log(`🎬 [Model3DViewer] Found ${gltf.animations.length} animations:`, 
+          gltf.animations.map(a => a.name));
+        animationControllerRef.current = new AnimationController(model, gltf.animations);
+      } else {
+        console.warn('⚠️ [Model3DViewer] No animations found in GLTF model');
+      }
 
       // Center and scale model
       const box = new THREE.Box3().setFromObject(model);
@@ -436,11 +324,22 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       scene.add(model);
       setModelLoaded(true);
       setIsLoading(false);
+      lastUpdateTimeRef.current = Date.now();
 
       // Animation loop
       const animate = () => {
         if (!sceneRef.current || !cameraRef.current || !rendererRef.current || !modelRef.current) {
           return;
+        }
+
+        // Calculate delta time for animation updates
+        const currentTime = Date.now();
+        const deltaTime = (currentTime - lastUpdateTimeRef.current) / 1000; // Convert to seconds
+        lastUpdateTimeRef.current = currentTime;
+
+        // Update animation controller
+        if (animationControllerRef.current) {
+          animationControllerRef.current.update(deltaTime);
         }
 
         // Device motion compensation is handled in the subscription callback
@@ -461,61 +360,22 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
           if (Math.abs(rotationRef.current.y) < 0.001) rotationRef.current.y = 0;
         }
 
-        // Apply emotion, movement, and viseme markers to blend shapes
+        // Apply emotion and movement markers to blend shapes
+        // This is a placeholder - actual implementation depends on model structure
         if (modelRef.current) {
           modelRef.current.traverse((child: THREE.Object3D) => {
-            if (child instanceof THREE.SkinnedMesh && child.morphTargetInfluences) {
-              const mesh = child as THREE.SkinnedMesh;
-              const influences = mesh.morphTargetInfluences;
-              
-              // Reset all morph targets first
-              if (influences) {
-                for (let i = 0; i < influences.length; i++) {
-                  influences[i] = 0;
-                }
+            if (child instanceof THREE.SkinnedMesh && (child as any).morphTargetInfluences) {
+              const mesh = child as THREE.SkinnedMesh & { morphTargetInfluences?: number[] };
+              // Apply emotion-based blend shapes
+              // Note: Actual blend shape indices depend on the model
+              // This is a template for future implementation
+              if (currentEmotion) {
+                // Example: Apply emotion to blend shapes
+                // mesh.morphTargetInfluences[emotionBlendShapeIndex] = 1.0;
               }
-              
-              // Apply viseme (lip sync)
-              if (currentVisemeIdRef.current !== null && influences) {
-                const visemeMapping = getVisemeBlendShape(currentVisemeIdRef.current);
-                if (visemeMapping.mouthOpen > 0) {
-                  // Try common mouth blend shape names
-                  const mouthOpenIndex = findMorphTargetIndex('mouthopen', 'jawopen', 'ah', 'aa', 'mouth_open');
-                  if (mouthOpenIndex !== -1 && mouthOpenIndex < influences.length) {
-                    influences[mouthOpenIndex] = visemeMapping.mouthOpen;
-                  }
-                }
-              }
-              
-              // Apply emotion blend shapes
-              if (currentEmotion && influences) {
-                const emotionIndex = findMorphTargetIndex(
-                  currentEmotion.toLowerCase(),
-                  `emotion_${currentEmotion.toLowerCase()}`,
-                  `exp_${currentEmotion.toLowerCase()}`,
-                  `happy`,
-                  `sad`,
-                  `angry`,
-                  `surprised`
-                );
-                if (emotionIndex !== -1 && emotionIndex < influences.length) {
-                  influences[emotionIndex] = 1.0;
-                }
-              }
-              
-              // Apply movement/gesture blend shapes
-              if (currentMovement && influences) {
-                const movementIndex = findMorphTargetIndex(
-                  currentMovement.toLowerCase(),
-                  `gesture_${currentMovement.toLowerCase()}`,
-                  `pose_${currentMovement.toLowerCase()}`,
-                  `idle`,
-                  `thinking`,
-                  `talking`
-                );
-                if (movementIndex !== -1 && movementIndex < influences.length) {
-                  influences[movementIndex] = 1.0;
-                }
+              if (currentMovement) {
+                // Example: Apply movement to blend shapes
+                // mesh.morphTargetInfluences[movementBlendShapeIndex] = 1.0;
               }
             }
           });
@@ -541,92 +401,48 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
     }
   };
 
-  // Helper function to find morph target index by name
-  const findMorphTargetIndex = React.useCallback((...names: string[]): number => {
-    for (const name of names) {
-      const index = morphTargetDictionaryRef.current.get(name.toLowerCase());
-      if (index !== undefined) {
-        return index;
-      }
-    }
-    return -1;
-  }, []);
-
-  // Helper function to get viseme blend shape mapping
-  const getVisemeBlendShape = React.useCallback((visemeId: number): { mouthOpen: number; mouthShape: string } => {
-    // Import viseme mapping (simplified - use actual mapping from phonemeToViseme)
-    const mapping: Record<number, { mouthOpen: number; mouthShape: string }> = {
-      0: { mouthOpen: 0, mouthShape: 'neutral' }, // SILENCE
-      1: { mouthOpen: 0.8, mouthShape: 'aa' }, // AA_AO_AW
-      2: { mouthOpen: 0.6, mouthShape: 'aa' }, // AA
-      3: { mouthOpen: 0.7, mouthShape: 'ao' }, // AA_AO
-      4: { mouthOpen: 0.5, mouthShape: 'eh' }, // EH_ER
-      5: { mouthOpen: 0.4, mouthShape: 'ih' }, // IH_IY
-      6: { mouthOpen: 0.6, mouthShape: 'ow' }, // OW_OY
-      7: { mouthOpen: 0.3, mouthShape: 'uw' }, // UW
-      8: { mouthOpen: 0, mouthShape: 'closed' }, // M_B_P
-      9: { mouthOpen: 0.1, mouthShape: 'f' }, // F_V
-      10: { mouthOpen: 0.2, mouthShape: 'th' }, // TH_DH
-      11: { mouthOpen: 0.1, mouthShape: 't' }, // T_D_N_L
-      12: { mouthOpen: 0.2, mouthShape: 's' }, // S_Z
-      13: { mouthOpen: 0.3, mouthShape: 'sh' }, // SH_CH_JH_ZH
-      14: { mouthOpen: 0.1, mouthShape: 'k' }, // K_G_NG
-      15: { mouthOpen: 0.3, mouthShape: 'y' }, // Y
-      16: { mouthOpen: 0.2, mouthShape: 'w' }, // W
-      17: { mouthOpen: 0.3, mouthShape: 'r' }, // R
-      18: { mouthOpen: 0.2, mouthShape: 'l' }, // L
-      19: { mouthOpen: 0.2, mouthShape: 'th' }, // TH
-      20: { mouthOpen: 0.2, mouthShape: 'th' }, // TH_ALT
-      21: { mouthOpen: 0, mouthShape: 'neutral' }, // SILENCE_END
-    };
-    return mapping[visemeId] || { mouthOpen: 0, mouthShape: 'neutral' };
-  }, []);
-
-  // Update visemes in real-time
+  // Update animations when movement state changes
   useEffect(() => {
-    if (!visemes || visemes.length === 0) {
-      currentVisemeIdRef.current = null;
-      visemeStartTimeRef.current = null;
-      if (visemeUpdateIntervalRef.current) {
-        clearInterval(visemeUpdateIntervalRef.current);
-        visemeUpdateIntervalRef.current = null;
+    if (!animationControllerRef.current || !currentMovement) return;
+
+    // Map movement string to MovementState enum
+    // Handles both animation states and backend marker values
+    const movementStateMap: Record<string, MovementState> = {
+      // Direct animation states
+      'idle': MovementState.IDLE,
+      'thinking': MovementState.THINKING,
+      'walking': MovementState.WALKING,
+      'walk': MovementState.WALKING,
+      'flying': MovementState.FLYING,
+      'fly': MovementState.FLYING,
+      'talking': MovementState.TALKING,
+      'talk': MovementState.TALKING,
+      'speak': MovementState.TALKING,
+      // Backend marker values mapped to animations
+      'smiling': MovementState.TALKING, // Smiling usually happens while talking
+      'frown': MovementState.THINKING,  // Frowning often during thinking
+      'listening': MovementState.IDLE,   // Listening = idle state
+      'wave': MovementState.TALKING,     // Wave gesture during talking
+      'nod': MovementState.TALKING,      // Nodding during talking
+      'point': MovementState.TALKING,    // Pointing during talking
+    };
+
+    const targetState = movementStateMap[currentMovement.toLowerCase()];
+    if (targetState) {
+      const currentState = animationControllerRef.current.getCurrentState();
+      if (currentState !== targetState) {
+        console.log(`🎬 [Model3DViewer] Movement change: ${currentMovement} → ${targetState}`);
+        animationControllerRef.current.transitionTo(targetState);
       }
-      return;
+    } else {
+      console.warn(`⚠️ [Model3DViewer] Unknown movement: ${currentMovement}, defaulting to IDLE`);
+      // Default to idle if movement not recognized
+      const currentState = animationControllerRef.current.getCurrentState();
+      if (currentState !== MovementState.IDLE) {
+        animationControllerRef.current.transitionTo(MovementState.IDLE);
+      }
     }
-
-    // Start viseme animation
-    visemeStartTimeRef.current = Date.now();
-    let visemeIndex = 0;
-
-    const updateViseme = () => {
-      if (visemeIndex < visemes.length && visemeStartTimeRef.current) {
-        const elapsed = Date.now() - visemeStartTimeRef.current;
-        const currentViseme = visemes[visemeIndex];
-
-        if (elapsed >= currentViseme.offset) {
-          currentVisemeIdRef.current = currentViseme.id;
-          visemeIndex++;
-        }
-
-        if (visemeIndex < visemes.length) {
-          visemeUpdateIntervalRef.current = setTimeout(updateViseme, 50); // Update every 50ms
-        } else {
-          // All visemes played, reset
-          currentVisemeIdRef.current = null;
-          visemeStartTimeRef.current = null;
-        }
-      }
-    };
-
-    updateViseme();
-
-    return () => {
-      if (visemeUpdateIntervalRef.current) {
-        clearTimeout(visemeUpdateIntervalRef.current);
-        visemeUpdateIntervalRef.current = null;
-      }
-    };
-  }, [visemes]);
+  }, [currentMovement]);
 
   // Update animations when markers change
   useEffect(() => {
@@ -636,9 +452,41 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
     const latestEmotion = markers.filter(m => m.type === 'emotion').pop()?.value;
     const latestMovement = markers.filter(m => m.type === 'movement').pop()?.value;
 
-    // Apply to model
+    // Apply movement to animation controller
+    if (latestMovement && animationControllerRef.current) {
+      const movementStateMap: Record<string, MovementState> = {
+        // Direct animation states
+        'idle': MovementState.IDLE,
+        'thinking': MovementState.THINKING,
+        'walking': MovementState.WALKING,
+        'walk': MovementState.WALKING,
+        'flying': MovementState.FLYING,
+        'fly': MovementState.FLYING,
+        'talking': MovementState.TALKING,
+        'talk': MovementState.TALKING,
+        'speak': MovementState.TALKING,
+        // Backend marker values mapped to animations
+        'smiling': MovementState.TALKING,
+        'frown': MovementState.THINKING,
+        'listening': MovementState.IDLE,
+        'wave': MovementState.TALKING,
+        'nod': MovementState.TALKING,
+        'point': MovementState.TALKING,
+      };
+
+      const targetState = movementStateMap[latestMovement.toLowerCase()];
+      if (targetState) {
+        animationControllerRef.current.transitionTo(targetState);
+      } else {
+        console.warn(`⚠️ [Model3DViewer] Unknown movement from markers: ${latestMovement}`);
+      }
+    }
+
+    // Apply to model (placeholder - actual implementation depends on model structure)
     if (latestEmotion || latestMovement) {
       console.log('🎭 [Model3DViewer] Applying markers:', { emotion: latestEmotion, movement: latestMovement });
+      // TODO: Apply blend shapes based on emotion/movement
+      // This requires knowledge of the model's blend shape structure
     }
   }, [markers, currentEmotion, currentMovement]);
 
@@ -647,6 +495,11 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+      }
+      // Cleanup animation controller
+      if (animationControllerRef.current) {
+        animationControllerRef.current.dispose();
+        animationControllerRef.current = null;
       }
       // Cleanup device motion subscription
       if (deviceMotionSubscriptionRef.current) {
@@ -676,32 +529,22 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
 
   return (
     <View style={[styles.container, enableAR && styles.containerTransparent]} {...panResponder.panHandlers}>
-      {/* Header with back button - Always visible */}
-      <View style={[styles.header, enableAR && styles.headerTransparent]}>
-        {onClose && (
-          <TouchableOpacity 
-            style={styles.backButton} 
-            onPress={() => {
-              console.log('🔙 [Model3DViewer] Back button pressed, calling onClose');
-              if (onClose) {
-                onClose();
-              } else {
-                console.warn('⚠️ [Model3DViewer] onClose is not defined');
-              }
-            }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={24} color={enableAR ? "#FFFFFF" : "#000000"} />
-            <Text style={[styles.backButtonText, enableAR && styles.backButtonTextWhite]}>Back</Text>
-          </TouchableOpacity>
-        )}
-        {enableAR && onARPress && (
-          <TouchableOpacity style={styles.arButton} onPress={onARPress}>
-            <Ionicons name="cube" size={20} color="#007AFF" />
-            <Text style={styles.arButtonText}>AR Mode</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      {/* Controls Bar - Hide in AR mode */}
+      {!enableAR && (
+        <View style={styles.controlsBar}>
+          {onClose && (
+            <TouchableOpacity style={styles.controlButton} onPress={onClose}>
+              <Ionicons name="close" size={24} color="#000" />
+            </TouchableOpacity>
+          )}
+          {enableAR && onARPress && (
+            <TouchableOpacity style={styles.controlButton} onPress={onARPress}>
+              <Ionicons name="cube" size={24} color="#007AFF" />
+              <Text style={styles.controlButtonText}>AR</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {/* 3D Canvas */}
       {isLoading && (
@@ -744,65 +587,34 @@ const styles = StyleSheet.create({
   containerTransparent: {
     backgroundColor: 'transparent',
   },
-  header: {
+  controlsBar: {
     position: 'absolute',
-    top: 0,
+    top: 50,
     left: 0,
     right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    paddingTop: 50, // Account for safe area
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    zIndex: 1000, // Higher z-index to ensure it's clickable
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    zIndex: 10,
   },
-  headerTransparent: {
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    paddingHorizontal: 12,
+  controlButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  backButtonText: {
-    marginLeft: 4,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000000',
-  },
-  backButtonTextWhite: {
-    color: '#FFFFFF',
-  },
-  arButton: {
+    borderRadius: 20,
+    padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8,
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(0, 122, 255, 0.9)',
-    borderRadius: 8,
+    gap: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
   },
-  arButtonText: {
-    marginLeft: 4,
+  controlButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#007AFF',
   },
   glView: {
     flex: 1,

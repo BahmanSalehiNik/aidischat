@@ -83,3 +83,4 @@ Redpanda is now deployed outside Kubernetes:
 - Kubernetes Service: `redpanda-srv:9092` (points to external Redpanda)
 
 
+

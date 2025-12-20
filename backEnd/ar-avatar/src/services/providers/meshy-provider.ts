@@ -18,7 +18,7 @@ export class MeshyProvider extends BaseModelProvider {
   }
 
   async generateModel(description: CharacterDescription, agentId?: string): Promise<GeneratedModel> {
-    console.log('[MeshyProvider] Starting fast model generation (preview with basic colors)...');
+    console.log('[MeshyProvider] Starting model generation...');
     
     if (!this.isAvailable()) {
       throw new Error('Meshy API key is not configured');
@@ -28,16 +28,15 @@ export class MeshyProvider extends BaseModelProvider {
       // Build prompt from character description
       const prompt = this.buildPrompt(description);
       
-      // Use preview mode only - much faster, skip refine stage
-      // Preview can include basic colors if we request it in the prompt
+      // Step 1: Create a text-to-3D task
       const taskId = await this.createTask(prompt, description);
       console.log(`[MeshyProvider] Task created: ${taskId}`);
 
-      // Poll for completion
+      // Step 2: Poll for task completion
       const result = await this.pollTask(taskId);
       console.log(`[MeshyProvider] Task completed: ${taskId}`);
 
-      // Get model URL
+      // Step 3: Get model URL
       const modelUrl = result.modelUrl || result.glbUrl || result.url;
       if (!modelUrl) {
         throw new Error('Meshy did not return a model URL');
@@ -48,10 +47,10 @@ export class MeshyProvider extends BaseModelProvider {
         modelUrl,
         format: AvatarModelFormat.GLB,
         metadata: {
-          polygonCount: result.polygonCount || 5000,
-          textureResolution: result.textureResolution || 256, // Minimal texture
-          boneCount: result.boneCount || 30,
-          animationCount: result.animationCount || 4,
+          polygonCount: result.polygonCount || 8000,
+          textureResolution: result.textureResolution || 2048,
+          boneCount: result.boneCount || 60,
+          animationCount: result.animationCount || 8,
         },
       };
     } catch (error: any) {
@@ -61,24 +60,15 @@ export class MeshyProvider extends BaseModelProvider {
   }
 
   private async createTask(prompt: string, description: CharacterDescription): Promise<string> {
-    // Enhance prompt to request full body, colors, and detailed facial features for visemes
-    const enhancedPrompt = `${prompt}, full body character, colorful, vibrant colors, highly detailed face with clear mouth, lips, eyes, and facial expressions for lip sync animation, expressive features, simple textures but with color`;
-    
     // Meshy API endpoint for text-to-3D
     // Documentation: https://docs.meshy.ai/api-reference/text-to-3d
     const response = await axios.post(
       `${this.baseUrl}/v2/text-to-3d`,
       {
-        prompt: enhancedPrompt,
-        mode: 'preview', // Preview mode only - fastest option
+        prompt,
+        mode: 'preview', // 'preview' for faster generation, 'hd' for higher quality
         art_style: this.mapToArtStyle(description.style),
-        negative_prompt: 'blurry, low quality, distorted, deformed, grayscale, monochrome, upper body only, head only, no colors, colorless',
-        // Ultra-light settings for fastest generation with basic colors
-        target_polycount: 4000, // Very low polygon count for speed (default 30k)
-        topology: 'triangle', // Triangle mesh is fastest
-        should_remesh: false, // Disable remeshing for speed
-        symmetry_mode: 'off', // Disable symmetry check for speed
-        ai_model: 'meshy-4', // Use faster model version
+        negative_prompt: 'blurry, low quality, distorted, deformed',
       },
       {
         headers: {
@@ -116,8 +106,8 @@ export class MeshyProvider extends BaseModelProvider {
 
   private async pollTask(
     taskId: string,
-    maxAttempts: number = 60, // Preview is faster, less attempts needed
-    intervalMs: number = 8000 // Check every 8s (balance between speed and API calls)
+    maxAttempts: number = 60,
+    intervalMs: number = 5000
   ): Promise<any> {
     let attempts = 0;
 
