@@ -1,162 +1,148 @@
 # Animation Testing Guide
 
-## Current Status
+## Quick Test Steps
 
-✅ **Animation System is Implemented** - The Three.js AnimationController is ready and integrated.
-
-⚠️ **Important Requirements**:
-1. Your GLTF model **must have animation clips** for animations to work
-2. Animation clips should be named: `idle`, `thinking`, `walking`, `flying`, `talking` (or variations)
-3. The system will automatically map backend movements to animations
-
-## How to Test
-
-### Step 1: Check Your Model Has Animations
+### Step 1: Check if Model Has Animations
 
 When you load a model, check the console logs:
-- ✅ `🎬 [Model3DViewer] Found X animations: [...]` - Model has animations
-- ⚠️ `⚠️ [Model3DViewer] No animations found in GLTF model` - Model has no animations
 
-**If your model has no animations**, you won't see movement. You need to:
-- Use a GLTF model that includes animation clips
-- Or add animations to your existing model using Blender/other tools
+**✅ Model HAS animations:**
+```
+🎬 [Model3DViewer] Found 5 animations: ['idle', 'talking', 'thinking', 'walking', 'flying']
+✅ [AnimationController] Mapped idle → idle
+✅ [AnimationController] Mapped talking → talking
+✅ [AnimationController] Mapped thinking → thinking
+```
 
-### Step 2: Test Movement Triggers
+**❌ Model has NO animations:**
+```
+⚠️ [Model3DViewer] No animations found in GLTF model
+⚠️ [AnimationController] No animation found for state: idle
+```
 
-1. **Open AR Chat Screen** with any agent
-2. **Send a message** - The backend will respond with markers like:
-   - `['happy']['talking']Hello!`
-   - `['thoughtful']['thinking']Let me think...`
-   - `['excited']['smiling']Great idea!`
+**If you see the ❌ messages**, your model doesn't have animation clips. You need a GLTF model with animations.
 
-3. **Watch the console** for logs:
-   - `🎭 [ARChatScreen] Markers found in stream: [...]`
-   - `🎬 [Model3DViewer] Movement change: talking → TALKING`
-   - `✅ [AnimationController] Mapped talking → [animation-name]`
+---
 
-4. **Observe the model** - It should:
-   - Start with IDLE animation when loaded
-   - Transition to TALKING when backend sends `['talking']` or `['smiling']`
-   - Transition to THINKING when backend sends `['thinking']` or `['frown']`
-   - Return to IDLE when backend sends `['idle']` or `['listening']`
+### Step 2: Check if Movements Are Being Detected
 
-## Movement Mapping
+When you send a message, watch the console for:
 
-The system maps backend movements to animations:
+```
+🎭 [ARChatScreen] Markers found in stream: [{"type": "movement", "value": "talking"}]
+🎬 [Model3DViewer] Movement change: talking → TALKING
+```
 
-| Backend Marker | Animation State | Notes |
-|----------------|-----------------|-------|
-| `idle` | IDLE | Default state |
-| `thinking` | THINKING | Thinking animation |
-| `walking` / `walk` | WALKING | Walking animation |
-| `flying` / `fly` | FLYING | Flying animation |
-| `talking` / `talk` / `speak` | TALKING | Talking animation |
-| `smiling` | TALKING | Mapped to talking |
-| `frown` | THINKING | Mapped to thinking |
-| `listening` | IDLE | Mapped to idle |
-| `wave` / `nod` / `point` | TALKING | Gestures during talking |
+**If you DON'T see these logs:**
+- Backend might not be sending movement markers
+- Check if markers are in the response: `['happy']['talking']Hello!`
 
-## Troubleshooting
+---
 
-### No Animations Showing
+### Step 3: Manual Animation Test
 
-**Problem**: Model loads but doesn't animate
+Add this temporary test button to manually trigger animations:
 
-**Solutions**:
-1. Check console for: `⚠️ No animations found in GLTF model`
-   - Your model doesn't have animation clips
-   - Solution: Use a model with animations or add them
+**In ARChatScreen.tsx, add a test button:**
 
-2. Check console for: `⚠️ No animation found for state: [state]`
-   - Your model has animations but not the expected names
-   - Solution: Rename animations in your model to match expected names
+```typescript
+{/* Animation Test Buttons - Temporary for testing */}
+<View style={{ position: 'absolute', top: 100, right: 10, gap: 8 }}>
+  <TouchableOpacity
+    onPress={() => setCurrentMovement('idle')}
+    style={{ backgroundColor: '#007AFF', padding: 8, borderRadius: 8 }}
+  >
+    <Text style={{ color: '#FFF', fontSize: 10 }}>Idle</Text>
+  </TouchableOpacity>
+  <TouchableOpacity
+    onPress={() => setCurrentMovement('talking')}
+    style={{ backgroundColor: '#34C759', padding: 8, borderRadius: 8 }}
+  >
+    <Text style={{ color: '#FFF', fontSize: 10 }}>Talking</Text>
+  </TouchableOpacity>
+  <TouchableOpacity
+    onPress={() => setCurrentMovement('thinking')}
+    style={{ backgroundColor: '#FF9500', padding: 8, borderRadius: 8 }}
+  >
+    <Text style={{ color: '#FFF', fontSize: 10 }}>Thinking</Text>
+  </TouchableOpacity>
+</View>
+```
 
-3. Check console for: `⚠️ Unknown movement: [movement]`
-   - Backend sent a movement not in the mapping
-   - Solution: Movement will default to IDLE (this is expected)
+This will let you manually test animations without waiting for backend markers.
 
-### Animations Not Transitioning
+---
 
-**Problem**: Model stays in one animation
+## Common Issues
 
-**Check**:
-1. Are markers being received? Look for: `🎭 [ARChatScreen] Markers found in stream`
-2. Is currentMovement being set? Check: `🎬 [Model3DViewer] Movement change: ...`
-3. Is AnimationController initialized? Check: `✅ [AnimationController] Mapped ...`
+### Issue 1: Model Has No Animations
 
-### Model Has No Animations
+**Symptom:** Console shows `⚠️ No animations found in GLTF model`
 
-**If your GLTF model doesn't have animations**, you have two options:
+**Solution:**
+1. Use a model with animations (Ready Player Me, Mixamo)
+2. Or add animations to your model in Blender
+3. Export as GLTF with animations included
 
-#### Option 1: Use a Model with Animations
-- Download a model from sites like:
-  - Ready Player Me (has animations)
-  - Mixamo (free animated characters)
-  - Sketchfab (many have animations)
+### Issue 2: Animation Names Don't Match
 
-#### Option 2: Add Animations to Your Model
-1. Open model in Blender
-2. Import animations (Mixamo, etc.)
-3. Export as GLTF with animations
-4. Ensure animations are included in export
+**Symptom:** Console shows `⚠️ No animation found for state: idle`
 
-## Expected Behavior
+**Solution:**
+1. Check what animations your model has (console will show)
+2. Rename animations in your model to match: `idle`, `talking`, `thinking`, `walking`, `flying`
+3. Or update `movementStateMachine.ts` to match your animation names
 
-### When Model Loads
-- ✅ AnimationController is created (if animations exist)
-- ✅ Model starts with IDLE animation
-- ✅ Console shows: `✅ [AnimationController] Mapped idle → [animation-name]`
+### Issue 3: Movements Not Being Sent
 
-### When Backend Sends Markers
-- ✅ Markers are parsed: `🎭 [ARChatScreen] Markers found in stream`
-- ✅ Movement is extracted: `currentMovement` is set
-- ✅ Animation transitions: `🎬 [Model3DViewer] Movement change: ...`
-- ✅ Model plays new animation with fade in/out
+**Symptom:** No `🎬 [Model3DViewer] Movement change` logs
 
-### When No Markers
-- ✅ Model stays in current animation (usually IDLE)
-- ⚠️ No errors (this is normal)
+**Solution:**
+1. Check backend is sending markers: `['happy']['talking']Hello!`
+2. Check console for: `🎭 [ARChatScreen] Markers found in stream`
+3. Verify `currentMovement` state is being set
 
-## Testing Checklist
+---
 
-- [ ] Model loads successfully
-- [ ] Console shows animations found (if model has them)
-- [ ] Model starts with IDLE animation
-- [ ] Send message in AR chat
-- [ ] Backend responds with markers
-- [ ] Console shows markers parsed
-- [ ] Console shows movement change
-- [ ] Model transitions to new animation
-- [ ] Animation plays smoothly
-- [ ] Animation loops correctly
+## Expected Console Output (Working)
 
-## Quick Test
+When animations work, you should see:
 
-To quickly test if animations work:
+```
+🎬 [Model3DViewer] Found 5 animations: ['idle', 'talking', 'thinking', 'walking', 'flying']
+✅ [AnimationController] Mapped idle → idle
+✅ [AnimationController] Mapped talking → talking
+✅ [AnimationController] Mapped thinking → thinking
+✅ [AnimationController] Mapped walking → walking
+✅ [AnimationController] Mapped flying → flying
+🎬 [AnimationController] Transition: IDLE → IDLE (idle)
 
-1. **Open AR Chat** with any agent
-2. **Send message**: "Hello, can you talk?"
-3. **Watch console** for:
-   ```
-   🎭 [ARChatScreen] Markers found in stream: [...]
-   🎬 [Model3DViewer] Movement change: talking → TALKING
-   ```
-4. **Observe model** - Should transition from IDLE to TALKING
+[When message arrives:]
+🎭 [ARChatScreen] Markers found in stream: [{"type": "movement", "value": "talking"}]
+🎬 [Model3DViewer] Movement change: talking → TALKING
+🎬 [AnimationController] Transition: IDLE → TALKING (talking)
+```
 
-If you see the console logs but no visual change:
-- Model might not have the expected animation names
-- Check console for animation mapping warnings
+---
+
+## Quick Diagnostic
+
+Run this in your console to check animation state:
+
+```javascript
+// Check if animations are loaded
+console.log('Animation Controller:', animationControllerRef.current);
+console.log('Current State:', animationControllerRef.current?.getCurrentState());
+console.log('Has Idle:', animationControllerRef.current?.hasAnimation('idle'));
+```
+
+---
 
 ## Next Steps
 
-If animations aren't working:
-1. Verify your model has animation clips
-2. Check animation names match expected values
-3. Review console logs for errors
-4. Test with a known working model (like Ready Player Me)
+1. **Check console logs** when model loads - does it find animations?
+2. **Check console logs** when message arrives - are movements detected?
+3. **Add test buttons** (code above) to manually trigger animations
+4. **Verify model** has animation clips with correct names
 
-If animations are working:
-1. Test all movement types (idle, thinking, talking, etc.)
-2. Test transitions between movements
-3. Test with different models
-4. Report any issues or improvements needed
+If your model has animations and you see the mapping logs, but still no movement, the issue might be in the animation playback itself. Check the AnimationController logs for transition messages.

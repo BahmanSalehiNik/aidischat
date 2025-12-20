@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Redpanda (Kafka-compatible) for local development
   redpanda:

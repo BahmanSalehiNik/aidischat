@@ -797,6 +797,74 @@ export default function ARChatScreen() {
         </Text>
       </View>
 
+      {/* Animation Test Buttons - Temporary for testing */}
+      {modelUrl && (
+        <View style={{
+          position: 'absolute',
+          top: 100,
+          right: 10,
+          zIndex: 1000,
+          gap: 8,
+        }}>
+          <TouchableOpacity
+            onPress={() => {
+              console.log('🎬 [Test] Setting movement to: idle');
+              setCurrentMovement('idle');
+            }}
+            style={{ 
+              backgroundColor: '#007AFF', 
+              padding: 8, 
+              borderRadius: 8,
+              minWidth: 80,
+            }}
+          >
+            <Text style={{ color: '#FFF', fontSize: 12, textAlign: 'center' }}>Idle</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              console.log('🎬 [Test] Setting movement to: talking');
+              setCurrentMovement('talking');
+            }}
+            style={{ 
+              backgroundColor: '#34C759', 
+              padding: 8, 
+              borderRadius: 8,
+              minWidth: 80,
+            }}
+          >
+            <Text style={{ color: '#FFF', fontSize: 12, textAlign: 'center' }}>Talking</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              console.log('🎬 [Test] Setting movement to: thinking');
+              setCurrentMovement('thinking');
+            }}
+            style={{ 
+              backgroundColor: '#FF9500', 
+              padding: 8, 
+              borderRadius: 8,
+              minWidth: 80,
+            }}
+          >
+            <Text style={{ color: '#FFF', fontSize: 12, textAlign: 'center' }}>Thinking</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              console.log('🎬 [Test] Setting movement to: walking');
+              setCurrentMovement('walking');
+            }}
+            style={{ 
+              backgroundColor: '#5856D6', 
+              padding: 8, 
+              borderRadius: 8,
+              minWidth: 80,
+            }}
+          >
+            <Text style={{ color: '#FFF', fontSize: 12, textAlign: 'center' }}>Walking</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* AR/VR View Container */}
       <View style={{ flex: 1, backgroundColor: '#000000' }}>
         {viewMode === 'ar' ? (

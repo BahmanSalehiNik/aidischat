@@ -289,11 +289,24 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       const model = gltf.scene;
       modelRef.current = model;
       
-      // Enable shadows
+      // Enable shadows and fix frustum culling for animated models
       model.traverse((child: THREE.Object3D) => {
         if (child instanceof THREE.Mesh) {
           child.castShadow = true;
           child.receiveShadow = true;
+          
+          // Disable frustum culling for skinned meshes to prevent disappearing during animation
+          if (child instanceof THREE.SkinnedMesh) {
+            child.frustumCulled = false;
+            // Update bounding box for skinned meshes
+            if (child.geometry) {
+              child.geometry.computeBoundingBox();
+              if (child.geometry.boundingBox) {
+                // Expand bounding box to prevent culling issues
+                child.geometry.boundingBox.expandByScalar(2);
+              }
+            }
+          }
         }
       });
 
@@ -302,8 +315,14 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
         console.log(`🎬 [Model3DViewer] Found ${gltf.animations.length} animations:`, 
           gltf.animations.map(a => a.name));
         animationControllerRef.current = new AnimationController(model, gltf.animations);
+        console.log(`✅ [Model3DViewer] Animation controller initialized successfully`);
+        console.log(`🔍 [Model3DViewer] Initial state:`, animationControllerRef.current.getCurrentState());
       } else {
         console.warn('⚠️ [Model3DViewer] No animations found in GLTF model');
+        console.warn('⚠️ [Model3DViewer] Using fallback visual effects (rotation/scale) instead of animations');
+        console.warn('⚠️ [Model3DViewer] To get full animations, use a model with animation clips (e.g., Mixamo)');
+        // Set a flag that we're using fallback animations
+        animationControllerRef.current = null;
       }
 
       // Center and scale model
@@ -318,8 +337,21 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       model.position.z = -center.z * scale;
       model.scale.setScalar(scale);
       
-      // Store initial scale for pinch zoom
+      // Store initial scale for pinch zoom and fallback animations
       baseScaleRef.current = scale;
+      
+      // Ensure camera can see the model (adjust near/far planes if needed)
+      if (cameraRef.current) {
+        // Make sure camera can see the entire model range
+        const modelDistance = Math.max(size.x, size.y, size.z) * scale * 2;
+        if (cameraRef.current.near > 0.01) {
+          cameraRef.current.near = 0.01;
+        }
+        if (cameraRef.current.far < modelDistance) {
+          cameraRef.current.far = Math.max(modelDistance, 1000);
+        }
+        cameraRef.current.updateProjectionMatrix();
+      }
 
       scene.add(model);
       setModelLoaded(true);
@@ -403,43 +435,121 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
 
   // Update animations when movement state changes
   useEffect(() => {
-    if (!animationControllerRef.current || !currentMovement) return;
+    console.log(`🔍 [Model3DViewer] Movement effect triggered:`, {
+      hasController: !!animationControllerRef.current,
+      currentMovement,
+      controllerState: animationControllerRef.current?.getCurrentState(),
+    });
 
-    // Map movement string to MovementState enum
-    // Handles both animation states and backend marker values
-    const movementStateMap: Record<string, MovementState> = {
-      // Direct animation states
-      'idle': MovementState.IDLE,
-      'thinking': MovementState.THINKING,
-      'walking': MovementState.WALKING,
-      'walk': MovementState.WALKING,
-      'flying': MovementState.FLYING,
-      'fly': MovementState.FLYING,
-      'talking': MovementState.TALKING,
-      'talk': MovementState.TALKING,
-      'speak': MovementState.TALKING,
-      // Backend marker values mapped to animations
-      'smiling': MovementState.TALKING, // Smiling usually happens while talking
-      'frown': MovementState.THINKING,  // Frowning often during thinking
-      'listening': MovementState.IDLE,   // Listening = idle state
-      'wave': MovementState.TALKING,     // Wave gesture during talking
-      'nod': MovementState.TALKING,      // Nodding during talking
-      'point': MovementState.TALKING,    // Pointing during talking
-    };
+    if (!currentMovement || !modelRef.current) {
+      console.log(`ℹ️ [Model3DViewer] No movement set or model not loaded, skipping animation update`);
+      return;
+    }
 
-    const targetState = movementStateMap[currentMovement.toLowerCase()];
-    if (targetState) {
-      const currentState = animationControllerRef.current.getCurrentState();
-      if (currentState !== targetState) {
-        console.log(`🎬 [Model3DViewer] Movement change: ${currentMovement} → ${targetState}`);
-        animationControllerRef.current.transitionTo(targetState);
+    // If we have animations, use the animation controller
+    if (animationControllerRef.current) {
+      // Map movement string to MovementState enum
+      // Handles both animation states and backend marker values
+      const movementStateMap: Record<string, MovementState> = {
+        // Direct animation states
+        'idle': MovementState.IDLE,
+        'thinking': MovementState.THINKING,
+        'walking': MovementState.WALKING,
+        'walk': MovementState.WALKING,
+        'flying': MovementState.FLYING,
+        'fly': MovementState.FLYING,
+        'talking': MovementState.TALKING,
+        'talk': MovementState.TALKING,
+        'speak': MovementState.TALKING,
+        // Backend marker values mapped to animations
+        'smiling': MovementState.TALKING, // Smiling usually happens while talking
+        'frown': MovementState.THINKING,  // Frowning often during thinking
+        'listening': MovementState.IDLE,   // Listening = idle state
+        'wave': MovementState.TALKING,     // Wave gesture during talking
+        'nod': MovementState.TALKING,      // Nodding during talking
+        'point': MovementState.TALKING,    // Pointing during talking
+      };
+
+      const targetState = movementStateMap[currentMovement.toLowerCase()];
+      if (targetState) {
+        const currentState = animationControllerRef.current.getCurrentState();
+        console.log(`🎬 [Model3DViewer] Movement change: ${currentMovement} → ${targetState} (current: ${currentState})`);
+        if (currentState !== targetState) {
+          animationControllerRef.current.transitionTo(targetState);
+        } else {
+          console.log(`ℹ️ [Model3DViewer] Already in state ${targetState}, skipping transition`);
+        }
+      } else {
+        console.warn(`⚠️ [Model3DViewer] Unknown movement: ${currentMovement}, defaulting to IDLE`);
+        // Default to idle if movement not recognized
+        const currentState = animationControllerRef.current.getCurrentState();
+        if (currentState !== MovementState.IDLE) {
+          animationControllerRef.current.transitionTo(MovementState.IDLE);
+        }
       }
     } else {
-      console.warn(`⚠️ [Model3DViewer] Unknown movement: ${currentMovement}, defaulting to IDLE`);
-      // Default to idle if movement not recognized
-      const currentState = animationControllerRef.current.getCurrentState();
-      if (currentState !== MovementState.IDLE) {
-        animationControllerRef.current.transitionTo(MovementState.IDLE);
+      // Fallback: Use simple visual effects when model has no animations
+      // IMPORTANT: Use subtle effects that don't move the model out of view
+      console.log(`🎨 [Model3DViewer] Using fallback visual effect for movement: ${currentMovement}`);
+      
+      const movement = currentMovement.toLowerCase();
+      const model = modelRef.current;
+      
+      if (!model) return;
+      
+      // Store original values for reset
+      // Get current scale from model (not baseScaleRef which might be stale)
+      const currentScale = model.scale.x;
+      const baseScale = baseScaleRef.current || currentScale; // Use base scale if available, otherwise current
+      const originalRotation = {
+        x: model.rotation.x,
+        y: model.rotation.y,
+        z: model.rotation.z,
+      };
+      
+      // Apply subtle visual feedback based on movement
+      // NOTE: These are temporary fallback effects. For proper animations, 
+      // you need to regenerate the avatar with Meshy's rigging/animation API enabled.
+      // The current model doesn't have GLTF animation clips.
+      if (movement === 'talking' || movement === 'talk' || movement === 'speak') {
+        // Very subtle scale pulse (1.02 multiplier = 2% increase)
+        const targetScale = currentScale * 1.02;
+        model.scale.setScalar(targetScale);
+        console.log(`🎨 [Model3DViewer] Applied talking effect (scale: ${currentScale.toFixed(3)} → ${targetScale.toFixed(3)})`);
+        console.log(`⚠️ [Model3DViewer] This is a fallback effect. For proper animations, regenerate avatar with Meshy rigging/animation.`);
+        
+        // Reset after animation
+        setTimeout(() => {
+          if (modelRef.current) {
+            modelRef.current.scale.setScalar(currentScale);
+          }
+        }, 300);
+      } else if (movement === 'thinking') {
+        // Very subtle rotation (0.05 instead of 0.1)
+        model.rotation.z = originalRotation.z + 0.05;
+        console.log(`🎨 [Model3DViewer] Applied thinking effect (subtle tilt)`);
+        
+        setTimeout(() => {
+          if (modelRef.current) {
+            modelRef.current.rotation.z = originalRotation.z;
+          }
+        }, 500);
+      } else if (movement === 'walking' || movement === 'walk') {
+        // Very subtle forward lean
+        model.rotation.x = originalRotation.x - 0.05;
+        console.log(`🎨 [Model3DViewer] Applied walking effect (subtle lean)`);
+        
+        setTimeout(() => {
+          if (modelRef.current) {
+            modelRef.current.rotation.x = originalRotation.x;
+          }
+        }, 400);
+      } else if (movement === 'idle') {
+        // Reset to original position/scale
+        // Use base scale (the original scale when model was loaded)
+        model.rotation.set(originalRotation.x, originalRotation.y, originalRotation.z);
+        model.scale.setScalar(baseScale);
+        console.log(`🎨 [Model3DViewer] Reset to idle (neutral, scale: ${baseScale.toFixed(3)})`);
       }
     }
   }, [currentMovement]);
