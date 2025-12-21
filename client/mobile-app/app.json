@@ -34,7 +34,13 @@
     },
     "scheme": "aichatwar",
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "This app uses device motion sensors to anchor the 3D avatar model in AR space, allowing it to stay in the same position as you move your device."
+        }
+      ]
     ]
   }
 }

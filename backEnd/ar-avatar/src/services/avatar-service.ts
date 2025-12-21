@@ -53,9 +53,37 @@ export class AvatarService {
         }
       );
 
+      // Step 3b: Download and store animation GLBs (if available)
+      const uploadedAnimationUrls: string[] = [];
+      if (generatedModel.animationUrls && generatedModel.animationUrls.length > 0) {
+        console.log(`[AvatarService] Uploading ${generatedModel.animationUrls.length} animation GLBs to Azure...`);
+        for (let i = 0; i < generatedModel.animationUrls.length; i++) {
+          const animUrl = generatedModel.animationUrls[i];
+          try {
+            const animUploadResult = await storageService.downloadAndStore(
+              animUrl,
+              `${agentId}_animation_${i}_${Date.now()}.${generatedModel.format}`,
+              (bytesDownloaded, totalBytes) => {
+                if (totalBytes) {
+                  const progress = Math.round((bytesDownloaded / totalBytes) * 100);
+                  console.log(`[AvatarService] Animation ${i + 1}/${generatedModel.animationUrls!.length} upload: ${progress}%`);
+                }
+              }
+            );
+            uploadedAnimationUrls.push(animUploadResult.url || storageService.generateCDNUrl(animUploadResult.key));
+            console.log(`[AvatarService] ✅ Uploaded animation ${i + 1}/${generatedModel.animationUrls.length}`);
+          } catch (error: any) {
+            console.warn(`[AvatarService] Failed to upload animation ${i + 1}: ${error.message}`);
+            // Continue with other animations
+          }
+        }
+        console.log(`[AvatarService] ✅ Uploaded ${uploadedAnimationUrls.length}/${generatedModel.animationUrls.length} animations to Azure`);
+      }
+
       // Step 4: Update avatar record
       // Use the URL from uploadResult (already includes CDN URL if configured)
       avatar.modelUrl = uploadResult.url || storageService.generateCDNUrl(uploadResult.key);
+      avatar.animationUrls = uploadedAnimationUrls.length > 0 ? uploadedAnimationUrls : [];
       avatar.format = generatedModel.format;
       avatar.modelType = this.determineModelType(description);
       avatar.provider = generatedModel.modelId.split('_')[0]; // Extract provider from modelId
@@ -106,6 +134,7 @@ export class AvatarService {
     progress?: number;
     error?: string;
     modelUrl?: string;
+    animationUrls?: string[]; // Separate animation GLB URLs (for Meshy models)
     format?: string;
     modelType?: string;
     estimatedTimeRemaining?: number; // seconds
@@ -129,6 +158,7 @@ export class AvatarService {
       error: avatar.generationError,
       progress,
       modelUrl: avatar.modelUrl,
+      animationUrls: avatar.animationUrls || [],
       format: avatar.format,
       modelType: avatar.modelType,
       estimatedTimeRemaining,

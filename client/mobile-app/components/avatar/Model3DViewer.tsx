@@ -14,6 +14,7 @@ import { MovementState } from '../../utils/animations/animationTypes';
 
 interface Model3DViewerProps {
   modelUrl: string;
+  animationUrls?: string[]; // Separate animation GLB URLs (for Meshy models)
   onClose?: () => void;
   enableAR?: boolean;
   onARPress?: () => void;
@@ -24,6 +25,7 @@ interface Model3DViewerProps {
 
 export const Model3DViewer: React.FC<Model3DViewerProps> = ({
   modelUrl,
+  animationUrls = [],
   onClose,
   enableAR = false,
   onARPress,
@@ -44,6 +46,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
   const lastPanRef = useRef<{ x: number; y: number } | null>(null);
   const lastPinchDistanceRef = useRef<number | null>(null);
   const baseScaleRef = useRef(1);
+  const cameraDistanceRef = useRef(30); // Start much further back to avoid being inside model
   const [isAnchored, setIsAnchored] = useState(false);
   const anchorPositionRef = useRef<THREE.Vector3 | null>(null);
   const anchorRotationRef = useRef<{ alpha: number; beta: number; gamma: number } | null>(null);
@@ -88,17 +91,46 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
           return;
         }
         
-        // Request permissions (required on iOS)
+        // Request permissions (required on iOS, optional on Android)
         try {
-          const { status } = await DeviceMotion.requestPermissionsAsync();
-          if (status !== 'granted') {
-            console.warn('⚠️ [Model3DViewer] Device motion permission denied');
+          // Check current permission status first
+          const { status: currentStatus } = await DeviceMotion.getPermissionsAsync();
+          
+          let finalStatus = currentStatus;
+          
+          if (currentStatus !== 'granted') {
+            // Request permission explicitly
+            console.log('📱 [Model3DViewer] Requesting device motion permission...');
+            const { status } = await DeviceMotion.requestPermissionsAsync();
+            finalStatus = status;
+          } else {
+            console.log('✅ [Model3DViewer] Device motion permission already granted');
+          }
+          
+          if (finalStatus === 'granted') {
+            console.log('✅ [Model3DViewer] Device motion permission granted');
+          } else {
+            console.warn('⚠️ [Model3DViewer] Device motion permission denied. Status:', finalStatus);
+            console.warn('⚠️ [Model3DViewer] Please enable motion permissions in device settings:');
+            console.warn('⚠️ [Model3DViewer] iOS: Settings > Privacy & Security > Motion & Fitness');
+            console.warn('⚠️ [Model3DViewer] Android: Usually granted automatically, check app permissions');
             setIsAnchored(false);
             return;
           }
-        } catch (error) {
+        } catch (error: any) {
           // Some platforms might not require explicit permissions
-          console.log('ℹ️ [Model3DViewer] Permission request not needed or failed:', error);
+          const errorMsg = error?.message || String(error);
+          console.log('ℹ️ [Model3DViewer] Permission request result:', errorMsg);
+          
+          // On Android, permissions might not be required, so continue
+          // On iOS, if permission is denied, we should stop
+          if (errorMsg.includes('denied') || errorMsg.includes('permission')) {
+            console.warn('⚠️ [Model3DViewer] Permission denied, disabling anchor feature');
+            setIsAnchored(false);
+            return;
+          } else {
+            console.log('ℹ️ [Model3DViewer] Continuing - permission may not be required on this platform');
+          }
         }
         
         // Set update interval for smooth tracking
@@ -251,25 +283,27 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
         75,
         gl.drawingBufferWidth / gl.drawingBufferHeight,
         0.1,
-        1000
+        2000 // Increased far plane to match model distance calculation
       );
-      camera.position.set(0, 0, 5);
+      // Start camera much further back - will be adjusted when model loads
+      // But start with safe distance to prevent being inside model
+      camera.position.set(0, 0, cameraDistanceRef.current);
       cameraRef.current = camera;
 
-      // Add lighting
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      // Add lighting - increased intensity for better color visibility
+      const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Increased from 0.6 to 1.0
       scene.add(ambientLight);
 
-      const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+      const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1.2); // Increased from 0.8 to 1.2
       directionalLight1.position.set(5, 5, 5);
       directionalLight1.castShadow = true;
       scene.add(directionalLight1);
 
-      const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+      const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.6); // Increased from 0.4 to 0.6
       directionalLight2.position.set(-5, -5, -5);
       scene.add(directionalLight2);
 
-      const pointLight = new THREE.PointLight(0xffffff, 0.5);
+      const pointLight = new THREE.PointLight(0xffffff, 0.8); // Increased from 0.5 to 0.8
       pointLight.position.set(0, 10, 0);
       scene.add(pointLight);
 
@@ -289,11 +323,109 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       const model = gltf.scene;
       modelRef.current = model;
       
-      // Enable shadows and fix frustum culling for animated models
+      // Collect all animation clips (from base model + separate animation files)
+      let allAnimations: THREE.AnimationClip[] = [...(gltf.animations || [])];
+      
+      // Load animations from separate URLs if provided (Meshy workflow)
+      if (animationUrls && animationUrls.length > 0) {
+        console.log(`🎬 [Model3DViewer] Loading ${animationUrls.length} animation GLBs from separate URLs...`);
+        for (let i = 0; i < animationUrls.length; i++) {
+          try {
+            const animGltf = await loader.loadAsync(animationUrls[i]);
+            if (animGltf.animations && animGltf.animations.length > 0) {
+              // Extract animation clips from animation GLB
+              // Meshy animation GLBs contain animation clips that can be applied to the base model
+              animGltf.animations.forEach((clip) => {
+                // Rename animation to match expected names (idle, talking, thinking, walking)
+                // Try to infer from URL or use default names based on order
+                const urlLower = animationUrls[i].toLowerCase();
+                let animName = clip.name;
+                
+                // Try to infer from URL
+                if (urlLower.includes('idle')) {
+                  animName = 'idle';
+                } else if (urlLower.includes('thinking') || urlLower.includes('confused') || urlLower.includes('scratch')) {
+                  animName = 'thinking';
+                } else if (urlLower.includes('wave') || urlLower.includes('hello')) {
+                  animName = 'talking';
+                } else if (urlLower.includes('walk')) {
+                  animName = 'walking';
+                } else {
+                  // Default mapping based on order (Meshy order: idle, thinking, wave)
+                  if (i === 0) animName = 'idle';
+                  else if (i === 1) animName = 'thinking';
+                  else if (i === 2) animName = 'talking';
+                  else animName = clip.name.toLowerCase(); // Use original name as fallback
+                }
+                
+                // Use the clip directly but with renamed track names if needed
+                // Create a new clip with the proper name
+                const tracks = clip.tracks.map(track => track.clone());
+                const renamedClip = new THREE.AnimationClip(animName, clip.duration, tracks);
+                allAnimations.push(renamedClip);
+                console.log(`✅ [Model3DViewer] Loaded animation: ${animName} (from ${clip.name}) from ${animationUrls[i]}`);
+              });
+            } else {
+              console.warn(`⚠️ [Model3DViewer] Animation GLB ${i + 1} has no animation clips: ${animationUrls[i]}`);
+            }
+          } catch (error: any) {
+            console.warn(`⚠️ [Model3DViewer] Failed to load animation ${i + 1} from ${animationUrls[i]}:`, error.message);
+          }
+        }
+        console.log(`🎬 [Model3DViewer] Total animations loaded: ${allAnimations.length} (${gltf.animations?.length || 0} from base + ${allAnimations.length - (gltf.animations?.length || 0)} from separate files)`);
+      }
+      
+      // Enable shadows, materials, and fix frustum culling for animated models
       model.traverse((child: THREE.Object3D) => {
         if (child instanceof THREE.Mesh) {
           child.castShadow = true;
           child.receiveShadow = true;
+          
+          // Ensure materials are properly set up for colors and textures
+          if (child.material) {
+            // Handle both single material and material arrays
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach((mat: THREE.Material) => {
+              // Enable color rendering for all material types
+              if (mat instanceof THREE.MeshStandardMaterial || 
+                  mat instanceof THREE.MeshBasicMaterial ||
+                  mat instanceof THREE.MeshPhongMaterial ||
+                  mat instanceof THREE.MeshLambertMaterial) {
+                // Force material update to ensure textures/colors load
+                mat.needsUpdate = true;
+                
+                // Ensure material is not transparent unless it should be
+                if (mat.transparent && mat.opacity < 0.1) {
+                  mat.transparent = false;
+                  mat.opacity = 1.0;
+                }
+                
+                // Ensure material is visible
+                mat.visible = true;
+                
+                // For MeshStandardMaterial, ensure textures are loaded
+                if (mat instanceof THREE.MeshStandardMaterial) {
+                  // Force texture updates
+                  if (mat.map) mat.map.needsUpdate = true;
+                  if (mat.normalMap) mat.normalMap.needsUpdate = true;
+                  if (mat.roughnessMap) mat.roughnessMap.needsUpdate = true;
+                  if (mat.metalnessMap) mat.metalnessMap.needsUpdate = true;
+                  
+                  // Ensure material uses color if no texture
+                  if (!mat.map && mat.color) {
+                    mat.color.setHex(0xffffff); // White base color
+                  }
+                }
+                
+                // Force material to update again
+                mat.needsUpdate = true;
+              }
+            });
+            // Force geometry update
+            if (child.geometry) {
+              child.geometry.computeBoundingBox();
+            }
+          }
           
           // Disable frustum culling for skinned meshes to prevent disappearing during animation
           if (child instanceof THREE.SkinnedMesh) {
@@ -311,16 +443,16 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       });
 
       // Initialize animation controller if animations are available
-      if (gltf.animations && gltf.animations.length > 0) {
-        console.log(`🎬 [Model3DViewer] Found ${gltf.animations.length} animations:`, 
-          gltf.animations.map(a => a.name));
-        animationControllerRef.current = new AnimationController(model, gltf.animations);
+      if (allAnimations.length > 0) {
+        console.log(`🎬 [Model3DViewer] Found ${allAnimations.length} animations:`, 
+          allAnimations.map(a => a.name));
+        animationControllerRef.current = new AnimationController(model, allAnimations);
         console.log(`✅ [Model3DViewer] Animation controller initialized successfully`);
         console.log(`🔍 [Model3DViewer] Initial state:`, animationControllerRef.current.getCurrentState());
       } else {
-        console.warn('⚠️ [Model3DViewer] No animations found in GLTF model');
+        console.warn('⚠️ [Model3DViewer] No animations found in GLTF model or animation URLs');
         console.warn('⚠️ [Model3DViewer] Using fallback visual effects (rotation/scale) instead of animations');
-        console.warn('⚠️ [Model3DViewer] To get full animations, use a model with animation clips (e.g., Mixamo)');
+        console.warn('⚠️ [Model3DViewer] To get full animations, ensure animations are generated and uploaded');
         // Set a flag that we're using fallback animations
         animationControllerRef.current = null;
       }
@@ -330,8 +462,11 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      const scale = 3 / maxDim; // Scale to fit nicely
-
+      
+      // Scale model to be much smaller - ensure it fits in a reasonable view
+      // Use smaller scale to prevent camera from being inside model
+      const scale = 1.5 / maxDim; // Even smaller scale
+      
       model.position.x = -center.x * scale;
       model.position.y = -center.y * scale;
       model.position.z = -center.z * scale;
@@ -340,17 +475,32 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       // Store initial scale for pinch zoom and fallback animations
       baseScaleRef.current = scale;
       
-      // Ensure camera can see the model (adjust near/far planes if needed)
+      // Adjust camera distance based on model size
       if (cameraRef.current) {
+        // Calculate appropriate camera distance based on model size
+        const modelSize = Math.max(size.x, size.y, size.z) * scale;
+        
+        // CRITICAL: Ensure camera is FAR enough away - at least 5x model size
+        // This prevents camera from being inside the model
+        const minDistance = Math.max(modelSize * 5, 20); // At least 5x model size, minimum 20 units
+        const idealDistance = Math.max(modelSize * 6, 25); // 6x for comfortable view, minimum 25
+        
+        // Update camera distance
+        cameraDistanceRef.current = idealDistance;
+        cameraRef.current.position.set(0, 0, cameraDistanceRef.current);
+        
         // Make sure camera can see the entire model range
-        const modelDistance = Math.max(size.x, size.y, size.z) * scale * 2;
+        const modelDistance = modelSize * 8; // Far plane should be 8x model size
         if (cameraRef.current.near > 0.01) {
           cameraRef.current.near = 0.01;
         }
         if (cameraRef.current.far < modelDistance) {
-          cameraRef.current.far = Math.max(modelDistance, 1000);
+          cameraRef.current.far = Math.max(modelDistance, 2000); // Increased far plane
         }
         cameraRef.current.updateProjectionMatrix();
+        
+        console.log(`📷 [Model3DViewer] Camera positioned at distance: ${cameraDistanceRef.current.toFixed(1)}, model size: ${modelSize.toFixed(2)}, scale: ${scale.toFixed(4)}`);
+        console.log(`📷 [Model3DViewer] Model bounds: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`);
       }
 
       scene.add(model);
@@ -474,17 +624,23 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       if (targetState) {
         const currentState = animationControllerRef.current.getCurrentState();
         console.log(`🎬 [Model3DViewer] Movement change: ${currentMovement} → ${targetState} (current: ${currentState})`);
-        if (currentState !== targetState) {
-          animationControllerRef.current.transitionTo(targetState);
-        } else {
-          console.log(`ℹ️ [Model3DViewer] Already in state ${targetState}, skipping transition`);
+        // Always transition, even if same state (to restart animation)
+        // Force transition by allowing interrupt
+        try {
+          animationControllerRef.current.transitionTo(targetState, true); // allowInterrupt = true
+          console.log(`✅ [Model3DViewer] Animation transition triggered to ${targetState}`);
+        } catch (error) {
+          console.error(`❌ [Model3DViewer] Animation transition failed:`, error);
+          // Try again without interrupt check
+          animationControllerRef.current.transitionTo(targetState, false);
         }
       } else {
         console.warn(`⚠️ [Model3DViewer] Unknown movement: ${currentMovement}, defaulting to IDLE`);
         // Default to idle if movement not recognized
-        const currentState = animationControllerRef.current.getCurrentState();
-        if (currentState !== MovementState.IDLE) {
-          animationControllerRef.current.transitionTo(MovementState.IDLE);
+        try {
+          animationControllerRef.current.transitionTo(MovementState.IDLE, true);
+        } catch (error) {
+          console.error(`❌ [Model3DViewer] Failed to transition to IDLE:`, error);
         }
       }
     } else {
@@ -669,6 +825,52 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
         onContextCreate={onContextCreate}
       />
 
+      {/* Zoom Controls */}
+      {modelLoaded && !enableAR && (
+        <View style={styles.zoomControls}>
+          <TouchableOpacity
+            style={styles.zoomButton}
+            onPress={() => {
+              try {
+                if (!cameraRef.current) {
+                  console.warn('⚠️ [Model3DViewer] Camera not available for zoom in');
+                  return;
+                }
+                const newDistance = Math.max(5, cameraDistanceRef.current - 2);
+                cameraDistanceRef.current = newDistance;
+                cameraRef.current.position.z = newDistance;
+                cameraRef.current.updateProjectionMatrix();
+                console.log(`🔍 [Model3DViewer] Zoom in: ${cameraDistanceRef.current.toFixed(1)}`);
+              } catch (error) {
+                console.error('❌ [Model3DViewer] Zoom in error:', error);
+              }
+            }}
+          >
+            <Ionicons name="add" size={24} color="#FFF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.zoomButton}
+            onPress={() => {
+              try {
+                if (!cameraRef.current) {
+                  console.warn('⚠️ [Model3DViewer] Camera not available for zoom out');
+                  return;
+                }
+                const newDistance = Math.min(100, cameraDistanceRef.current + 3); // Increased max and step
+                cameraDistanceRef.current = newDistance;
+                cameraRef.current.position.z = newDistance;
+                cameraRef.current.updateProjectionMatrix();
+                console.log(`🔍 [Model3DViewer] Zoom out: ${cameraDistanceRef.current.toFixed(1)}`);
+              } catch (error) {
+                console.error('❌ [Model3DViewer] Zoom out error:', error);
+              }
+            }}
+          >
+            <Ionicons name="remove" size={24} color="#FFF" />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Instructions - Hide in AR mode */}
       {modelLoaded && !enableAR && (
         <View style={styles.instructions}>
@@ -807,5 +1009,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginLeft: 6,
+  },
+  zoomControls: {
+    position: 'absolute',
+    right: 20,
+    bottom: 100,
+    flexDirection: 'column',
+    gap: 12,
+    zIndex: 10,
+  },
+  zoomButton: {
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 25,
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
 });

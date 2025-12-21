@@ -42,6 +42,7 @@ export default function ARChatScreen() {
   const [sending, setSending] = useState(false);
   const [providerTokens, setProviderTokens] = useState<ProviderTokens | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [animationUrls, setAnimationUrls] = useState<string[]>([]);
   const [currentMarkers, setCurrentMarkers] = useState<Array<{ type: 'emotion' | 'movement' | 'gesture' | 'pose' | 'tone'; value: string }>>([]);
   const [currentEmotion, setCurrentEmotion] = useState<string | null>(null);
   const [currentMovement, setCurrentMovement] = useState<string | null>(null);
@@ -323,11 +324,15 @@ export default function ARChatScreen() {
       setStreamingContent('');
       streamingMessageIdRef.current = null;
 
-      // 4. Get 3D model URL
+      // 4. Get 3D model URL and animations
       try {
         const avatarStatus = await avatarApi.getAvatarStatus(params.agentId!);
         if (avatarStatus.status === 'ready' && avatarStatus.modelUrl) {
           setModelUrl(avatarStatus.modelUrl);
+          if (avatarStatus.animationUrls && avatarStatus.animationUrls.length > 0) {
+            setAnimationUrls(avatarStatus.animationUrls);
+            console.log(`✅ [ARChatScreen] Loaded ${avatarStatus.animationUrls.length} animation URLs`);
+          }
         }
       } catch (error) {
         console.error('Error loading avatar:', error);
@@ -880,6 +885,7 @@ export default function ARChatScreen() {
                   />
                   <Model3DViewer
                     modelUrl={modelUrl}
+                    animationUrls={animationUrls}
                     enableAR={true}
                     markers={currentMarkers}
                     currentEmotion={currentEmotion || undefined}
@@ -929,6 +935,7 @@ export default function ARChatScreen() {
             {modelUrl ? (
               <Model3DViewer
                 modelUrl={modelUrl}
+                animationUrls={animationUrls}
                 enableAR={false}
                 markers={currentMarkers}
                 currentEmotion={currentEmotion || undefined}

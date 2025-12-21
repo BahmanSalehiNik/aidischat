@@ -6,6 +6,7 @@ export interface AvatarStatus {
   progress?: number;
   error?: string;
   modelUrl?: string;
+  animationUrls?: string[]; // Separate animation GLB URLs (for Meshy models)
   format?: string;
   modelType?: string;
   estimatedTimeRemaining?: number;
