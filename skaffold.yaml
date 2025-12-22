@@ -186,9 +186,10 @@ build:
 manifests:
   rawYaml: 
     # Phase 1: Infrastructure services (deployed first, in dependency order)
-    - ./infra/k8s/redpanda-depl.yaml
-    - ./infra/k8s/kafka-topics-init.yaml  # Initialize Kafka topics after Redpanda is ready
-    - ./infra/k8s/nats-depl.yaml
+    # Note: Redpanda runs outside k8s via Docker Compose - see docker-compose.kafka.yml
+    # Start it with: docker-compose -f docker-compose.kafka.yml up -d
+    - ./infra/k8s/redpanda-external-srv.yaml  # External service pointing to host Redpanda
+    - ./infra/k8s/kafka-topics-init.yaml  # Initialize Kafka topics (Job)
     - ./infra/k8s/*-mongo-depl.yaml
     - ./infra/k8s/expiration-redis-depl.yaml
     - ./infra/k8s/realtime-redis-depl.yaml
@@ -226,7 +227,7 @@ manifests:
     # Phase 3: Ingress (deployed last)
     - ./infra/k8s/ingress-srv.yaml
 deploy:
-  statusCheckDeadlineSeconds: 600  # 10 minutes timeout for status checks (increased for slow-starting services)
+  statusCheckDeadlineSeconds: 300  # 5 minutes timeout for status checks
   kubectl:
     # Manifests are applied in order, and services use readiness/startup probes
     # to wait for dependencies automatically

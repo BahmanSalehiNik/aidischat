@@ -2,9 +2,20 @@
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import { ARMessage } from '../models/ar-message';
+import { User } from '../models/user';
 import { kafkaWrapper } from '../kafka-client';
 import { ARMessageRequestPublisher } from '../events/publishers/ar-message-request-publisher';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
+
+// Helper to get or wait for user
+async function waitForUser(userId: string, maxRetries = 5): Promise<any> {
+  for (let i = 0; i < maxRetries; i++) {
+    const user = await User.findOne({ _id: userId }).lean();
+    if (user) return user;
+    await new Promise(resolve => setTimeout(resolve, 200)); // Wait 200ms
+  }
+  return null;
+}
 
 const router = express.Router();
 
@@ -26,13 +37,37 @@ router.post('/api/ar-rooms/:roomId/messages', extractJWTPayload, loginRequired, 
 
   const messageId = crypto.randomUUID();
 
+  // Fetch user to get username (with retry for race conditions)
+  const user = await waitForUser(userId);
+  
+  // Get username with fallback: displayName -> username -> email prefix (from DB or JWT) -> never use userId
+  let username: string = '';
+  if (user) {
+    username = user.displayName || user.username || user.email?.split('@')[0] || '';
+  }
+  
+  // If no username from DB, use email from JWT payload
+  if (!username) {
+    const emailFromJwt = (req.jwtPayload as any)?.email;
+    if (emailFromJwt) {
+      username = emailFromJwt.split('@')[0];
+    } else {
+      // Last resort: use a generic name (should never happen if JWT is valid)
+      username = 'User';
+      console.warn(`⚠️ [AR Messages] No email in JWT payload for user ${userId}, using generic 'User'`);
+    }
+  }
+
+  // Format message with username: "username: message"
+  const formattedContent = `${username}: ${content.trim()}`;
+
   // Create AR message with streaming status
   const arMessage = ARMessage.build({
     id: messageId,
     roomId,
     senderId: userId,
     senderType: 'human',
-    content: content.trim(),
+    content: content.trim(), // Store original content without username prefix
     status: 'streaming',
   });
 
@@ -47,13 +82,14 @@ router.post('/api/ar-rooms/:roomId/messages', extractJWTPayload, loginRequired, 
   }
 
   // Publish AR message request event to trigger AI streaming
+  // Send formatted content with username to AI Gateway
   try {
     await new ARMessageRequestPublisher(kafkaWrapper.producer).publish({
       messageId: arMessage.id,
       roomId: arMessage.roomId,
       agentId: agentId,
       userId: userId,
-      content: arMessage.content,
+      content: formattedContent, // Send formatted message with username
       timestamp: new Date().toISOString(),
     });
 

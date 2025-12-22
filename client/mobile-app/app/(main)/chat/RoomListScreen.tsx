@@ -26,28 +26,7 @@ export default function RoomListScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  useEffect(() => {
-    loadRooms();
-  }, []);
-
-  // Ensure RoomListScreen is shown when chat tab is focused
-  // This prevents staying on SessionDetailScreen when switching to chat tab
-  useFocusEffect(
-    React.useCallback(() => {
-      // When this screen is focused (chat tab clicked), ensure we're on RoomListScreen
-      // This helps separate history view from main chat
-      return () => {
-        // Cleanup if needed
-      };
-    }, [])
-  );
-
-  useGlobalWebSocket(() => {
-    console.log('🔄 Refreshing room list due to room.created event');
-    loadRooms();
-  });
-
-  const loadRooms = async () => {
+  const loadRooms = React.useCallback(async () => {
     try {
       setLoading(true);
       const response = await roomApi.getUserRooms();
@@ -80,7 +59,31 @@ export default function RoomListScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []); // setRooms from Zustand is stable, no need to include in deps
+
+  useEffect(() => {
+    loadRooms();
+  }, [loadRooms]);
+
+  // Ensure RoomListScreen is shown when chat tab is focused
+  // This prevents staying on SessionDetailScreen when switching to chat tab
+  useFocusEffect(
+    React.useCallback(() => {
+      // When this screen is focused (chat tab clicked), ensure we're on RoomListScreen
+      // This helps separate history view from main chat
+      return () => {
+        // Cleanup if needed
+      };
+    }, [])
+  );
+
+  // Memoize the callback to prevent infinite re-renders
+  const handleRoomCreated = React.useCallback(() => {
+    console.log('🔄 Refreshing room list due to room.created event');
+    loadRooms();
+  }, [loadRooms]);
+
+  useGlobalWebSocket(handleRoomCreated);
 
   const onRefresh = async () => {
     setRefreshing(true);

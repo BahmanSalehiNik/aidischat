@@ -1,0 +1,205 @@
+name: Mobile App Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'client/mobile-app/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'client/mobile-app/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to build'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - preview
+          - production
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - ios
+          - android
+
+env:
+  EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      mobile-app: ${{ steps.filter.outputs.mobile-app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            mobile-app:
+              - 'client/mobile-app/**'
+
+  build-ios-dev:
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.mobile-app == 'true' &&
+      (github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: client/mobile-app/package-lock.json
+      
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+      
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      
+      - name: Install dependencies
+        working-directory: client/mobile-app
+        run: npm ci
+      
+      - name: Load environment variables
+        working-directory: client/mobile-app
+        run: |
+          echo "APP_ENV=development" >> .env
+          echo "API_BASE_URL=${{ secrets.API_BASE_URL_DEV || 'https://dev-api.yourdomain.com' }}" >> .env
+          echo "WS_URL=${{ secrets.WS_URL_DEV || 'wss://dev-api.yourdomain.com/api/realtime' }}" >> .env
+      
+      - name: Build iOS (Development)
+        working-directory: client/mobile-app
+        run: eas build --platform ios --profile development --non-interactive
+      
+      - name: Submit to TestFlight (optional)
+        if: github.ref == 'refs/heads/develop'
+        working-directory: client/mobile-app
+        run: |
+          if [ -n "${{ secrets.APPLE_ID }}" ]; then
+            eas submit --platform ios --latest --non-interactive || echo "TestFlight submission skipped"
+          fi
+
+  build-android-dev:
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.mobile-app == 'true' &&
+      (github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: client/mobile-app/package-lock.json
+      
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+      
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      
+      - name: Install dependencies
+        working-directory: client/mobile-app
+        run: npm ci
+      
+      - name: Load environment variables
+        working-directory: client/mobile-app
+        run: |
+          echo "APP_ENV=development" >> .env
+          echo "API_BASE_URL=${{ secrets.API_BASE_URL_DEV || 'https://dev-api.yourdomain.com' }}" >> .env
+          echo "WS_URL=${{ secrets.WS_URL_DEV || 'wss://dev-api.yourdomain.com/api/realtime' }}" >> .env
+      
+      - name: Build Android (Development)
+        working-directory: client/mobile-app
+        run: eas build --platform android --profile development --non-interactive
+      
+      - name: Upload to Firebase App Distribution (optional)
+        if: |
+          github.ref == 'refs/heads/develop' &&
+          secrets.FIREBASE_TOKEN != ''
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
+          token: ${{ secrets.FIREBASE_TOKEN }}
+          groups: testers
+          file: app-release.apk
+
+  build-production:
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.mobile-app == 'true' &&
+      (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [ios, android]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: client/mobile-app/package-lock.json
+      
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+      
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      
+      - name: Install dependencies
+        working-directory: client/mobile-app
+        run: npm ci
+      
+      - name: Load environment variables
+        working-directory: client/mobile-app
+        run: |
+          echo "APP_ENV=production" >> .env
+          echo "API_BASE_URL=${{ secrets.API_BASE_URL_PROD || 'https://api.yourdomain.com' }}" >> .env
+          echo "WS_URL=${{ secrets.WS_URL_PROD || 'wss://api.yourdomain.com/api/realtime' }}" >> .env
+      
+      - name: Build for ${{ matrix.platform }}
+        working-directory: client/mobile-app
+        run: eas build --platform ${{ matrix.platform }} --profile production --non-interactive
+      
+      - name: Submit to stores
+        if: github.ref == 'refs/heads/main'
+        working-directory: client/mobile-app
+        run: |
+          if [ -n "${{ secrets.APPLE_ID }}" ] || [ -n "${{ secrets.GOOGLE_SERVICE_ACCOUNT }}" ]; then
+            eas submit --platform ${{ matrix.platform }} --latest --non-interactive || echo "Store submission skipped"
+          fi

@@ -33,15 +33,6 @@ spec:
                 secretKeyRef:
                   name: azure-storage
                   key: AZURE_STORAGE_KEY
-            - name: NATS_URL
-              value: 'http://nats-srv:4222'
-            - name: NATS_CLUSTER_ID
-              value: "aichatwar"
-            - name: NATS_CLIENT_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            
             - name: KAFKA_BROKER_URL
               value: 'redpanda-srv:9092'
             - name: KAFKA_CLIENT_ID

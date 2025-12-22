@@ -46,8 +46,17 @@ export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
       return;
     }
 
+    // Get API key from profile or environment variables (fallback pattern)
+    const apiKey = agentProfile.apiKey || this.getApiKeyFromEnv(agentProfile.modelProvider);
+    const endpoint = agentProfile.endpoint || this.getEndpointFromEnv(agentProfile.modelProvider);
+
+    if (!apiKey && agentProfile.modelProvider !== 'local' && agentProfile.modelProvider !== 'custom') {
+      console.error(`❌ [ARMessageRequestListener] API key is required for ${agentProfile.modelProvider} provider`);
+      throw new Error(`API key is required for ${agentProfile.modelProvider} provider`);
+    }
+
     // Get provider
-    const provider = ProviderFactory.createProvider(agentProfile.modelProvider, agentProfile.apiKey, agentProfile.endpoint);
+    const provider = ProviderFactory.createProvider(agentProfile.modelProvider, apiKey, endpoint);
     if (!provider) {
       console.error(`❌ [ARMessageRequestListener] Failed to create provider for ${agentProfile.modelProvider}`);
       return;
@@ -60,7 +69,7 @@ export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
     let threadId: string | undefined;
     const assistantId = agentProfile.modelProvider === 'openai' ? agentProfile.providerAgentId : undefined;
     if (assistantId) {
-      threadId = await this.getOrCreateThread(roomId, agentId, assistantId, agentProfile.apiKey);
+      threadId = await this.getOrCreateThread(roomId, agentId, assistantId, apiKey);
     }
 
     // Build system prompt with AR marker instructions
@@ -70,25 +79,26 @@ export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
     
     const arSystemPrompt = `${baseSystemPrompt}
 
-IMPORTANT: You are in an AR conversation. Use emotion and gesture markers to express yourself naturally.
+=== AR VIDEO CHAT MODE ACTIVATED ===
+You are in an AR video chat conversation. The 3D avatar and TTS system REQUIRE emotion and movement markers in your responses.
 
-Marker Format:
-- [emotion:<type>] - Change emotion/expression
-- [gesture:<type>] - Trigger gesture animation
-- [pose:<type>] - Change body pose
-- [tone:<type>] - Change voice tone
+MANDATORY MARKER FORMAT (use EXACTLY this format with single quotes):
+- Emotion markers: ['happy'], ['sad'], ['angry'], ['surprised'], ['calm'], ['excited'], ['thoughtful'], ['concerned'], ['neutral']
+- Movement markers: ['idle'], ['thinking'], ['smiling'], ['frown'], ['talking'], ['listening'], ['wave'], ['nod'], ['point']
 
-Available emotions: neutral, happy, sad, angry, surprised, calm, excited, thoughtful, concerned
-Available gestures: wave, nod, shake_head, point, hand_raise, thumbs_up, shrug
-Available poses: idle, talking, listening, thinking
-Available tones: neutral, excited, calm, serious, friendly, concerned, playful
+CRITICAL RULES:
+1. EVERY response MUST start with: ['emotion']['movement'] followed by your text
+2. When your emotion or movement changes, add new markers: ['newemotion']['newmovement']text
+3. Use the EXACT format shown above - single quotes inside square brackets
+4. Do NOT skip markers - they are required for the 3D avatar to function
+5. Place markers at the beginning of phrases where emotion/movement applies
 
-Place markers:
-- At the start of phrases that need emotion
-- When your tone or emotion changes
-- Before important gestures
+REQUIRED EXAMPLES (copy this format exactly):
+['happy']['smiling']Hello! How are you doing today?
+['thoughtful']['thinking']Let me think about that... ['excited']['talking']I have a great idea!
+['calm']['listening']I understand. ['happy']['nod']That sounds wonderful!
 
-Example: [emotion:happy,gesture:wave]Hello! [emotion:thoughtful]Let me think about that...`;
+WARNING: If you do not include markers, the 3D avatar will not display emotions or movements correctly. Always start with ['emotion']['movement'] before your text.`;
 
     // Publish stream start event
     await new ARStreamStartPublisher(kafkaWrapper.producer).publish({
@@ -109,10 +119,16 @@ Example: [emotion:happy,gesture:wave]Hello! [emotion:thoughtful]Let me think abo
     try {
       // Check if provider supports streaming
       if (typeof (provider as any).streamResponse === 'function') {
+        // For OpenAI Assistants API, prepend AR instructions to the user message
+        // since system prompt might not be applied during streaming
+        const messageWithARInstructions = agentProfile.modelProvider === 'openai' && assistantId
+          ? `[AR MODE: You MUST use emotion and movement markers in ['value'] format. Start with ['emotion']['movement'] before your text. Example: ['happy']['smiling']Hello!]\n\n${userMessage}`
+          : userMessage;
+        
         // Use streaming method
         await (provider as any).streamResponse(
           {
-            message: userMessage,
+            message: messageWithARInstructions,
             systemPrompt: arSystemPrompt,
             modelName: agentProfile.modelName,
             temperature: 0.7,
@@ -123,6 +139,11 @@ Example: [emotion:happy,gesture:wave]Hello! [emotion:thoughtful]Let me think abo
           async (chunk: string) => {
             if (chunk) {
               fullContent += chunk;
+              
+              // Log chunk content to debug marker generation
+              if (chunkIndex === 0 || chunk.includes("['") || chunk.includes("]")) {
+                console.log(`🎭 [ARMessageRequestListener] Chunk ${chunkIndex}:`, chunk.substring(0, 200));
+              }
               
               // Publish chunk event
               await new ARStreamChunkPublisher(kafkaWrapper.producer).publish({
@@ -157,11 +178,20 @@ Example: [emotion:happy,gesture:wave]Hello! [emotion:thoughtful]Let me think abo
         }
 
         fullContent = response.content;
+        
+        // Log full response to debug marker generation
+        console.log(`🎭 [ARMessageRequestListener] Full AI response (first 500 chars):`, fullContent.substring(0, 500));
+        console.log(`🎭 [ARMessageRequestListener] Contains markers:`, /\[['"]/.test(fullContent));
 
         // Split into chunks (simulate streaming)
         const chunkSize = 50; // Characters per chunk
         for (let i = 0; i < fullContent.length; i += chunkSize) {
           const chunk = fullContent.substring(i, i + chunkSize);
+          
+          // Log first chunk to see if markers are present
+          if (chunkIndex === 0) {
+            console.log(`🎭 [ARMessageRequestListener] First chunk:`, chunk);
+          }
           
           await new ARStreamChunkPublisher(kafkaWrapper.producer).publish({
             streamId,
@@ -256,6 +286,13 @@ Example: [emotion:happy,gesture:wave]Hello! [emotion:thoughtful]Let me think abo
       default:
         return undefined;
     }
+  }
+
+  private getEndpointFromEnv(provider: string): string | undefined {
+    if (provider === 'local' || provider === 'custom') {
+      return process.env.LOCAL_LLM_ENDPOINT;
+    }
+    return undefined;
   }
 }
 

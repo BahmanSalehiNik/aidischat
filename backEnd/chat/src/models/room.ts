@@ -6,6 +6,7 @@ export enum RoomType {
   GROUP = 'group',
   STAGE = 'stage',
   AI_SIM = 'ai-sim',
+  AR = 'ar',  // AR conversation rooms
 }
 
 interface RoomAttrs {

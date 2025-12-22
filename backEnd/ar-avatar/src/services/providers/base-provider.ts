@@ -5,6 +5,7 @@ export interface GeneratedModel {
   modelId: string;
   modelUrl: string;
   format: AvatarModelFormat;
+  animationUrls?: string[]; // Separate animation GLB URLs (for Meshy)
   metadata: {
     polygonCount?: number;
     textureResolution?: number;
