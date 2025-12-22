@@ -18,8 +18,16 @@ import { AvatarModelFormat } from '../../models/avatar';
  * - target_polycount: 6k-15k triangles for mobile AR characters
  * - topology: "triangle" (best for mobile)
  * - should_remesh: true (CRITICAL - must be true for polycount to work)
- * - enable_pbr: false (base color only, lighter)
+ * - enable_pbr: false (base color only, lighter) - CRITICAL for colors
  * - pose_mode: "t-pose" (essential for rigging)
+ * 
+ * Color pipeline (Base-color textures only):
+ * - Colors stored in one BaseColor texture (no PBR maps)
+ * - Separate materials for skin, hair, eyes, clothing (enables runtime color swapping)
+ * - No normal/roughness/metallic maps (lighter & faster)
+ * - Lighting from engine, not textures (no baked lighting)
+ * - Texture prompt includes specific color guidance for all body parts
+ * - Optimized for mobile AR (512-1024px textures, < 2-3MB total)
  * 
  * Animation workflow:
  * - Generate minimal set: Idle (action_id: 0), Thinking (action_id: 25), Walk (action_id: 1)
@@ -35,8 +43,31 @@ export class MeshyProvider extends BaseModelProvider {
     return 'meshy';
   }
 
+  /**
+   * Generate a 3D model with BOTH colors (textures) and animations
+   * 
+   * Complete Flow (Option A pattern for Three.js React Native):
+   * 1. Preview → Generate geometry (Text-to-3D preview mode)
+   * 2. Refine → Add colors/textures (skin, hair, eyes, clothes) - CRITICAL for colors
+   * 3. Optional Remesh → Final optimization (after texturing)
+   * 4. Rig → Add skeleton for animations (preserves textures from refine)
+   * 5. Animate → Generate animation clips (idle, wave, thinking) + collect basic animations
+   * 
+   * Result:
+   * - Base character: rigged_character_glb_url (ONE heavy file: mesh + textures + skeleton)
+   * - Animation assets: separate lightweight files (armature GLBs or animation clips)
+   * 
+   * For complete flow documentation, see: docs/MESHY_COLOR_AND_ANIMATION_FLOW.md
+   * 
+   * @param description Character description with colors (hair, eyes, clothing)
+   * @param agentId Optional agent ID for tracking
+   * @returns Generated model with modelUrl (base character) and animationUrls (clips)
+   */
   async generateModel(description: CharacterDescription, agentId?: string): Promise<GeneratedModel> {
     console.log('[MeshyProvider] Starting lightweight model generation for mobile...');
+    console.log('[MeshyProvider] Flow: Preview → Refine (textures/colors) → Optional Remesh → Rig → Animate');
+    console.log('[MeshyProvider] Target: Base character (colors + rig) + Separate animation clips (Option A)');
+    console.log('[MeshyProvider] Using Text-to-3D Refine API (correct flow for colors per Meshy docs)');
     
     if (!this.isAvailable()) {
       throw new Error('Meshy API key is not configured');
@@ -48,135 +79,283 @@ export class MeshyProvider extends BaseModelProvider {
       
       // Step 1: Create a text-to-3D preview task (geometry generation)
       // Using lightweight parameters for mobile optimization
+      // Alternative: Use Image-to-3D with should_texture:true for single-step generation
+      // See: docs/MESHY_COLOR_AND_ANIMATION_FLOW.md
       const taskId = await this.createTask(prompt, description);
       console.log(`[MeshyProvider] Preview task created: ${taskId}`);
 
       // Step 2: Poll for preview completion (geometry only, no texture yet)
       const previewResult = await this.pollTask(taskId);
       console.log(`[MeshyProvider] Preview completed: ${taskId}`);
+      const previewModelUrl = previewResult.modelUrl || previewResult.glbUrl || previewResult.url;
+      if (!previewModelUrl) {
+        throw new Error('Preview model URL not available');
+      }
 
-      // Step 3: Refine the model (add textures)
-      // This is the second stage of text-to-3d workflow
-      // For lightweight models: @see docs/MESHY_LIGHTWEIGHT_MODELS.md
-      let refinedModelUrl = previewResult.modelUrl || previewResult.glbUrl || previewResult.url;
-      let refineTaskId: string | null = null;
-      let refineResult: any = null;
+      // Step 3: SKIP Refine - we'll add textures AFTER rigging
+      // Flow: Mesh (Preview) → Rig → Texture (Retexture API)
+      // This is the correct order: mesh → rig → texture
+      console.log(`[MeshyProvider] ✅ SKIPPING Refine step - textures will be added AFTER rigging`);
+      console.log(`[MeshyProvider] ✅ Flow: Preview (mesh) → Rig → Retexture (colors)`);
+      console.log(`[MeshyProvider] ✅ This ensures: Mesh + Rig + Materials + Textures (colors) in correct order`);
+      
+      let texturedModelUrl = previewModelUrl; // Will be updated after rigging
+      let refineSucceeded = false; // Not using refine anymore
+
+      // Step 4: Auto-rig the PREVIEW model (geometry only, no textures)
+      // Flow: Mesh (Preview) → Rig → Texture (Retexture API)
+      // This ensures: Mesh + Rig + Materials + Textures (colors) in correct order
+      let riggedModelUrl = previewModelUrl; // Start with preview (fallback)
+      let rigTaskId: string | null = null;
+      let riggingSucceeded = false;
+      let rigResult: { modelUrl: string; basicAnimations?: any } | null = null;
       
       try {
-        console.log(`[MeshyProvider] Starting texture refinement...`);
-        refineTaskId = await this.createRefineTask(taskId, description);
-        console.log(`[MeshyProvider] Refine task created: ${refineTaskId}`);
+        console.log(`[MeshyProvider] 🦴 Starting auto-rigging for PREVIEW model (geometry only)...`);
+        console.log(`[MeshyProvider] 🦴 Input model URL for rigging: ${previewModelUrl}`);
+        console.log(`[MeshyProvider] 🦴 Flow: Mesh (Preview) → Rig → Texture (after rigging)`);
+        console.log(`[MeshyProvider] 🦴 This ensures textures are added AFTER rigging (correct order)`);
+        rigTaskId = await this.createRigTask(previewModelUrl, undefined); // No texture URL - textures come after
+        console.log(`[MeshyProvider] 🦴 Rig task created: ${rigTaskId}`);
         
-        refineResult = await this.pollRefineTask(refineTaskId);
-        refinedModelUrl = refineResult.modelUrl || refinedModelUrl;
-        console.log(`[MeshyProvider] Refinement completed: ${refineTaskId}`);
-        console.log(`[MeshyProvider] Refined model URL: ${refinedModelUrl}`);
-      } catch (error: any) {
-        console.warn(`[MeshyProvider] Texture refinement failed: ${error.message}. Using preview model without textures.`);
-        // Continue with untextured preview model
-      }
-
-      // Step 4: Optional remesh pass for final lightweight optimization
-      // Use refine task ID if available, otherwise use preview task ID
-      let finalModelUrl = refinedModelUrl;
-      try {
-        console.log(`[MeshyProvider] Starting remesh pass for final optimization...`);
-        const remeshTaskId = refineTaskId || taskId; // Use refine task ID if available
-        const remeshResult = await this.remeshModel(remeshTaskId);
-        finalModelUrl = remeshResult.modelUrl || refinedModelUrl;
-        console.log(`[MeshyProvider] Remesh completed - final model optimized for mobile`);
-      } catch (error: any) {
-        console.warn(`[MeshyProvider] Remesh failed: ${error.message}. Using model as-is.`);
-        // Continue without remesh
-      }
-
-      // Step 5: Get final model URL
-      // IMPORTANT: Use Meshy's URL directly for rigging (must be publicly accessible)
-      // We'll download and store the final animated model, not intermediate versions
-      let modelUrl = finalModelUrl;
-      if (!modelUrl) {
-        throw new Error('Meshy did not return a model URL');
-      }
-
-      console.log(`[MeshyProvider] Final model URL: ${modelUrl}`);
-      console.log(`[MeshyProvider] Using Meshy URL directly for rigging (must be publicly accessible)`);
-
-      // Step 6: Auto-rig the model (required for animations)
-      // Use Meshy's URL directly - it's already publicly accessible
-      let riggedModelUrl = modelUrl;
-      let rigTaskId: string | null = null;
-      try {
-        console.log(`[MeshyProvider] Starting auto-rigging for model...`);
-        console.log(`[MeshyProvider] Model URL: ${modelUrl}`);
-        rigTaskId = await this.createRigTask(modelUrl);
-        console.log(`[MeshyProvider] Rig task created: ${rigTaskId}`);
+        rigResult = await this.pollRigTask(rigTaskId);
         
-        const rigResult = await this.pollRigTask(rigTaskId);
-        riggedModelUrl = rigResult.modelUrl || modelUrl;
-        console.log(`[MeshyProvider] Rigging completed: ${rigTaskId}`);
-        console.log(`[MeshyProvider] Rigged model URL: ${riggedModelUrl}`);
+        // Validate rigged model URL
+        if (!rigResult.modelUrl || rigResult.modelUrl.trim() === '') {
+          throw new Error('Rigging API returned empty model URL');
+        }
         
-        // Check if basic animations were included in rigging response
+        riggedModelUrl = rigResult.modelUrl;
+        riggingSucceeded = true;
+        console.log(`[MeshyProvider] ✅ Rigging completed: ${rigTaskId}`);
+        console.log(`[MeshyProvider] ✅ Rigged model URL (geometry + skeleton, NO textures yet): ${riggedModelUrl}`);
+        console.log(`[MeshyProvider] ✅ Next step: Add textures/colors to rigged model using Retexture API`);
+        
+        // Verify rigged model URL is different
+        if (riggedModelUrl === previewModelUrl) {
+          console.warn(`[MeshyProvider] ⚠️ WARNING: Rigging returned same URL as input. Rigging may not have been applied.`);
+        }
+        
+        // Log basic animations availability
         if (rigResult.basicAnimations) {
-          console.log(`[MeshyProvider] Basic animations included in rigging response (walking/running)`);
-          // These can be used as fallback if custom animations fail
+          console.log(`[MeshyProvider] ✅ Basic animations available in rigging response`);
+          console.log(`[MeshyProvider]    - walking_armature_glb_url: ${rigResult.basicAnimations.walking_armature_glb_url || 'NOT AVAILABLE'}`);
+          console.log(`[MeshyProvider]    - running_armature_glb_url: ${rigResult.basicAnimations.running_armature_glb_url || 'NOT AVAILABLE'}`);
         }
       } catch (error: any) {
-        console.warn(`[MeshyProvider] Auto-rigging failed: ${error.message}`);
-        console.warn(`[MeshyProvider] Possible causes: model not humanoid, unclear body structure, or not in T-pose`);
-        console.warn(`[MeshyProvider] Using unrigged model. Animations will not work.`);
-        // Continue with unrigged model - animations won't work but model will still load
+        console.error(`[MeshyProvider] ❌ Auto-rigging FAILED: ${error.message}`);
+        console.error(`[MeshyProvider] ❌ Error details:`, error);
+        if (error.response) {
+          console.error(`[MeshyProvider] ❌ API Response:`, {
+            status: error.response.status,
+            statusText: error.response.statusText,
+            data: error.response.data,
+          });
+        }
+        console.warn(`[MeshyProvider] ⚠️ Possible causes: model not humanoid, unclear body structure, or not in T-pose`);
+        console.warn(`[MeshyProvider] ⚠️ Using unrigged model. Animations will not work.`);
+        // Fallback to preview model (no rig, no textures)
+        riggedModelUrl = previewModelUrl;
+        console.log(`[MeshyProvider] ✅ Fallback: Using preview model URL (no rig, no textures): ${riggedModelUrl}`);
+      }
+      
+      // Step 5: Add textures/colors to the RIGGED model (AFTER rigging)
+      // Flow: Mesh → Rig → Texture (colors)
+      // Use Retexture API to add colors to the rigged model
+      if (riggingSucceeded && riggedModelUrl) {
+        try {
+          console.log(`[MeshyProvider] 🎨 Adding textures/colors to RIGGED model (after rigging)...`);
+          console.log(`[MeshyProvider] 🎨 Using Retexture API on rigged model: ${riggedModelUrl}`);
+          console.log(`[MeshyProvider] 🎨 Flow: Mesh → Rig → Textures (correct order)`);
+          const retextureResult = await this.retextureModel(riggedModelUrl, description);
+          
+          if (retextureResult.modelUrl && retextureResult.modelUrl !== riggedModelUrl) {
+            texturedModelUrl = retextureResult.modelUrl; // Use retextured rigged model
+            riggedModelUrl = texturedModelUrl; // Update rigged model URL to include textures
+            refineSucceeded = true; // Mark as succeeded since we have textures now
+            console.log(`[MeshyProvider] ✅ Textures added to rigged model successfully`);
+            console.log(`[MeshyProvider] ✅ Final model has: Mesh + Rig + Textures (colors)`);
+            console.log(`[MeshyProvider] ✅ This is the correct order: Mesh → Rig → Textures`);
+          } else {
+            console.warn(`[MeshyProvider] ⚠️ Retexture returned same URL or empty - textures may not have been applied`);
+            console.warn(`[MeshyProvider] ⚠️ Using rigged model without textures (will appear black/white)`);
+          }
+        } catch (error: any) {
+          console.error(`[MeshyProvider] ❌ Retexture FAILED: ${error.message}`);
+          console.error(`[MeshyProvider] ❌ Error details:`, error);
+          console.warn(`[MeshyProvider] ⚠️ Using rigged model without textures (will appear black/white)`);
+          // Continue with rigged model without textures - animations will work but no colors
+        }
       }
 
-      // Step 7: Add animations to the rigged model
-      // For lightweight mobile AR: Generate minimal set (idle, thinking, walk)
-      // See: docs/MESHY_RIGGING_ANIMATION.md
+      // Step 7: Collect and generate animations (Option A pattern)
+      // For Option A: Collect basic animations from rigging + generate custom animations
+      // See: docs/MESHY_COLOR_AND_ANIMATION_FLOW.md
       let animatedModelUrl = riggedModelUrl;
       let animationUrls: string[] = [];
+      
+      // Step 7a: Collect basic animations from rigging response (walking/running - "free")
+      // These are armature-only GLBs (lightweight, perfect for Option A)
+      // See: docs/MESHY_COLOR_AND_ANIMATION_FLOW.md
+      if (rigResult && rigResult.basicAnimations) {
+        // Prefer armature-only GLBs for Option A (lightweight, animation-only)
+        const armatureAnimations: string[] = [];
+        if (rigResult.basicAnimations.walking_armature_glb_url) {
+          armatureAnimations.push(rigResult.basicAnimations.walking_armature_glb_url);
+          console.log(`[MeshyProvider] ✅ Added walking_armature_glb_url (Option A - lightweight)`);
+        }
+        if (rigResult.basicAnimations.running_armature_glb_url) {
+          armatureAnimations.push(rigResult.basicAnimations.running_armature_glb_url);
+          console.log(`[MeshyProvider] ✅ Added running_armature_glb_url (Option A - lightweight)`);
+        }
+        
+        // Fallback to withSkin GLBs if armature not available (heavier but works)
+        if (armatureAnimations.length === 0) {
+          if (rigResult.basicAnimations.walking_glb_url) {
+            armatureAnimations.push(rigResult.basicAnimations.walking_glb_url);
+            console.log(`[MeshyProvider] ⚠️ Using walking_glb_url (withSkin, heavier but works)`);
+          }
+          if (rigResult.basicAnimations.running_glb_url) {
+            armatureAnimations.push(rigResult.basicAnimations.running_glb_url);
+            console.log(`[MeshyProvider] ⚠️ Using running_glb_url (withSkin, heavier but works)`);
+          }
+        }
+        
+        if (armatureAnimations.length > 0) {
+          animationUrls.push(...armatureAnimations);
+          console.log(`[MeshyProvider] ✅ Collected ${armatureAnimations.length} basic animations from rigging (Option A)`);
+        } else {
+          console.log(`[MeshyProvider] ⚠️ No basic animations available in rigging response`);
+        }
+      }
+      
+      // Step 7b: Generate custom animations (idle, thinking, wave, etc.)
       if (rigTaskId) {
         try {
-          console.log(`[MeshyProvider] Adding animations to rigged model...`);
-          console.log(`[MeshyProvider] Generating minimal animation set for mobile AR (idle, thinking, walk)`);
+          console.log(`[MeshyProvider] Generating custom animations...`);
+          console.log(`[MeshyProvider] Generating minimal animation set for mobile AR (idle, thinking, wave)`);
           
           // Generate multiple animations (each returns separate GLB)
           // Recommended minimal set: Idle (0), Thinking (36), Wave (28)
-          // Alternative: Casual_Walk (30) instead of Wave
           const animationSet = [
             { name: 'idle', action_id: 0 }, // Idle
             { name: 'thinking', action_id: 36 }, // Confused_Scratch
             { name: 'wave', action_id: 28 }, // Big_Wave_Hello
-            // Alternative: { name: 'walk', action_id: 30 }, // Casual_Walk
           ];
           
           const animationResults = await this.addMultipleAnimations(rigTaskId, animationSet);
-          animationUrls = animationResults.map(r => r.url).filter(Boolean);
+          const customAnimationUrls = animationResults.map(r => r.url).filter(Boolean);
+          animationUrls.push(...customAnimationUrls);
           
           // IMPORTANT: Keep rigged base character URL as modelUrl
           // Animations are separate GLBs that should be loaded as clips in the engine
           // The rigged base character is what you'll use, with animation clips applied to it
-          // See: docs/MESHY_RIGGING_ANIMATION.md for how to use animations
+          // See: docs/MESHY_COLOR_AND_ANIMATION_FLOW.md for Option A pattern
           animatedModelUrl = riggedModelUrl; // Use rigged base, not animation URL
           
-          console.log(`[MeshyProvider] Animations added: ${animationUrls.length} animations`);
-          console.log(`[MeshyProvider] Rigged base character: ${riggedModelUrl}`);
-          console.log(`[MeshyProvider] Animation URLs:`, animationUrls);
-          console.log(`[MeshyProvider] Note: Load rigged base character + animation clips separately in engine`);
+          console.log(`[MeshyProvider] ✅ Custom animations added: ${customAnimationUrls.length} animations`);
+          console.log(`[MeshyProvider] ✅ Total animations (basic + custom): ${animationUrls.length}`);
+          console.log(`[MeshyProvider] ✅ Rigged base character: ${riggedModelUrl}`);
+          console.log(`[MeshyProvider] ✅ All animation URLs:`, animationUrls);
+          console.log(`[MeshyProvider] ✅ Option A pattern: Load base character ONCE, then load animation clips separately`);
         } catch (error: any) {
-          console.warn(`[MeshyProvider] Animation addition failed: ${error.message}`);
-          console.warn(`[MeshyProvider] Using rigged model without animations.`);
-          // Continue with rigged but unanimated model
+          console.warn(`[MeshyProvider] Custom animation generation failed: ${error.message}`);
+          console.warn(`[MeshyProvider] Using basic animations only (if available).`);
+          // Continue with basic animations only
         }
       }
 
+      // IMPORTANT: Return the best available model URL
+      // Priority: Rigged+Textured > Textured > Remeshed > Preview
+      // CRITICAL: Ensure we return the model with textures (colors) if refine succeeded
+      const finalModelUrl = animatedModelUrl;
+      
+      console.log(`[MeshyProvider] 📊 ========== FINAL MODEL SUMMARY ==========`);
+      console.log(`[MeshyProvider] 📊 Model URL breakdown:`);
+      console.log(`[MeshyProvider]    - Preview (geometry only): ${previewModelUrl}`);
+      console.log(`[MeshyProvider]    - Rigged (with bones): ${riggedModelUrl}`);
+      console.log(`[MeshyProvider]    - Textured (with colors): ${texturedModelUrl}`);
+      console.log(`[MeshyProvider]    - Final (to upload): ${finalModelUrl}`);
+      console.log(`[MeshyProvider] 📊 Flow: Mesh (Preview) → Rig → Texture (Retexture)`);
+      console.log(`[MeshyProvider] 📊 =========================================`);
+      
+      // Determine what features the final model has
+      // Check if textures were actually applied (refine succeeded and URL changed)
+      const hasTextures = refineSucceeded && texturedModelUrl !== previewModelUrl;
+      const hasRigging = riggingSucceeded && riggedModelUrl !== texturedModelUrl && riggedModelUrl !== previewModelUrl;
+      const hasAnimations = animationUrls.length > 0;
+      
+      console.log(`[MeshyProvider] ✅ Model features status:`);
+      console.log(`[MeshyProvider]    - Textures/Colors: ${hasTextures ? '✅ YES (refine succeeded)' : '❌ NO (refine failed or not applied)'}`);
+      console.log(`[MeshyProvider]    - Rigging: ${hasRigging ? '✅ YES (rigging succeeded)' : '❌ NO (rigging failed or not applied)'}`);
+      console.log(`[MeshyProvider]    - Animations: ${hasAnimations ? '✅ YES' : '❌ NO (rigging required)'}`);
+      
+      // CRITICAL WARNINGS
+      if (!hasTextures) {
+        console.error(`[MeshyProvider] ❌❌❌ CRITICAL WARNING: Model has NO TEXTURES/COLORS ❌❌❌`);
+        console.error(`[MeshyProvider] ❌ Model will appear BLACK/WHITE without colors`);
+        console.error(`[MeshyProvider] ❌ Refine status: ${refineSucceeded ? 'SUCCEEDED but URL unchanged' : 'FAILED'}`);
+        console.error(`[MeshyProvider] ❌ This usually means:`);
+        console.error(`[MeshyProvider]    1. Refine API requires a paid Meshy plan`);
+        console.error(`[MeshyProvider]    2. API key has insufficient permissions`);
+        console.error(`[MeshyProvider]    3. Refine API endpoint is not available for this account`);
+        console.error(`[MeshyProvider] ❌ Final model URL being uploaded: ${finalModelUrl}`);
+      } else {
+        console.log(`[MeshyProvider] ✅ Model HAS textures/colors - should display correctly`);
+      }
+      
+      if (!hasRigging) {
+        console.warn(`[MeshyProvider] ⚠️ WARNING: Model has NO rigging. Animations will not work.`);
+        console.warn(`[MeshyProvider] ⚠️ This usually means Rigging API requires a paid Meshy plan.`);
+      }
+      
+      // SOLUTION: Use rigged model if both refine and rigging succeeded
+      // According to Meshy docs and research, rigging preserves textures from input model
+      // We also passed texture_image_url to rigging API to ensure texture preservation
+      // The rigged model has BOTH rigging (for animations) AND textures (for colors)
+      // 
+      // This follows Option A pattern (Three.js React Native):
+      // - Base character: rigged_character_glb_url (ONE heavy file with mesh + textures + skeleton)
+      // - Animation assets: separate lightweight files (armature GLBs or converted FBX→GLB clips)
+      // See: docs/MESHY_COLOR_AND_ANIMATION_FLOW.md for complete flow
+      let modelUrlToReturn = finalModelUrl;
+      if (refineSucceeded && riggingSucceeded) {
+        // BEST CASE: Both succeeded - rigged model should have textures (we passed texture_url)
+        // Use rigged model - it has BOTH animations AND colors
+        // This is the BASE CHARACTER for Option A pattern
+        modelUrlToReturn = riggedModelUrl;
+        console.log(`[MeshyProvider] ✅✅✅ BEST: Using RIGGED model (has BOTH animations AND colors): ${modelUrlToReturn}`);
+        console.log(`[MeshyProvider] ✅ We passed texture_image_url to rigging API, so textures should be preserved`);
+        console.log(`[MeshyProvider] ✅ This model has: Rigging (animations) + Textures (colors)`);
+        console.log(`[MeshyProvider] ✅ This is the BASE CHARACTER for Option A pattern (Three.js React Native)`);
+        console.log(`[MeshyProvider] ✅ Load this ONCE, then load animation clips separately`);
+        console.log(`[MeshyProvider] ✅ Client should use this modelUrl as base character`);
+        console.log(`[MeshyProvider] ✅ Client should use animationUrls array for separate animation clips`);
+      } else if (refineSucceeded && !riggingSucceeded) {
+        // Refine succeeded but rigging failed - use textured model (has colors, no animations)
+        modelUrlToReturn = texturedModelUrl;
+        console.log(`[MeshyProvider] ✅ Using TEXTURED model (has colors, but NO animations): ${modelUrlToReturn}`);
+        console.warn(`[MeshyProvider] ⚠️ Rigging failed - animations will not work`);
+      } else if (!refineSucceeded && riggingSucceeded) {
+        // Refine failed but rigging succeeded - use rigged model (has animations, may not have colors)
+        modelUrlToReturn = riggedModelUrl;
+        console.warn(`[MeshyProvider] ⚠️ Using RIGGED model (has animations, but may NOT have colors): ${modelUrlToReturn}`);
+        console.warn(`[MeshyProvider] ⚠️ Refine failed - model may appear black/white`);
+      } else {
+        // Both failed - use whatever we have
+        modelUrlToReturn = finalModelUrl;
+        console.error(`[MeshyProvider] ❌ Both refine and rigging failed - returning untextured/unrigged model: ${modelUrlToReturn}`);
+      }
+      
       return {
         modelId: `meshy_${taskId}`,
-        modelUrl: animatedModelUrl, // Rigged base character URL
+        modelUrl: modelUrlToReturn, // Ensure we return the model with textures if available
         animationUrls: animationUrls.length > 0 ? animationUrls : undefined, // Separate animation GLB URLs
         format: AvatarModelFormat.GLB,
         metadata: {
-          polygonCount: previewResult?.polygonCount || refineResult?.polygonCount || 10000, // Target: 6k-15k for mobile
-          textureResolution: refineResult?.textureResolution || 1024, // Lower for mobile (base color only, enable_pbr: false)
-          boneCount: 60, // Standard humanoid rig
+          polygonCount: previewResult?.polygonCount || 9000, // Target: 9k for mobile (remeshed)
+          textureResolution: hasTextures ? 1024 : 0, // Base color only (enable_pbr: false in retexture)
+          boneCount: hasRigging ? 60 : 0, // Standard humanoid rig
           animationCount: animationUrls.length || 0,
         },
       };
@@ -194,9 +373,9 @@ export class MeshyProvider extends BaseModelProvider {
     // Text-to-3D is two-stage: Preview (geometry) → Refine (texture)
     // This is Stage 1: Preview - generates geometry only (no textures yet)
     
-    // Enhance prompt for rigging compatibility
-    const enhancedPrompt = `${prompt}, humanoid character in T-pose, simple geometry, game-ready, mobile-optimized`;
-    const negativePrompt = 'blurry, low quality, distorted, deformed, complex pose, high poly, detailed geometry';
+    // Enhance prompt for rigging compatibility and facial details
+    const enhancedPrompt = `${prompt}, humanoid character in T-pose, clear facial features, expressive eyes, simple geometry, game-ready, mobile-optimized`;
+    const negativePrompt = 'blurry, low quality, distorted, deformed, complex pose, high poly, detailed geometry, featureless face';
     
     // Mobile-optimized parameters for lightweight models
     // target_polycount: 6k-15k for AR characters (using 10k as middle ground)
@@ -226,7 +405,7 @@ export class MeshyProvider extends BaseModelProvider {
     if (useLightweightParams) {
       // These parameters help create lightweight models for mobile
       // If they cause errors, set MESHY_USE_LIGHTWEIGHT_PARAMS=false
-      requestBody.target_polycount = 8000; // Sweet spot for mobile AR characters (100-300,000 valid range)
+      requestBody.target_polycount = 9000; // Sweet spot for mobile AR characters (100-300,000 valid range)
       requestBody.topology = 'triangle'; // Best for mobile runtime
       requestBody.pose_mode = 't-pose'; // Essential for rigging
       requestBody.symmetry_mode = 'auto'; // Helps consistency
@@ -387,18 +566,36 @@ export class MeshyProvider extends BaseModelProvider {
    * - Model must be textured (Meshy text-to-3d always textures)
    * - Model must be humanoid with clear limb/body structure
    * 
+   * CRITICAL: Pass texture_image_url to ensure textures are preserved during rigging
+   * 
    * Response includes:
    * - rigged_character_glb_url: Base rigged character
    * - basic_animations: Optional walking/running animations
    */
-  private async createRigTask(modelUrl: string): Promise<string> {
+  private async createRigTask(modelUrl: string, textureUrl?: string): Promise<string> {
+    const requestBody: any = {
+      model_url: modelUrl,
+      rig_preset: 'STANDARD_HUMANOID', // Explicit preset for humanoid characters
+      height_meters: 1.75, // Character height in meters - strongly recommended for better skeleton scaling
+    };
+    
+    // CRITICAL: Pass texture URL to rigging API to ensure textures are preserved
+    // According to Meshy docs, texture_image_url is optional but helps preserve textures
+    // NOTE: In GLB format, textures are typically EMBEDDED in the binary file
+    // The texture_image_url parameter is optional - textures should be in the GLB itself
+    if (textureUrl) {
+      requestBody.texture_image_url = textureUrl;
+      console.log(`[MeshyProvider] 🦴 Passing texture URL to rigging API: ${textureUrl}`);
+      console.log(`[MeshyProvider] 🦴 This should help preserve textures during rigging`);
+    } else {
+      console.log(`[MeshyProvider] 🦴 No separate texture URL - textures should be EMBEDDED in GLB file`);
+      console.log(`[MeshyProvider] 🦴 Rigging should preserve textures from the input GLB automatically`);
+      console.log(`[MeshyProvider] 🦴 If textures are missing, the GLB might not have textures embedded`);
+    }
+    
     const response = await axios.post(
       `${this.baseUrl}/openapi/v1/rigging`,
-      {
-        model_url: modelUrl,
-        rig_preset: 'STANDARD_HUMANOID', // Explicit preset for humanoid characters
-        height_meters: 1.75, // Character height in meters - strongly recommended for better skeleton scaling
-      },
+      requestBody,
       {
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
@@ -445,17 +642,33 @@ export class MeshyProvider extends BaseModelProvider {
         
         if (status === 'SUCCEEDED' || status === 'COMPLETED') {
           // Rigging response structure: result.rigged_character_glb_url
-          // See: docs/MESHY_RIGGING_ANIMATION.md for response structure
+          // See: docs/MESHY_RIGGING_ANIMATION.md and docs/MESHY_COLOR_AND_ANIMATION_FLOW.md
           const result = response.data.result || response.data;
+          
+          // Extract rigged character URL (base character with textures + skeleton)
+          const riggedModelUrl = result.rigged_character_glb_url ||
+                                 result.rigged_character_fbx_url ||
+                                 result.model_urls?.glb || 
+                                 result.model_urls?.gltf || 
+                                 result.model_url || 
+                                 result.url || '';
+          
+          // Extract basic animations (walking/running) - these are "free" with rigging
+          // Prefer armature-only GLBs for Option A (lightweight, separate animation assets)
+          const basicAnimations = result.basic_animations || null;
+          
+          if (basicAnimations) {
+            console.log(`[MeshyProvider] ✅ Basic animations from rigging:`);
+            console.log(`[MeshyProvider]    - Walking armature: ${basicAnimations.walking_armature_glb_url || 'NOT AVAILABLE'}`);
+            console.log(`[MeshyProvider]    - Running armature: ${basicAnimations.running_armature_glb_url || 'NOT AVAILABLE'}`);
+            console.log(`[MeshyProvider]    - Walking withSkin: ${basicAnimations.walking_glb_url || 'NOT AVAILABLE'}`);
+            console.log(`[MeshyProvider]    - Running withSkin: ${basicAnimations.running_glb_url || 'NOT AVAILABLE'}`);
+            console.log(`[MeshyProvider] ✅ For Option A (Three.js), prefer *_armature_glb_url (lightweight)`);
+          }
+          
           return {
-            modelUrl: result.rigged_character_glb_url ||
-                     result.rigged_character_fbx_url ||
-                     result.model_urls?.glb || 
-                     result.model_urls?.gltf || 
-                     result.model_url || 
-                     result.url || '',
-            // Basic animations may be included in rigging response (walking/running)
-            basicAnimations: result.basic_animations || null,
+            modelUrl: riggedModelUrl,
+            basicAnimations: basicAnimations,
           };
         } else if (status === 'FAILED' || status === 'ERROR') {
           throw new Error(`Meshy rigging task failed: ${response.data.error || response.data.message || 'Unknown error'}`);
@@ -648,19 +861,55 @@ export class MeshyProvider extends BaseModelProvider {
    * 
    * Refine stage supports lightweight parameters:
    * - enable_pbr: false (base color only, lighter)
-   * - texture_prompt: optional texturing prompt
+   * - texture_prompt: optional texturing prompt with color guidance
    * - texture_image_url: optional reference image
+   * 
+   * Color pipeline: Base-color textures only (no PBR)
+   * - Colors stored in one BaseColor texture
+   * - No normal/roughness/metallic maps
+   * - Lighting from engine, not textures
    */
   private async createRefineTask(previewTaskId: string, description: CharacterDescription): Promise<string> {
+    // Build base prompt from character description (includes hair color, eye color, clothing)
+    const basePrompt = this.buildPrompt(description);
+    
+    // Extract color information from description for texture prompt
+    const skinColor = 'natural skin tone'; // CharacterDescription doesn't have skinColor, use default
+    const hairColor = description.hair?.color || 'natural hair color';
+    const eyeColor = description.eyes?.color || 'clear eyes';
+    const clothingColor = description.clothing || 'simple fabric colors';
+    
+    // Build comprehensive texture prompt using recommended template
+    // This ensures colors for clothes, skin, hair, eyes while staying lightweight
+    const texturePrompt = `semi-realistic character,
+${skinColor} with smooth shading,
+clear eyes with visible iris and sclera, ${eyeColor},
+defined lips with subtle color,
+${hairColor} hair,
+${clothingColor} for clothing,
+separate materials for skin, hair, eyes, and clothing,
+matte surfaces,
+simple fabric colors,
+no skin pores,
+no freckles,
+no wrinkles,
+no tiny patterns,
+no logos,
+mobile-game style textures,
+flat base colors with gentle shading,
+no baked lighting,
+no dramatic shadows,
+no strong highlights,
+optimized for mobile AR`;
+    
     const requestBody: any = {
       mode: 'refine', // Refine stage: adds textures to preview geometry
       preview_task_id: previewTaskId,
       // Lightweight texture settings
-      enable_pbr: false, // Base color only (lighter & faster for mobile)
+      enable_pbr: false, // Base color only (lighter & faster for mobile) - CRITICAL for colors
+      // Optional: texture_prompt for custom texturing with color guidance
+      texture_prompt: texturePrompt,
     };
-
-    // Optional: texture_prompt or texture_image_url for custom texturing
-    // requestBody.texture_prompt = 'same as original prompt';
     
     const response = await axios.post(
       `${this.baseUrl}/openapi/v2/text-to-3d`,
@@ -689,13 +938,14 @@ export class MeshyProvider extends BaseModelProvider {
 
   /**
    * Poll for refine task completion
-   * Returns textured model URL
+   * Returns textured model URL and texture URL (for rigging API)
+   * See: docs/MESHY_COLOR_AND_ANIMATION_FLOW.md
    */
   private async pollRefineTask(
     taskId: string,
     maxAttempts: number = 60,
     intervalMs: number = 5000
-  ): Promise<any> {
+  ): Promise<{ modelUrl: string; textureUrl?: string }> {
     let attempts = 0;
 
     while (attempts < maxAttempts) {
@@ -713,15 +963,69 @@ export class MeshyProvider extends BaseModelProvider {
         const status = response.data.status || response.data.progress?.status;
         
         if (status === 'SUCCEEDED' || status === 'COMPLETED') {
-          // Refine stage returns textured model
-          return {
-            modelUrl: response.data.model_urls?.glb || 
-                     response.data.model_urls?.gltf || 
-                     response.data.model_url || 
-                     response.data.url,
-            polygonCount: response.data.polygon_count,
-            textureResolution: response.data.texture_resolution,
-          };
+          // Refine stage returns textured model with texture URLs
+          const result = response.data.result || response.data;
+          
+          // Log full response structure for debugging
+          console.log(`[MeshyProvider] 🎨 Refine API response structure:`, JSON.stringify({
+            hasResult: !!result,
+            hasModelUrls: !!result.model_urls,
+            hasTextures: !!result.textures,
+            textureKeys: result.textures ? Object.keys(result.textures) : [],
+            allKeys: Object.keys(result || {}),
+          }, null, 2));
+          
+          const modelUrl = result.model_urls?.glb || 
+                          result.model_urls?.gltf || 
+                          result.model_url || 
+                          result.url || '';
+          
+          // Extract base_color texture URL from textures array (if available)
+          // NOTE: In GLB format, textures are usually EMBEDDED in the binary file
+          // The texture URL here is optional - textures should be in the GLB itself
+          let textureUrl: string | undefined;
+          
+          // Check multiple possible response structures
+          if (result.textures) {
+            if (Array.isArray(result.textures) && result.textures.length > 0) {
+              // Find base_color texture
+              const baseColorTexture = result.textures.find((t: any) => t.base_color || t.type === 'base_color');
+              if (baseColorTexture) {
+                textureUrl = baseColorTexture.base_color || baseColorTexture.url;
+                console.log(`[MeshyProvider] 🎨 Found base_color texture URL from refine array: ${textureUrl}`);
+              } else {
+                // Use first texture if no base_color found
+                textureUrl = result.textures[0].url || result.textures[0].base_color;
+                console.log(`[MeshyProvider] 🎨 Using first texture URL from refine array: ${textureUrl}`);
+              }
+            } else if (typeof result.textures === 'object') {
+              // Textures might be an object with base_color property
+              textureUrl = result.textures.base_color || result.textures.url || result.textures.base_color_url;
+              if (textureUrl) {
+                console.log(`[MeshyProvider] 🎨 Found texture URL from refine object: ${textureUrl}`);
+              }
+            }
+          }
+          
+          // Also check for texture_urls or texture_urls.base_color
+          if (!textureUrl && result.texture_urls) {
+            textureUrl = result.texture_urls.base_color || result.texture_urls.url || result.texture_urls[0];
+            if (textureUrl) {
+              console.log(`[MeshyProvider] 🎨 Found texture URL from texture_urls: ${textureUrl}`);
+            }
+          }
+          
+          console.log(`[MeshyProvider] 🎨 Refine task ${taskId} completed successfully`);
+          console.log(`[MeshyProvider] 🎨 Model URL: ${modelUrl}`);
+          console.log(`[MeshyProvider] 🎨 Texture URL: ${textureUrl || 'NOT FOUND (textures should be EMBEDDED in GLB file)'}`);
+          console.log(`[MeshyProvider] 🎨 IMPORTANT: In GLB format, textures are typically EMBEDDED in the binary file`);
+          console.log(`[MeshyProvider] 🎨 The GLB file itself should contain textures - no separate URL needed`);
+          
+          if (!modelUrl || modelUrl.trim() === '') {
+            throw new Error('Refine completed but no model URL in response');
+          }
+          
+          return { modelUrl, textureUrl };
         } else if (status === 'FAILED' || status === 'ERROR') {
           throw new Error(`Meshy refine task failed: ${response.data.error || response.data.message || 'Unknown error'}`);
         } else {
@@ -764,10 +1068,43 @@ export class MeshyProvider extends BaseModelProvider {
   }
 
   /**
-   * Remesh model for final lightweight optimization
-   * This is an optional pass to further optimize the model for mobile
+   * Remesh model from URL (for remeshing preview geometry before texturing)
    * Documentation: https://docs.meshy.ai/api/remesh
    * For lightweight models: @see docs/MESHY_LIGHTWEIGHT_MODELS.md
+   */
+  private async remeshModelFromUrl(modelUrl: string): Promise<{ modelUrl: string }> {
+    const response = await axios.post(
+      `${this.baseUrl}/openapi/v1/remesh`,
+      {
+        model_url: modelUrl, // Use model URL directly
+        target_formats: ['glb'],
+        topology: 'triangle', // Best for mobile
+        target_polycount: 9000, // Sweet spot for mobile AR characters
+        resize_height: 1.7, // Character height in meters (AR-friendly)
+        origin_at: 'bottom', // Character stands on AR plane nicely
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000,
+      }
+    );
+
+    if (!response.data || !response.data.result) {
+      throw new Error('Invalid response from Meshy remesh API');
+    }
+
+    const remeshTaskId = response.data.result;
+    
+    // Poll for remesh task completion
+    return await this.pollRemeshTask(remeshTaskId);
+  }
+
+  /**
+   * Remesh model from task ID (legacy method, kept for backward compatibility)
+   * Documentation: https://docs.meshy.ai/api/remesh
    */
   private async remeshModel(inputTaskId: string): Promise<{ modelUrl: string }> {
     const response = await axios.post(
@@ -776,7 +1113,7 @@ export class MeshyProvider extends BaseModelProvider {
         input_task_id: inputTaskId, // Use task ID instead of model URL
         target_formats: ['glb'],
         topology: 'triangle', // Best for mobile
-        target_polycount: 8000, // Sweet spot for mobile AR characters
+        target_polycount: 9000, // Sweet spot for mobile AR characters
         resize_height: 1.7, // Character height in meters (AR-friendly)
         origin_at: 'bottom', // Character stands on AR plane nicely
       },
@@ -869,6 +1206,233 @@ export class MeshyProvider extends BaseModelProvider {
     }
 
     throw new Error(`Meshy remesh task ${taskId} timed out after ${maxAttempts} attempts`);
+  }
+
+  /**
+   * Retexture a model (add textures to any model URL, including remeshed models)
+   * This is used after remeshing to add textures to optimized geometry
+   * Documentation: https://docs.meshy.ai/api/retexture
+   * 
+   * Parameters:
+   * - model_url: URL of the model to texture (can be remeshed model)
+   * - text_style_prompt: Description of desired texture style with color guidance
+   * - enable_pbr: false for lightweight (base color only, no PBR maps)
+   * 
+   * Color pipeline: Base-color textures only (no PBR)
+   * - Colors stored in one BaseColor texture
+   * - No normal/roughness/metallic maps
+   * - Lighting from engine, not textures
+   * - Separate materials for skin, hair, eyes, clothing (for runtime color swapping)
+   * 
+   * Returns both model URL and texture URL (for passing to rigging API)
+   */
+  private async retextureModel(modelUrl: string, description: CharacterDescription): Promise<{ modelUrl: string; textureUrl?: string }> {
+    // Build base prompt from character description (includes hair color, eye color, clothing)
+    const basePrompt = this.buildPrompt(description);
+    
+    // Extract color information from description for texture prompt
+    const skinColor = 'natural skin tone'; // CharacterDescription doesn't have skinColor, use default
+    const hairColor = description.hair?.color || 'natural hair color';
+    const eyeColor = description.eyes?.color || 'clear eyes';
+    const clothingColor = description.clothing || 'simple fabric colors';
+    
+    // Build comprehensive texture prompt using recommended template
+    // This ensures colors for clothes, skin, hair, eyes while staying lightweight
+    // Template: semi-realistic, natural colors, clear features, no heavy details
+    const texturePrompt = `semi-realistic character,
+${skinColor} with smooth shading,
+clear eyes with visible iris and sclera, ${eyeColor},
+defined lips with subtle color,
+${hairColor} hair,
+${clothingColor} for clothing,
+separate materials for skin, hair, eyes, and clothing,
+matte surfaces,
+simple fabric colors,
+no skin pores,
+no freckles,
+no wrinkles,
+no tiny patterns,
+no logos,
+mobile-game style textures,
+flat base colors with gentle shading,
+no baked lighting,
+no dramatic shadows,
+no strong highlights,
+optimized for mobile AR`;
+    
+    const requestBody = {
+      model_url: modelUrl, // Can be remeshed model URL
+      text_style_prompt: texturePrompt,
+      enable_pbr: false, // Base color only (lighter & faster for mobile) - CRITICAL for colors
+    };
+    
+    console.log(`[MeshyProvider] 🎨 Retexture request details:`);
+    console.log(`[MeshyProvider] 🎨   - Model URL: ${modelUrl}`);
+    console.log(`[MeshyProvider] 🎨   - Enable PBR: false (base color only)`);
+    console.log(`[MeshyProvider] 🎨   - Texture prompt length: ${texturePrompt.length} chars`);
+    console.log(`[MeshyProvider] 🎨   - Texture prompt preview: ${texturePrompt.substring(0, 200)}...`);
+    
+    let response;
+    try {
+      response = await axios.post(
+        `${this.baseUrl}/openapi/v1/retexture`,
+        requestBody,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 30000,
+        }
+      );
+
+      console.log(`[MeshyProvider] 🎨 Retexture API response status: ${response.status}`);
+      console.log(`[MeshyProvider] 🎨 Retexture API response data:`, JSON.stringify(response.data, null, 2));
+    } catch (error: any) {
+      // Handle HTTP errors (402, 403, 404, etc.)
+      if (error.response) {
+        const status = error.response.status;
+        const statusText = error.response.statusText;
+        const errorData = error.response.data;
+        
+        console.error(`[MeshyProvider] ❌ Retexture API HTTP error: ${status} ${statusText}`);
+        console.error(`[MeshyProvider] ❌ Error response:`, JSON.stringify(errorData, null, 2));
+        
+        if (status === 402) {
+          throw new Error(`Payment Required (402): Retexture API requires a paid Meshy plan. Error: ${JSON.stringify(errorData)}`);
+        } else if (status === 403) {
+          throw new Error(`Forbidden (403): API key does not have permission to use Retexture API. Error: ${JSON.stringify(errorData)}`);
+        } else if (status === 404) {
+          throw new Error(`Not Found (404): Retexture API endpoint not found. Error: ${JSON.stringify(errorData)}`);
+        } else {
+          throw new Error(`HTTP ${status} ${statusText}: ${JSON.stringify(errorData)}`);
+        }
+      }
+      throw error;
+    }
+
+    // Check for error in response
+    if (response.data.error) {
+      const errorMsg = `Meshy retexture API error: ${response.data.error.message || response.data.error}`;
+      console.error(`[MeshyProvider] ❌ ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+
+    if (!response.data || !response.data.result) {
+      console.error('[MeshyProvider] ❌ Invalid retexture response:', JSON.stringify(response.data, null, 2));
+      throw new Error('Invalid response from Meshy retexture API - no result field');
+    }
+
+    const retextureTaskId = response.data.result;
+    console.log(`[MeshyProvider] 🎨 Retexture task ID: ${retextureTaskId}`);
+    
+    // Poll for retexture task completion
+    return await this.pollRetextureTask(retextureTaskId);
+  }
+
+  /**
+   * Poll for retexture task completion
+   * API Endpoint: GET /openapi/v1/retexture/{id}
+   * 
+   * Returns both model URL and base_color texture URL (for passing to rigging API)
+   */
+  private async pollRetextureTask(
+    taskId: string,
+    maxAttempts: number = 60,
+    intervalMs: number = 5000
+  ): Promise<{ modelUrl: string; textureUrl?: string }> {
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      try {
+        const response = await axios.get(
+          `${this.baseUrl}/openapi/v1/retexture/${taskId}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${this.apiKey}`,
+            },
+            timeout: 30000, // Increased timeout for retexture
+          }
+        );
+
+        const status = response.data.status || response.data.progress?.status;
+        
+        if (status === 'SUCCEEDED' || status === 'COMPLETED') {
+          // Retexture response structure: result.model_urls or result.url
+          const result = response.data.result || response.data;
+          const modelUrl = result.model_urls?.glb || 
+                          result.model_urls?.gltf || 
+                          result.model_url || 
+                          result.url || '';
+          
+          // Extract base_color texture URL from textures array (if available)
+          // This is needed to pass to rigging API to preserve textures
+          let textureUrl: string | undefined;
+          if (result.textures && Array.isArray(result.textures) && result.textures.length > 0) {
+            // Find base_color texture
+            const baseColorTexture = result.textures.find((t: any) => t.base_color || t.type === 'base_color');
+            if (baseColorTexture) {
+              textureUrl = baseColorTexture.base_color || baseColorTexture.url;
+              console.log(`[MeshyProvider] 🎨 Found base_color texture URL: ${textureUrl}`);
+            } else {
+              // Use first texture if no base_color found
+              textureUrl = result.textures[0].url || result.textures[0].base_color;
+              console.log(`[MeshyProvider] 🎨 Using first texture URL: ${textureUrl}`);
+            }
+          }
+          
+          console.log(`[MeshyProvider] 🎨 Retexture task ${taskId} completed successfully`);
+          console.log(`[MeshyProvider] 🎨 Response structure:`, JSON.stringify(result, null, 2));
+          console.log(`[MeshyProvider] 🎨 Extracted model URL: ${modelUrl}`);
+          console.log(`[MeshyProvider] 🎨 Extracted texture URL: ${textureUrl || 'NOT FOUND (will try to preserve from model)'}`);
+          
+          if (!modelUrl || modelUrl.trim() === '') {
+            throw new Error('Retexture completed but no model URL in response');
+          }
+          
+          return { modelUrl, textureUrl };
+        } else if (status === 'FAILED' || status === 'ERROR') {
+          const errorMsg = response.data.error || response.data.message || 'Unknown error';
+          console.error(`[MeshyProvider] ❌ Retexture task ${taskId} failed: ${errorMsg}`);
+          console.error(`[MeshyProvider] ❌ Full response:`, JSON.stringify(response.data, null, 2));
+          throw new Error(`Meshy retexture task failed: ${errorMsg}`);
+        } else {
+          const progress = response.data.progress?.percentage || 
+                          response.data.progress || 
+                          response.data.percentage || 
+                          0;
+          console.log(`[MeshyProvider] Retexture task ${taskId} progress: ${progress}%`);
+          
+          attempts++;
+          if (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, intervalMs));
+          }
+        }
+      } catch (error: any) {
+        // Handle timeout errors - retry if it's a network timeout
+        if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
+          console.warn(`[MeshyProvider] Timeout polling task ${taskId}, attempt ${attempts + 1}/${maxAttempts}. Retrying...`);
+          attempts++;
+          if (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, intervalMs));
+            continue;
+          }
+          throw new Error(`Meshy retexture task ${taskId} polling timed out after ${maxAttempts} attempts`);
+        }
+        
+        // Handle 404 - task might still be creating
+        if (error.response?.status === 404) {
+          attempts++;
+          if (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, intervalMs));
+            continue;
+          }
+        }
+        throw error;
+      }
+    }
+
+    throw new Error(`Meshy retexture task ${taskId} timed out after ${maxAttempts} attempts`);
   }
 }
 

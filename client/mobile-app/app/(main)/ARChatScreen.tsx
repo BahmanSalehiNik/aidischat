@@ -42,7 +42,10 @@ export default function ARChatScreen() {
   const [sending, setSending] = useState(false);
   const [providerTokens, setProviderTokens] = useState<ProviderTokens | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [textureUrls, setTextureUrls] = useState<string[]>([]);
   const [animationUrls, setAnimationUrls] = useState<string[]>([]);
+  const [binFileName, setBinFileName] = useState<string | undefined>(undefined);
+  const [binUrl, setBinUrl] = useState<string | undefined>(undefined);
   const [currentMarkers, setCurrentMarkers] = useState<Array<{ type: 'emotion' | 'movement' | 'gesture' | 'pose' | 'tone'; value: string }>>([]);
   const [currentEmotion, setCurrentEmotion] = useState<string | null>(null);
   const [currentMovement, setCurrentMovement] = useState<string | null>(null);
@@ -110,19 +113,19 @@ export default function ARChatScreen() {
       const handleMessage = (event: MessageEvent) => {
         try {
           const data = JSON.parse(event.data);
-          
+
           if (data.type === 'ar-stream-chunk') {
             const chunkData = data.data;
             // Use ref to get current streamingMessageId without causing re-renders
             const currentStreamingId = streamingMessageIdRef.current;
-            
+
             console.log('📥 [ARChatScreen] Received AR stream chunk:', {
               messageId: chunkData.messageId,
               currentStreamingId,
               chunkIndex: chunkData.chunkIndex,
               isFinal: chunkData.isFinal,
             });
-            
+
             // Chunks use the user's messageId, but we need to create/update an agent message
             // Also verify the chunk is for the current room
             if (chunkData.messageId === currentStreamingId && chunkData.roomId === room?.id) {
@@ -131,24 +134,24 @@ export default function ARChatScreen() {
                 clearTimeout(streamTimeoutRef.current);
                 streamTimeoutRef.current = null;
               }
-              
+
               setStreamingContent(prev => {
                 const newContent = prev + chunkData.chunk;
-                
+
                 // Parse markers from streaming content (for real-time display)
                 const { text: cleanText, markers } = parseMarkers(newContent);
-                
+
                 // Log markers if found
                 if (markers.length > 0) {
                   console.log('🎭 [ARChatScreen] Markers found in stream:', markers);
-                  
+
                   // Apply markers to 3D model in real-time
                   setCurrentMarkers(markers);
-                  
+
                   // Extract latest emotion and movement for immediate application
                   const latestEmotion = markers.filter(m => m.type === 'emotion').pop()?.value;
                   const latestMovement = markers.filter(m => m.type === 'movement').pop()?.value;
-                  
+
                   if (latestEmotion) {
                     setCurrentEmotion(latestEmotion);
                   }
@@ -156,15 +159,15 @@ export default function ARChatScreen() {
                     setCurrentMovement(latestMovement);
                   }
                 }
-                
+
                 // Update the message in the messages list with streaming content
                 setMessages(prevMessages => {
                   const prevArray = Array.isArray(prevMessages) ? prevMessages : [];
-                  
+
                   // Look for existing agent message for this user message (agent-{messageId})
                   const agentMessageId = `agent-${currentStreamingId}`;
                   const agentMessageIndex = prevArray.findIndex(msg => msg.id === agentMessageId);
-                  
+
                   if (agentMessageIndex >= 0) {
                     // Update existing agent message with streaming content and markers
                     console.log('📝 [ARChatScreen] Updating existing agent message:', agentMessageId);
@@ -179,10 +182,10 @@ export default function ARChatScreen() {
                   } else {
                     // Check if there's a user message with this ID
                     const userMessageIndex = prevArray.findIndex(msg => msg.id === currentStreamingId);
-                    const isUserMessage = userMessageIndex >= 0 && 
-                      (prevArray[userMessageIndex].senderType === 'human' || 
-                       (user && prevArray[userMessageIndex].senderId === user.id));
-                    
+                    const isUserMessage = userMessageIndex >= 0 &&
+                      (prevArray[userMessageIndex].senderType === 'human' ||
+                        (user && prevArray[userMessageIndex].senderId === user.id));
+
                     // Create new agent message for the response
                     console.log('📝 [ARChatScreen] Creating new agent message:', {
                       agentMessageId,
@@ -191,7 +194,7 @@ export default function ARChatScreen() {
                       contentLength: newContent.length,
                       markersFound: markers.length,
                     });
-                    
+
                     const agentMessage: ARMessage = {
                       id: agentMessageId,
                       roomId: chunkData.roomId || room?.id || '',
@@ -205,7 +208,7 @@ export default function ARChatScreen() {
                     return [...prevArray, agentMessage];
                   }
                 });
-                
+
                 // If final chunk, process markers and trigger TTS/animations
                 if (chunkData.isFinal) {
                   console.log('✅✅✅ [ARChatScreen] FINAL CHUNK RECEIVED!');
@@ -213,13 +216,13 @@ export default function ARChatScreen() {
                   console.log('🎭 [ARChatScreen] Final markers:', markers);
                   console.log('📝 [ARChatScreen] Full content length:', newContent.length);
                   console.log('📝 [ARChatScreen] Full content preview:', newContent.substring(0, 200));
-                  
+
                   // Clear timeout since we got final chunk
                   if (streamTimeoutRef.current) {
                     clearTimeout(streamTimeoutRef.current);
                     streamTimeoutRef.current = null;
                   }
-                  
+
                   // Call processStreamComplete IMMEDIATELY (no delay)
                   console.log('🔄 [ARChatScreen] Calling processStreamComplete NOW...');
                   processStreamComplete(newContent).catch((error) => {
@@ -227,10 +230,10 @@ export default function ARChatScreen() {
                   });
                 }
                 // Note: Timeout for non-final chunks is set up OUTSIDE this if/else block
-                
+
                 return newContent;
               });
-              
+
               // Set up timeout AFTER state update (for non-final chunks only)
               // This timeout will fire 2 seconds after the last chunk if no final chunk arrives
               if (!chunkData.isFinal) {
@@ -238,7 +241,7 @@ export default function ARChatScreen() {
                 console.log('⏰ [ARChatScreen] Setting timeout for 2 seconds (chunkIndex:', chunkData.chunkIndex, ')');
                 streamTimeoutRef.current = setTimeout(() => {
                   console.log('⏰⏰⏰ [ARChatScreen] TIMEOUT FIRED: No final chunk received after 2 seconds');
-                  
+
                   // Get the latest content from state
                   setStreamingContent(currentContent => {
                     if (currentContent && currentContent.trim().length > 0) {
@@ -253,7 +256,7 @@ export default function ARChatScreen() {
                     }
                     return currentContent; // Don't modify content
                   });
-                  
+
                   streamTimeoutRef.current = null;
                 }, 2000);
               }
@@ -281,34 +284,34 @@ export default function ARChatScreen() {
   const initializeARChat = async () => {
     try {
       setLoading(true);
-      
+
       // Clear any previous messages and streaming state when starting/rejoining
       setMessages([]);
       setStreamingMessageId(null);
       setStreamingContent('');
       streamingMessageIdRef.current = null;
-      
+
       // 1. Create or get AR room
       const arRoom = await arApi.createOrGetARRoom(params.agentId!);
-      
+
       console.log('📋 AR Room Response:', JSON.stringify(arRoom, null, 2));
       console.log('📋 AR Room ID:', arRoom?.id);
       console.log('📋 AR Room _id:', (arRoom as any)?._id);
-      
+
       // Handle both 'id' and '_id' formats
       const roomId = arRoom?.id || (arRoom as any)?._id;
-      
+
       if (!arRoom || !roomId) {
         console.error('❌ Invalid AR room response:', arRoom);
         throw new Error('Failed to create AR room: Invalid response');
       }
-      
+
       // Normalize the room object to ensure it has 'id'
       const normalizedRoom = {
         ...arRoom,
         id: roomId,
       };
-      
+
       setRoom(normalizedRoom);
 
       // 2. Get provider tokens
@@ -318,21 +321,37 @@ export default function ARChatScreen() {
       // 3. For AR chat, start with empty messages - subtitle will be empty until new messages arrive
       // This ensures a clean slate when joining/rejoining a room
       setMessages([]);
-      
+
       // Also clear any streaming state
       setStreamingMessageId(null);
       setStreamingContent('');
       streamingMessageIdRef.current = null;
 
-      // 4. Get 3D model URL and animations
+      // 4. Get 3D model URL, textures, and animations
       try {
         const avatarStatus = await avatarApi.getAvatarStatus(params.agentId!);
+        console.log(`📊 [ARChatScreen] Full avatarStatus response from server:`, JSON.stringify(avatarStatus, null, 2));
         if (avatarStatus.status === 'ready' && avatarStatus.modelUrl) {
-          setModelUrl(avatarStatus.modelUrl);
+          // Set bin details BEFORE setting modelUrl to avoid race conditions in rendering
+          if (avatarStatus.binFileName) {
+            setBinFileName(avatarStatus.binFileName);
+            console.log(`✅ [ARChatScreen] Loaded .bin filename: ${avatarStatus.binFileName}`);
+          }
+          if (avatarStatus.binUrl) {
+            setBinUrl(avatarStatus.binUrl);
+            console.log(`✅ [ARChatScreen] Loaded explicit signed .bin URL`);
+          }
+
+          // Set textures/animations
+          if (avatarStatus.textureUrls && avatarStatus.textureUrls.length > 0) {
+            setTextureUrls(avatarStatus.textureUrls);
+          }
           if (avatarStatus.animationUrls && avatarStatus.animationUrls.length > 0) {
             setAnimationUrls(avatarStatus.animationUrls);
-            console.log(`✅ [ARChatScreen] Loaded ${avatarStatus.animationUrls.length} animation URLs`);
           }
+
+          // Set model URL last to trigger rendering
+          setModelUrl(avatarStatus.modelUrl);
         }
       } catch (error) {
         console.error('Error loading avatar:', error);
@@ -356,7 +375,7 @@ export default function ARChatScreen() {
     try {
       // Send message to backend with agentId
       const response = await arApi.sendARMessage(room.id, messageContent, params.agentId);
-      
+
       // Ensure we have a plain object (handle Mongoose documents or wrapped responses)
       let newMessage: ARMessage;
       if (response && typeof response === 'object') {
@@ -370,14 +389,14 @@ export default function ARChatScreen() {
       } else {
         throw new Error('Invalid response format from server');
       }
-      
+
       console.log('📨 New message received:', JSON.stringify(newMessage, null, 2));
-      
+
       if (!newMessage || !newMessage.id) {
         console.error('❌ Invalid message response:', newMessage);
         throw new Error('Invalid message response from server');
       }
-      
+
       setMessages(prev => {
         const prevArray = Array.isArray(prev) ? prev : [];
         return [...prevArray, newMessage];
@@ -398,7 +417,7 @@ export default function ARChatScreen() {
     console.log('🔄 [ARChatScreen] Full content received:', fullContent.substring(0, 200));
     console.log('🔍 [ARChatScreen] streamingMessageIdRef.current:', streamingMessageIdRef.current);
     console.log('🔍 [ARChatScreen] streamingMessageId state:', streamingMessageId);
-    
+
     // Try both ref and state for streamingMessageId (fallback to state if ref is null)
     const currentStreamingId = streamingMessageIdRef.current || streamingMessageId;
     if (!currentStreamingId) {
@@ -408,7 +427,7 @@ export default function ARChatScreen() {
       Alert.alert('TTS Error', 'Cannot play TTS: streamingMessageId is missing. Check console logs.');
       return;
     }
-    
+
     console.log('✅ [ARChatScreen] Using streamingId:', currentStreamingId);
     console.log('✅ [ARChatScreen] processStreamComplete proceeding:', {
       contentLength: fullContent.length,
@@ -421,7 +440,7 @@ export default function ARChatScreen() {
       const parseResult = parseMarkers(fullContent);
       const cleanText = parseResult?.text || ''; // parseMarkers returns 'text', not 'cleanText'
       const markers = parseResult?.markers || [];
-      
+
       console.log('📝 [ARChatScreen] Parsed content:', {
         parseResult,
         cleanText: cleanText || '(empty)',
@@ -432,7 +451,7 @@ export default function ARChatScreen() {
         fullContentLength: fullContent?.length || 0,
         fullContentPreview: fullContent?.substring(0, 100) || '(empty)'
       });
-      
+
       if (!cleanText || cleanText.trim().length === 0) {
         console.error('❌ [ARChatScreen] parseMarkers returned empty text!');
         console.error('❌ [ARChatScreen] fullContent was:', fullContent);
@@ -453,7 +472,7 @@ export default function ARChatScreen() {
           // Fallback: if no exact match, update last streaming agent message
           return msg;
         });
-        
+
         // If we didn't find the exact match, try to find last streaming agent message
         const foundExact = updated.some(msg => msg.id === agentMessageId);
         if (!foundExact) {
@@ -465,17 +484,17 @@ export default function ARChatScreen() {
             }
           }
         }
-        
+
         return updated;
       });
 
       // Update current markers for 3D model animation
       setCurrentMarkers(markers);
-      
+
       // Extract latest emotion and movement for immediate application
       const latestEmotion = markers.filter(m => m.type === 'emotion').pop()?.value || null;
       const latestMovement = markers.filter(m => m.type === 'movement').pop()?.value || null;
-      
+
       if (latestEmotion) {
         setCurrentEmotion(latestEmotion);
         console.log('😊 [ARChatScreen] Applying emotion:', latestEmotion);
@@ -494,33 +513,33 @@ export default function ARChatScreen() {
         cleanTextType: typeof cleanText,
         cleanTextValue: cleanText
       });
-      
+
       if (!audioEnabled) {
         console.log('❌ [ARChatScreen] TTS skipped - audio disabled (audioEnabled = false)');
         return;
       }
-      
+
       if (!cleanText || cleanText.trim().length === 0) {
         console.log('❌ [ARChatScreen] TTS skipped - no text (cleanText is empty or whitespace)');
         console.log('❌ [ARChatScreen] cleanText value:', JSON.stringify(cleanText));
         return;
       }
-      
+
       // We have text and audio is enabled - play it!
       try {
         console.log('🔊🔊🔊 [ARChatScreen] ===== STARTING TTS (EXACT like beep button) =====');
         console.log('🔊 [ARChatScreen] Text to speak:', cleanText);
         console.log('🔊 [ARChatScreen] Text length:', cleanText.length);
         console.log('🔊 [ARChatScreen] Text type:', typeof cleanText);
-        
+
         // Stop any previous speech first
         console.log('🔊 [ARChatScreen] Stopping previous speech...');
         Speech.stop();
-        
+
         // Wait a moment for stop to complete
         await new Promise(resolve => setTimeout(resolve, 300));
         console.log('🔊 [ARChatScreen] Stop complete, now calling speak()...');
-        
+
         // EXACT same call as beep button - simple and direct
         console.log('🔊🔊🔊 [ARChatScreen] Calling Speech.speak() NOW...');
         console.log('🔊 [ARChatScreen] Parameters:', {
@@ -529,7 +548,7 @@ export default function ARChatScreen() {
           pitch: 1.0,
           rate: 0.9
         });
-        
+
         Speech.speak(cleanText.trim(), {
           language: 'en',
           pitch: 1.0,
@@ -552,7 +571,7 @@ export default function ARChatScreen() {
             setIsPlayingAudio(false);
           },
         });
-        
+
         console.log('🔊🔊🔊 [ARChatScreen] Speech.speak() CALLED - waiting for onStart callback...');
         console.log('🔊 [ARChatScreen] If you see "TTS STARTED" above, audio should be playing!');
       } catch (error) {
@@ -561,19 +580,19 @@ export default function ARChatScreen() {
         setIsPlayingAudio(false);
       }
 
-      console.log('✅ Stream complete:', { 
-        cleanText, 
+      console.log('✅ Stream complete:', {
+        cleanText,
         markers,
         markersCount: markers.length,
         markerTypes: markers.map(m => `${m.type}:${m.value}`).join(', '),
       });
-      
+
       // Log if no markers were found (potential issue)
       if (markers.length === 0) {
         console.warn('⚠️ [ARChatScreen] No markers found in agent response! The AI may not be generating markers.');
         console.warn('⚠️ [ARChatScreen] Raw content (first 200 chars):', fullContent.substring(0, 200));
       }
-      
+
       // Clear streaming state
       setStreamingMessageId(null);
       setStreamingContent('');
@@ -584,8 +603,8 @@ export default function ARChatScreen() {
       const currentStreamingId = streamingMessageIdRef.current;
       setMessages(prev => {
         const prevArray = Array.isArray(prev) ? prev : [];
-        return prevArray.map(msg => 
-          msg.id === currentStreamingId 
+        return prevArray.map(msg =>
+          msg.id === currentStreamingId
             ? { ...msg, status: 'failed' as const }
             : msg
         );
@@ -658,17 +677,17 @@ export default function ARChatScreen() {
             marginRight: 12,
           }}
         >
-          <Ionicons 
-            name={viewMode === 'ar' ? 'camera' : 'cube'} 
-            size={16} 
-            color="#FFFFFF" 
+          <Ionicons
+            name={viewMode === 'ar' ? 'camera' : 'cube'}
+            size={16}
+            color="#FFFFFF"
             style={{ marginRight: 4 }}
           />
           <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '600' }}>
             {viewMode === 'ar' ? 'AR' : 'VR'}
           </Text>
         </TouchableOpacity>
-        
+
         {/* Audio Toggle Button */}
         <TouchableOpacity
           onPress={() => {
@@ -689,17 +708,17 @@ export default function ARChatScreen() {
             marginRight: 12,
           }}
         >
-          <Ionicons 
-            name={isPlayingAudio ? 'stop' : audioEnabled ? 'volume-high' : 'volume-mute'} 
-            size={16} 
-            color="#FFFFFF" 
+          <Ionicons
+            name={isPlayingAudio ? 'stop' : audioEnabled ? 'volume-high' : 'volume-mute'}
+            size={16}
+            color="#FFFFFF"
             style={{ marginRight: 4 }}
           />
           <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '600' }}>
             {isPlayingAudio ? 'Stop' : audioEnabled ? 'Sound' : 'Muted'}
           </Text>
         </TouchableOpacity>
-        
+
         {/* Beep Test Button */}
         <TouchableOpacity
           onPress={async () => {
@@ -729,17 +748,17 @@ export default function ARChatScreen() {
             marginRight: 12,
           }}
         >
-          <Ionicons 
-            name="musical-notes" 
-            size={16} 
-            color="#FFFFFF" 
+          <Ionicons
+            name="musical-notes"
+            size={16}
+            color="#FFFFFF"
             style={{ marginRight: 4 }}
           />
           <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '600' }}>
             Beep
           </Text>
         </TouchableOpacity>
-        
+
         {/* Test TTS Button - Direct test */}
         <TouchableOpacity
           onPress={async () => {
@@ -779,17 +798,17 @@ export default function ARChatScreen() {
             marginRight: 12,
           }}
         >
-          <Ionicons 
-            name="volume-high" 
-            size={16} 
-            color="#FFFFFF" 
+          <Ionicons
+            name="volume-high"
+            size={16}
+            color="#FFFFFF"
             style={{ marginRight: 4 }}
           />
           <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '600' }}>
             Test TTS
           </Text>
         </TouchableOpacity>
-        
+
         <View style={{
           width: 8,
           height: 8,
@@ -816,9 +835,9 @@ export default function ARChatScreen() {
               console.log('🎬 [Test] Setting movement to: idle');
               setCurrentMovement('idle');
             }}
-            style={{ 
-              backgroundColor: '#007AFF', 
-              padding: 8, 
+            style={{
+              backgroundColor: '#007AFF',
+              padding: 8,
               borderRadius: 8,
               minWidth: 80,
             }}
@@ -830,9 +849,9 @@ export default function ARChatScreen() {
               console.log('🎬 [Test] Setting movement to: talking');
               setCurrentMovement('talking');
             }}
-            style={{ 
-              backgroundColor: '#34C759', 
-              padding: 8, 
+            style={{
+              backgroundColor: '#34C759',
+              padding: 8,
               borderRadius: 8,
               minWidth: 80,
             }}
@@ -844,9 +863,9 @@ export default function ARChatScreen() {
               console.log('🎬 [Test] Setting movement to: thinking');
               setCurrentMovement('thinking');
             }}
-            style={{ 
-              backgroundColor: '#FF9500', 
-              padding: 8, 
+            style={{
+              backgroundColor: '#FF9500',
+              padding: 8,
               borderRadius: 8,
               minWidth: 80,
             }}
@@ -858,9 +877,9 @@ export default function ARChatScreen() {
               console.log('🎬 [Test] Setting movement to: walking');
               setCurrentMovement('walking');
             }}
-            style={{ 
-              backgroundColor: '#5856D6', 
-              padding: 8, 
+            style={{
+              backgroundColor: '#5856D6',
+              padding: 8,
               borderRadius: 8,
               minWidth: 80,
             }}
@@ -885,7 +904,10 @@ export default function ARChatScreen() {
                   />
                   <Model3DViewer
                     modelUrl={modelUrl}
+                    textureUrls={textureUrls}
                     animationUrls={animationUrls}
+                    binFileName={binFileName}
+                    binUrl={binUrl}
                     enableAR={true}
                     markers={currentMarkers}
                     currentEmotion={currentEmotion || undefined}
@@ -935,7 +957,10 @@ export default function ARChatScreen() {
             {modelUrl ? (
               <Model3DViewer
                 modelUrl={modelUrl}
+                textureUrls={textureUrls}
                 animationUrls={animationUrls}
+                binFileName={binFileName}
+                binUrl={binUrl}
                 enableAR={false}
                 markers={currentMarkers}
                 currentEmotion={currentEmotion || undefined}
@@ -962,24 +987,24 @@ export default function ARChatScreen() {
           streamingContentLength: streamingContent?.length || 0,
           streamingMessageId,
         });
-        
+
         // Filter messages to only show messages from current room (safety check)
-        const currentRoomMessages = room 
+        const currentRoomMessages = room
           ? messages.filter(msg => msg.roomId === room.id)
           : messages;
-        
+
         // Always show if we have messages OR streaming content
         const hasMessages = currentRoomMessages.length > 0;
         const hasStreaming = !!streamingContent && streamingContent.trim().length > 0;
-        
+
         let displayText = '';
         let isAgent = false;
-        
+
         if (hasMessages) {
           // Show the last message regardless of sender (user or agent)
           const lastMessage = currentRoomMessages[currentRoomMessages.length - 1];
           isAgent = lastMessage.senderType === 'agent';
-          
+
           console.log('📝 [Subtitle] Last message (any sender):', {
             id: lastMessage.id,
             status: lastMessage.status,
@@ -987,7 +1012,7 @@ export default function ARChatScreen() {
             senderType: lastMessage.senderType,
             isAgent,
           });
-          
+
           console.log('📝 [Subtitle] Last message:', {
             id: lastMessage.id,
             status: lastMessage.status,
@@ -998,10 +1023,10 @@ export default function ARChatScreen() {
             hasStreamingContent: !!streamingContent,
             streamingContentLength: streamingContent?.length || 0,
           });
-          
+
           // Prefer streaming content if message is streaming and matches current streaming ID
-          if (lastMessage.status === 'streaming' && streamingContent && 
-              (lastMessage.id === streamingMessageId || lastMessage.id === `agent-${streamingMessageId}`)) {
+          if (lastMessage.status === 'streaming' && streamingContent &&
+            (lastMessage.id === streamingMessageId || lastMessage.id === `agent-${streamingMessageId}`)) {
             displayText = streamingContent;
             console.log('📝 [Subtitle] Using streaming content');
           } else if (lastMessage.content && lastMessage.content.trim()) {
@@ -1017,9 +1042,9 @@ export default function ARChatScreen() {
           isAgent = true; // Assume agent if streaming
           console.log('📝 [Subtitle] Using streaming content (no message in array)');
         }
-        
+
         console.log('📝 [Subtitle] Final displayText:', displayText ? `${displayText.substring(0, 50)}...` : 'EMPTY');
-        
+
         if (!displayText || displayText.trim() === '') {
           console.log('📝 [Subtitle] Returning null - no text to display');
           return null;
@@ -1028,12 +1053,12 @@ export default function ARChatScreen() {
         // Calculate bottom position: above input area (60px) + keyboard height + some padding
         const inputAreaHeight = 60; // Approximate input area height
         const padding = 20;
-        const bottomPosition = keyboardHeight > 0 
+        const bottomPosition = keyboardHeight > 0
           ? keyboardHeight + inputAreaHeight + padding
           : inputAreaHeight + padding + 100; // Default position when keyboard is hidden
 
         return (
-          <View 
+          <View
             key={`subtitle-${displayText.length}-${isAgent ? 'agent' : 'user'}`}
             style={{
               position: 'absolute',
@@ -1047,7 +1072,7 @@ export default function ARChatScreen() {
               pointerEvents: 'none', // Allow touches to pass through
             }}>
             <View style={{
-              backgroundColor: isAgent 
+              backgroundColor: isAgent
                 ? 'rgba(88, 86, 214, 0.9)' // Purple for agent
                 : 'rgba(0, 122, 255, 0.9)', // Blue for user
               paddingHorizontal: 20,

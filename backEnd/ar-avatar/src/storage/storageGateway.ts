@@ -51,5 +51,13 @@ export interface StorageGateway {
    * @returns Parsed container and blob name, or null if not parseable
    */
   parseBlobUrl?(blobUrl: string): { container: string; blobName: string } | null;
+
+  /**
+   * Check if a blob exists in storage (optional, provider-specific)
+   * @param containerName Container/bucket name
+   * @param blobName Blob/key name
+   * @returns True if blob exists, false otherwise
+   */
+  blobExists?(containerName: string, blobName: string): Promise<boolean>;
 }
 

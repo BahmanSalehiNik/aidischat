@@ -16,7 +16,7 @@ export enum AvatarModelType {
 
 export enum AvatarModelFormat {
   GLB = 'glb',
-  GLTF = 'gltf',
+  GLTF = 'gltf', // GLTF format with external textures (React Native compatible)
   VRM = 'vrm',
   FBX = 'fbx',
   Live2D = 'live2d',
@@ -36,6 +36,7 @@ export interface AvatarAttrs {
   textureUrls?: string[];
   animationUrls?: string[];
   metadataUrl?: string;
+  binFileName?: string; // For GLTF format: the .bin filename referenced in the GLTF JSON
   
   // Model Properties
   polygonCount?: number;
@@ -98,6 +99,7 @@ export interface AvatarDoc extends mongoose.Document {
   textureUrls: string[];
   animationUrls: string[];
   metadataUrl?: string;
+  binFileName?: string; // For GLTF format: the .bin filename referenced in the GLTF JSON
   polygonCount?: number;
   textureResolution?: number;
   boneCount?: number;
@@ -142,6 +144,7 @@ const avatarSchema = new mongoose.Schema({
   textureUrls: [{ type: String }],
   animationUrls: [{ type: String }],
   metadataUrl: { type: String },
+  binFileName: { type: String }, // For GLTF format: the .bin filename referenced in the GLTF JSON
   
   polygonCount: { type: Number },
   textureResolution: { type: Number },

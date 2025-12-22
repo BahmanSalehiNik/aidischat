@@ -6,10 +6,13 @@ export interface AvatarStatus {
   progress?: number;
   error?: string;
   modelUrl?: string;
+  textureUrls?: string[]; // Separate texture image URLs (extracted from GLB for React Native)
   animationUrls?: string[]; // Separate animation GLB URLs (for Meshy models)
   format?: string;
   modelType?: string;
   estimatedTimeRemaining?: number;
+  binFileName?: string; // For GLTF format: the .bin filename referenced in the GLTF JSON
+  binUrl?: string; // Explicit signed URL for the .bin file (needed for private containers)
 }
 
 export interface AvatarDownloadUrl {
@@ -17,6 +20,8 @@ export interface AvatarDownloadUrl {
   expiresIn: number | null;
   format: string;
   modelType: string;
+  binFileName?: string; // For GLTF format: the .bin filename referenced in the GLTF JSON
+  binUrl?: string; // Explicit signed URL for the .bin file (needed for private containers)
 }
 
 export interface Avatar {
@@ -66,6 +71,22 @@ export const avatarApi = {
     const api = getApiClient();
     const params = expiresSeconds ? `?expiresSeconds=${expiresSeconds}` : '';
     return api.get<AvatarDownloadUrl>(`/avatars/${agentId}/download-url${params}`);
+  },
+
+  /**
+   * Verify that model files exist in storage
+   * @param agentId Agent ID
+   */
+  verifyFiles: async (agentId: string): Promise<{
+    modelUrl: string;
+    modelExists: boolean | null;
+    binExists: boolean | null;
+    binFileName?: string;
+    format?: string;
+    error?: string;
+  }> => {
+    const api = getApiClient();
+    return api.get(`/avatars/${agentId}/verify-files`);
   },
 
   /**

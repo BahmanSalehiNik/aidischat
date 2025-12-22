@@ -32,13 +32,16 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({ agentId, onClose }) 
   const [status, setStatus] = useState<'loading' | 'generating' | 'ready' | 'error'>('loading');
   const [progress, setProgress] = useState(0);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [binFileName, setBinFileName] = useState<string | undefined>(undefined);
+  const [binUrl, setBinUrl] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'3d' | 'ar'>('3d');
+  const [textureUrls, setTextureUrls] = useState<string[]>([]);
 
   useEffect(() => {
     checkAvatarStatus();
-    
+
     // Poll for status updates if generating
     let pollInterval: NodeJS.Timeout | null = null;
     if (status === 'generating') {
@@ -57,11 +60,30 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({ agentId, onClose }) 
   const checkAvatarStatus = async () => {
     try {
       const avatarStatus = await avatarApi.getAvatarStatus(agentId);
-      
+
       if (avatarStatus.status === 'ready' && avatarStatus.modelUrl) {
         // Get download URL
         const downloadData = await avatarApi.getDownloadUrl(agentId);
+        console.log(`📊 [AvatarViewer] Full downloadData response from server:`, JSON.stringify(downloadData, null, 2));
         setDownloadUrl(downloadData.url);
+        if (downloadData.binFileName) {
+          setBinFileName(downloadData.binFileName);
+          console.log(`✅ [AvatarViewer] Loaded .bin filename from downloadData: ${downloadData.binFileName}`);
+        } else {
+          console.warn(`⚠️ [AvatarViewer] binFileName NOT provided in downloadData response`);
+          console.warn(`⚠️ [AvatarViewer] downloadData.binFileName = ${downloadData.binFileName}`);
+        }
+        if (downloadData.binUrl) {
+          setBinUrl(downloadData.binUrl);
+          console.log(`✅ [AvatarViewer] Loaded .bin URL from downloadData`);
+        }
+
+        // Extract textureUrls from avatarStatus (they are not in downloadData)
+        if (avatarStatus.textureUrls && avatarStatus.textureUrls.length > 0) {
+          setTextureUrls(avatarStatus.textureUrls);
+          console.log(`✅ [AvatarViewer] Loaded ${avatarStatus.textureUrls.length} texture URLs from status`);
+        }
+
         setStatus('ready');
         setProgress(100);
       } else if (avatarStatus.status === 'generating') {
@@ -98,6 +120,9 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({ agentId, onClose }) 
     return (
       <Model3DViewer
         modelUrl={downloadUrl}
+        binFileName={binFileName}
+        binUrl={binUrl}
+        textureUrls={textureUrls}
         onClose={onClose}
         enableAR={true}
         onARPress={() => setViewMode('ar')}

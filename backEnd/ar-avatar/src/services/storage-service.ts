@@ -11,6 +11,11 @@ export interface UploadResult {
 export class StorageService {
   private storageGateway: StorageGateway;
   private containerName: string;
+  
+  // Expose storageGateway for texture extraction utility
+  get gateway(): StorageGateway {
+    return this.storageGateway;
+  }
 
   constructor() {
     // Initialize storage gateway using factory

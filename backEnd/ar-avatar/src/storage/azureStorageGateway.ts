@@ -47,14 +47,14 @@ export class AzureStorageGateway implements StorageGateway {
           console.log(`[AzureStorageGateway] Container ${containerName} already exists`);
           return;
         }
-        
+
         // If error is about public access, log and continue (container might be created manually)
         if (error.code === 'PublicAccessNotPermitted' || error.message?.includes('Public access is not permitted')) {
           console.warn(`[AzureStorageGateway] Cannot create container ${containerName} with public access. Container may need to be created manually, or will use SAS URLs.`);
           // Don't throw - we'll use SAS URLs for access
           return;
         }
-        
+
         // For other errors, throw
         console.error(`[AzureStorageGateway] Failed to create container ${containerName}:`, error);
         throw error;
@@ -67,7 +67,7 @@ export class AzureStorageGateway implements StorageGateway {
    */
   async uploadBuffer(containerName: string, blobName: string, buffer: Buffer, contentType: string): Promise<string> {
     await this.ensureContainerExists(containerName);
-    
+
     const containerClient = this.client.getContainerClient(containerName);
     const blobClient = containerClient.getBlockBlobClient(blobName);
 
@@ -90,17 +90,17 @@ export class AzureStorageGateway implements StorageGateway {
    * Download from URL and upload to Azure Storage with streaming, retry logic, and progress tracking
    */
   async uploadFromUrl(
-    containerName: string, 
-    blobName: string, 
-    sourceUrl: string, 
+    containerName: string,
+    blobName: string,
+    sourceUrl: string,
     contentType?: string,
     onProgress?: (bytesDownloaded: number, totalBytes?: number) => void
   ): Promise<string> {
     console.log(`[AzureStorageGateway] Starting download from ${sourceUrl} and upload to ${containerName}/${blobName}`);
 
-    const finalContentType = contentType || 
-                            this.inferContentTypeFromUrl(sourceUrl) ||
-                            'application/octet-stream';
+    const finalContentType = contentType ||
+      this.inferContentTypeFromUrl(sourceUrl) ||
+      'application/octet-stream';
 
     // Retry logic for download
     let lastError: Error | null = null;
@@ -126,12 +126,12 @@ export class AzureStorageGateway implements StorageGateway {
       } catch (error: any) {
         lastError = error;
         const isRetryable = this.isRetryableError(error);
-        
+
         if (!isRetryable || attempt === AVATAR_CONFIG.STORAGE_DOWNLOAD_RETRIES) {
           console.error(`[AzureStorageGateway] Download/upload failed (attempt ${attempt}/${AVATAR_CONFIG.STORAGE_DOWNLOAD_RETRIES}):`, error.message);
           throw error;
         }
-        
+
         console.warn(`[AzureStorageGateway] Retryable error on attempt ${attempt}:`, error.message);
       }
     }
@@ -150,7 +150,7 @@ export class AzureStorageGateway implements StorageGateway {
     onProgress?: (bytesDownloaded: number, totalBytes?: number) => void
   ): Promise<string> {
     await this.ensureContainerExists(containerName);
-    
+
     const containerClient = this.client.getContainerClient(containerName);
     const blobClient = containerClient.getBlockBlobClient(blobName);
 
@@ -162,8 +162,8 @@ export class AzureStorageGateway implements StorageGateway {
       maxBodyLength: 500 * 1024 * 1024,
     });
 
-    const contentLength = response.headers['content-length'] 
-      ? parseInt(response.headers['content-length'], 10) 
+    const contentLength = response.headers['content-length']
+      ? parseInt(response.headers['content-length'], 10)
       : undefined;
 
     if (contentLength) {
@@ -200,12 +200,12 @@ export class AzureStorageGateway implements StorageGateway {
 
     // Upload stream directly to Azure (no memory buffering)
     console.log(`[AzureStorageGateway] Starting stream upload to ${containerName}/${blobName}...`);
-    
+
     let uploadAttempt = 0;
     while (uploadAttempt < AVATAR_CONFIG.STORAGE_UPLOAD_RETRIES) {
       try {
         uploadAttempt++;
-        
+
         // If retrying, we need to re-download (streams can't be reused)
         if (uploadAttempt > 1) {
           const delay = Math.min(
@@ -214,7 +214,7 @@ export class AzureStorageGateway implements StorageGateway {
           );
           console.log(`[AzureStorageGateway] Retrying upload (attempt ${uploadAttempt}/${AVATAR_CONFIG.STORAGE_UPLOAD_RETRIES}) after ${delay}ms`);
           await new Promise(resolve => setTimeout(resolve, delay));
-          
+
           // Re-download for retry
           const retryResponse = await axios.get<Readable>(sourceUrl, {
             responseType: 'stream',
@@ -222,24 +222,24 @@ export class AzureStorageGateway implements StorageGateway {
             maxContentLength: 500 * 1024 * 1024,
             maxBodyLength: 500 * 1024 * 1024,
           });
-          
+
           bytesDownloaded = 0;
           const retryProgressStream = new PassThrough();
-          
+
           retryResponse.data.on('data', (chunk: Buffer) => {
             bytesDownloaded += chunk.length;
             if (onProgress) {
               onProgress(bytesDownloaded, contentLength);
             }
           });
-          
+
           retryResponse.data.on('error', (error: Error) => {
             retryProgressStream.destroy(error);
           });
-          
+
           // Pipe retry response through progress stream
           retryResponse.data.pipe(retryProgressStream);
-          
+
           await blobClient.uploadStream(retryProgressStream, undefined, undefined, {
             blobHTTPHeaders: {
               blobContentType: contentType,
@@ -261,12 +261,12 @@ export class AzureStorageGateway implements StorageGateway {
         return sasUrl;
       } catch (error: any) {
         const isRetryable = this.isRetryableError(error);
-        
+
         if (!isRetryable || uploadAttempt === AVATAR_CONFIG.STORAGE_UPLOAD_RETRIES) {
           console.error(`[AzureStorageGateway] Upload failed (attempt ${uploadAttempt}/${AVATAR_CONFIG.STORAGE_UPLOAD_RETRIES}):`, error.message);
           throw error;
         }
-        
+
         console.warn(`[AzureStorageGateway] Retryable upload error on attempt ${uploadAttempt}:`, error.message);
       }
     }
@@ -282,31 +282,31 @@ export class AzureStorageGateway implements StorageGateway {
     if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
       return true;
     }
-    
+
     // HTTP errors
     if (error.response) {
       const status = error.response.status;
       // 5xx server errors and 429 (rate limit) are retryable
       return status >= 500 || status === 429;
     }
-    
+
     // Azure SDK errors
     if (error.statusCode) {
       return error.statusCode >= 500 || error.statusCode === 429;
     }
-    
+
     // Timeout errors
     if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       return true;
     }
-    
+
     return false;
   }
 
   /**
    * Generate a signed download URL
    */
-  async generateDownloadUrl(containerName: string, blobName: string, expiresSeconds = 900): Promise<string> {
+  async generateDownloadUrl(containerName: string, blobName: string, expiresSeconds = 86400): Promise<string> {
     const containerClient = this.client.getContainerClient(containerName);
     const blobClient = containerClient.getBlobClient(blobName);
 
@@ -336,6 +336,22 @@ export class AzureStorageGateway implements StorageGateway {
   }
 
   /**
+   * Check if a blob exists in Azure Storage
+   */
+  async blobExists(containerName: string, blobName: string): Promise<boolean> {
+    try {
+      const containerClient = this.client.getContainerClient(containerName);
+      const blobClient = containerClient.getBlobClient(blobName);
+      const exists = await blobClient.exists();
+      console.log(`[AzureStorageGateway] Blob ${containerName}/${blobName} exists: ${exists}`);
+      return exists;
+    } catch (error: any) {
+      console.error(`[AzureStorageGateway] Error checking blob existence:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Parse Azure blob URL to extract container and blob name
    * Format: https://<account>.blob.core.windows.net/<container>/<blob-name>
    */
@@ -361,24 +377,24 @@ export class AzureStorageGateway implements StorageGateway {
     try {
       const urlObj = new URL(url);
       const pathname = urlObj.pathname.toLowerCase();
-      
+
       // 3D model formats
       if (pathname.endsWith('.glb')) return 'model/gltf-binary';
       if (pathname.endsWith('.gltf')) return 'model/gltf+json';
       if (pathname.endsWith('.fbx')) return 'application/octet-stream';
       if (pathname.endsWith('.obj')) return 'model/obj';
       if (pathname.endsWith('.usdz')) return 'model/usd';
-      
+
       // Image formats
       if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg';
       if (pathname.endsWith('.png')) return 'image/png';
       if (pathname.endsWith('.gif')) return 'image/gif';
       if (pathname.endsWith('.webp')) return 'image/webp';
-      
+
       // Video formats
       if (pathname.endsWith('.mp4')) return 'video/mp4';
       if (pathname.endsWith('.webm')) return 'video/webm';
-      
+
       return null;
     } catch {
       return null;
