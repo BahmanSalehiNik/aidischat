@@ -1,10 +1,10 @@
 # ninja log v5
-0	727	1766775522188077626	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	4ab4c2a42e871cf9
-0	802	1766775522265076402	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	3d9b35f62455596
-0	854	1766775522317075575	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	b12593c745e366a
-0	899	1766775522362074860	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	55f1e121d0c39d8c
-1	911	1766775522376074638	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	c158e882a8962e81
-1	927	1766775522390074415	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	8468aa7872f2d2ee
-0	1235	1766775522699069503	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	3f84c49d6d52b8b0
-0	1268	1766775522731068995	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	31290fe7e1128592
-1269	1292	1766775522758068565	/home/bahman/projects/aiChatDistributed/client/unity/ARAvatarClient/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/2l3h6x20/obj/arm64-v8a/libgame.so	7b91ba4c2eb5a303
+1	520	1767022955376724981	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	55f1e121d0c39d8c
+1	538	1767022955394724713	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	8468aa7872f2d2ee
+0	619	1767022955475723508	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	3d9b35f62455596
+0	631	1767022955490723285	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	b12593c745e366a
+1	644	1767022955503723092	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	4ab4c2a42e871cf9
+1	694	1767022955552722363	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	c158e882a8962e81
+1	747	1767022955605721574	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	3f84c49d6d52b8b0
+0	788	1767022955646720965	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	31290fe7e1128592
+788	808	1767022955669720623	/home/bahman/projects/aiChatDistributed/client/unity/ARAvatarClient/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/2l3h6x20/obj/arm64-v8a/libgame.so	7b91ba4c2eb5a303

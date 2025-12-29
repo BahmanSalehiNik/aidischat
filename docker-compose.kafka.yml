@@ -13,7 +13,7 @@ services:
       - --overprovisioned
       - --node-id 0
       - --kafka-addr PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
-      - --advertise-kafka-addr PLAINTEXT://192.168.58.2:9092,OUTSIDE://192.168.58.2:19092
+      - --advertise-kafka-addr PLAINTEXT://192.168.58.2:9092,OUTSIDE://192.168.58.1:19092
       - --pandaproxy-addr 0.0.0.0:8082
       - --advertise-pandaproxy-addr 192.168.58.2:8082
       - --schema-registry-addr 0.0.0.0:8081

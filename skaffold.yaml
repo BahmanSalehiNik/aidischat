@@ -188,7 +188,6 @@ manifests:
     # Phase 1: Infrastructure services (deployed first, in dependency order)
     - ./infra/k8s/redpanda-external-srv.yaml  # External service pointing to host Redpanda
     - ./infra/k8s/kafka-topics-init.yaml      # Initialize Kafka topics (Job)
-    - ./infra/k8s/nats-depl.yaml
     - ./infra/k8s/*-mongo-depl.yaml
     - ./infra/k8s/expiration-redis-depl.yaml
     - ./infra/k8s/realtime-redis-depl.yaml

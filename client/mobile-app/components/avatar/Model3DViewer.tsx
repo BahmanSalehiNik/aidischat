@@ -33,6 +33,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
   currentEmotion,
   currentMovement,
 }) => {
+  console.log('🏁 [Model3DViewer] Component MOUNTED/RENDERED', { enableAR, modelUrl });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modelLoaded, setModelLoaded] = useState(false);
@@ -66,7 +67,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
   const lastTapRef = useRef<number | null>(null);
   const handleDoubleTap = () => {
     if (!modelRef.current) return;
-    
+
     if (isAnchored) {
       // Unanchor: stop tracking device motion
       setIsAnchored(false);
@@ -82,7 +83,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       setIsAnchored(true);
       // Store current model position in world space
       anchorPositionRef.current = modelRef.current.position.clone();
-      
+
       // Check if device motion is available, request permissions, and start tracking
       DeviceMotion.isAvailableAsync().then(async (available) => {
         if (!available) {
@@ -90,14 +91,14 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
           setIsAnchored(false);
           return;
         }
-        
+
         // Request permissions (required on iOS, optional on Android)
         try {
           // Check current permission status first
           const { status: currentStatus } = await DeviceMotion.getPermissionsAsync();
-          
+
           let finalStatus = currentStatus;
-          
+
           if (currentStatus !== 'granted') {
             // Request permission explicitly
             console.log('📱 [Model3DViewer] Requesting device motion permission...');
@@ -106,7 +107,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
           } else {
             console.log('✅ [Model3DViewer] Device motion permission already granted');
           }
-          
+
           if (finalStatus === 'granted') {
             console.log('✅ [Model3DViewer] Device motion permission granted');
           } else {
@@ -121,7 +122,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
           // Some platforms might not require explicit permissions
           const errorMsg = error?.message || String(error);
           console.log('ℹ️ [Model3DViewer] Permission request result:', errorMsg);
-          
+
           // On Android, permissions might not be required, so continue
           // On iOS, if permission is denied, we should stop
           if (errorMsg.includes('denied') || errorMsg.includes('permission')) {
@@ -132,17 +133,17 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
             console.log('ℹ️ [Model3DViewer] Continuing - permission may not be required on this platform');
           }
         }
-        
+
         // Set update interval for smooth tracking
         DeviceMotion.setUpdateInterval(50); // Update every 50ms
-        
+
         let initialRotation: { alpha: number; beta: number; gamma: number } | null = null;
-        
+
         // Create subscription to device motion
         const subscription = DeviceMotion.addListener((motion) => {
           if (motion.rotation && modelRef.current && anchorPositionRef.current) {
             const rotation = motion.rotation;
-            
+
             // Store initial rotation on first reading
             if (!initialRotation) {
               initialRotation = {
@@ -153,26 +154,26 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
               anchorRotationRef.current = initialRotation;
               return;
             }
-            
+
             // Calculate rotation delta from initial position (in radians)
             const deltaAlpha = ((rotation.alpha || 0) - initialRotation.alpha) * (Math.PI / 180);
             const deltaBeta = ((rotation.beta || 0) - initialRotation.beta) * (Math.PI / 180);
             const deltaGamma = ((rotation.gamma || 0) - initialRotation.gamma) * (Math.PI / 180);
-            
+
             // Convert rotation deltas to position compensation
             // This keeps the model in the same "world position" as device moves
             const compensationFactor = 0.2; // Adjust this to fine-tune sensitivity
             const compensationX = deltaGamma * compensationFactor;
             const compensationY = deltaBeta * compensationFactor;
             const compensationZ = deltaAlpha * compensationFactor;
-            
+
             // Apply compensation to keep model in same world position
             modelRef.current.position.x = anchorPositionRef.current.x - compensationX;
             modelRef.current.position.y = anchorPositionRef.current.y - compensationY;
             modelRef.current.position.z = anchorPositionRef.current.z - compensationZ;
           }
         });
-        
+
         deviceMotionSubscriptionRef.current = subscription;
         console.log('🔒 [Model3DViewer] Model anchored - tracking device motion');
       }).catch((error) => {
@@ -197,10 +198,10 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
           return;
         }
         lastTapRef.current = now;
-        
+
         // Don't allow manual rotation/zoom when anchored
         if (isAnchored) return;
-        
+
         const touches = evt.nativeEvent.touches;
         if (touches.length === 2) {
           // Two-finger pinch gesture
@@ -217,9 +218,9 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       onPanResponderMove: (evt) => {
         // Don't allow manual rotation/zoom when anchored
         if (isAnchored) return;
-        
+
         const touches = evt.nativeEvent.touches;
-        
+
         if (touches.length === 2) {
           // Two-finger pinch zoom
           const distance = getDistance(touches);
@@ -237,22 +238,22 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
           // Single finger rotation
           const deltaX = evt.nativeEvent.pageX - lastPanRef.current.x;
           const deltaY = evt.nativeEvent.pageY - lastPanRef.current.y;
-          
+
           // Reduced sensitivity: from 0.01 to 0.003 (much less sensitive)
           rotationRef.current.y += deltaX * 0.003;
           rotationRef.current.x += deltaY * 0.003;
-          
+
           lastPanRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
         }
       },
       onPanResponderRelease: (evt) => {
         const touches = evt.nativeEvent.touches;
-        
+
         // If ending a pinch gesture, update base scale
         if (touches.length === 0 && modelRef.current) {
           baseScaleRef.current = modelRef.current.scale.x;
         }
-        
+
         lastPanRef.current = null;
         lastPinchDistanceRef.current = null;
         // Reset rotation velocity to stop continuous rotation
@@ -265,7 +266,16 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
   // Initialize 3D scene
   const onContextCreate = async (gl: any) => {
     try {
+      console.log('🏁 [Model3DViewer] onContextCreate STARTED');
+      if (!gl) {
+        console.error('❌ [Model3DViewer] GL context is null!');
+        return;
+      }
       // Create renderer
+      console.log('🏁 [Model3DViewer] Creating renderer...', {
+        width: gl.drawingBufferWidth,
+        height: gl.drawingBufferHeight
+      });
       const renderer = new Renderer({ gl });
       renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
       // Use transparent background in AR mode, white in VR mode
@@ -273,6 +283,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       rendererRef.current = renderer;
+      console.log('✅ [Model3DViewer] Renderer created');
 
       // Create scene
       const scene = new THREE.Scene();
@@ -316,16 +327,29 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       plane.receiveShadow = true;
       scene.add(plane);
 
+      // Add Debug Sphere (Purple) to verify scene rendering
+      // This is helpful if the model itself is invisible or fails to load
+      const debugGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+      const debugMaterial = new THREE.MeshBasicMaterial({
+        color: 0x800080, // Purple
+        wireframe: true  // Wireframe to differentiate from model
+      });
+      const debugSphere = new THREE.Mesh(debugGeometry, debugMaterial);
+      debugSphere.position.set(2, 0, 0); // Position to the right
+      scene.add(debugSphere);
+      console.log('🟣 [Model3DViewer] Added debug sphere at (2, 0, 0)');
+
       // Load GLB/GLTF model
+      console.log(`🏁 [Model3DViewer] Loading model from URL: ${modelUrl}`);
       const loader = new GLTFLoader();
       const gltf = await loader.loadAsync(modelUrl);
-      
+
       const model = gltf.scene;
       modelRef.current = model;
-      
+
       // Collect all animation clips (from base model + separate animation files)
       let allAnimations: THREE.AnimationClip[] = [...(gltf.animations || [])];
-      
+
       // Load animations from separate URLs if provided (Meshy workflow)
       if (animationUrls && animationUrls.length > 0) {
         console.log(`🎬 [Model3DViewer] Loading ${animationUrls.length} animation GLBs from separate URLs...`);
@@ -340,7 +364,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
                 // Try to infer from URL or use default names based on order
                 const urlLower = animationUrls[i].toLowerCase();
                 let animName = clip.name;
-                
+
                 // Try to infer from URL
                 if (urlLower.includes('idle')) {
                   animName = 'idle';
@@ -357,7 +381,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
                   else if (i === 2) animName = 'talking';
                   else animName = clip.name.toLowerCase(); // Use original name as fallback
                 }
-                
+
                 // Use the clip directly but with renamed track names if needed
                 // Create a new clip with the proper name
                 const tracks = clip.tracks.map(track => track.clone());
@@ -374,35 +398,35 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
         }
         console.log(`🎬 [Model3DViewer] Total animations loaded: ${allAnimations.length} (${gltf.animations?.length || 0} from base + ${allAnimations.length - (gltf.animations?.length || 0)} from separate files)`);
       }
-      
+
       // Enable shadows, materials, and fix frustum culling for animated models
       model.traverse((child: THREE.Object3D) => {
         if (child instanceof THREE.Mesh) {
           child.castShadow = true;
           child.receiveShadow = true;
-          
+
           // Ensure materials are properly set up for colors and textures
           if (child.material) {
             // Handle both single material and material arrays
             const materials = Array.isArray(child.material) ? child.material : [child.material];
             materials.forEach((mat: THREE.Material) => {
               // Enable color rendering for all material types
-              if (mat instanceof THREE.MeshStandardMaterial || 
-                  mat instanceof THREE.MeshBasicMaterial ||
-                  mat instanceof THREE.MeshPhongMaterial ||
-                  mat instanceof THREE.MeshLambertMaterial) {
+              if (mat instanceof THREE.MeshStandardMaterial ||
+                mat instanceof THREE.MeshBasicMaterial ||
+                mat instanceof THREE.MeshPhongMaterial ||
+                mat instanceof THREE.MeshLambertMaterial) {
                 // Force material update to ensure textures/colors load
                 mat.needsUpdate = true;
-                
+
                 // Ensure material is not transparent unless it should be
                 if (mat.transparent && mat.opacity < 0.1) {
                   mat.transparent = false;
                   mat.opacity = 1.0;
                 }
-                
+
                 // Ensure material is visible
                 mat.visible = true;
-                
+
                 // For MeshStandardMaterial, ensure textures are loaded
                 if (mat instanceof THREE.MeshStandardMaterial) {
                   // Force texture updates
@@ -410,13 +434,13 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
                   if (mat.normalMap) mat.normalMap.needsUpdate = true;
                   if (mat.roughnessMap) mat.roughnessMap.needsUpdate = true;
                   if (mat.metalnessMap) mat.metalnessMap.needsUpdate = true;
-                  
+
                   // Ensure material uses color if no texture
                   if (!mat.map && mat.color) {
                     mat.color.setHex(0xffffff); // White base color
                   }
                 }
-                
+
                 // Force material to update again
                 mat.needsUpdate = true;
               }
@@ -426,7 +450,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
               child.geometry.computeBoundingBox();
             }
           }
-          
+
           // Disable frustum culling for skinned meshes to prevent disappearing during animation
           if (child instanceof THREE.SkinnedMesh) {
             child.frustumCulled = false;
@@ -444,7 +468,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
 
       // Initialize animation controller if animations are available
       if (allAnimations.length > 0) {
-        console.log(`🎬 [Model3DViewer] Found ${allAnimations.length} animations:`, 
+        console.log(`🎬 [Model3DViewer] Found ${allAnimations.length} animations:`,
           allAnimations.map(a => a.name));
         animationControllerRef.current = new AnimationController(model, allAnimations);
         console.log(`✅ [Model3DViewer] Animation controller initialized successfully`);
@@ -462,33 +486,33 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      
+
       // Scale model to be much smaller - ensure it fits in a reasonable view
       // Use smaller scale to prevent camera from being inside model
       const scale = 1.5 / maxDim; // Even smaller scale
-      
+
       model.position.x = -center.x * scale;
       model.position.y = -center.y * scale;
       model.position.z = -center.z * scale;
       model.scale.setScalar(scale);
-      
+
       // Store initial scale for pinch zoom and fallback animations
       baseScaleRef.current = scale;
-      
+
       // Adjust camera distance based on model size
       if (cameraRef.current) {
         // Calculate appropriate camera distance based on model size
         const modelSize = Math.max(size.x, size.y, size.z) * scale;
-        
+
         // CRITICAL: Ensure camera is FAR enough away - at least 5x model size
         // This prevents camera from being inside the model
         const minDistance = Math.max(modelSize * 5, 20); // At least 5x model size, minimum 20 units
         const idealDistance = Math.max(modelSize * 6, 25); // 6x for comfortable view, minimum 25
-        
+
         // Update camera distance
         cameraDistanceRef.current = idealDistance;
         cameraRef.current.position.set(0, 0, cameraDistanceRef.current);
-        
+
         // Make sure camera can see the entire model range
         const modelDistance = modelSize * 8; // Far plane should be 8x model size
         if (cameraRef.current.near > 0.01) {
@@ -498,7 +522,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
           cameraRef.current.far = Math.max(modelDistance, 2000); // Increased far plane
         }
         cameraRef.current.updateProjectionMatrix();
-        
+
         console.log(`📷 [Model3DViewer] Camera positioned at distance: ${cameraDistanceRef.current.toFixed(1)}, model size: ${modelSize.toFixed(2)}, scale: ${scale.toFixed(4)}`);
         console.log(`📷 [Model3DViewer] Model bounds: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`);
       }
@@ -536,7 +560,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
           // Stronger damping to stop rotation faster
           rotationRef.current.x *= 0.85;
           rotationRef.current.y *= 0.85;
-          
+
           // Stop rotation if values become very small
           if (Math.abs(rotationRef.current.x) < 0.001) rotationRef.current.x = 0;
           if (Math.abs(rotationRef.current.y) < 0.001) rotationRef.current.y = 0;
@@ -591,10 +615,23 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       controllerState: animationControllerRef.current?.getCurrentState(),
     });
 
-    if (!currentMovement || !modelRef.current) {
-      console.log(`ℹ️ [Model3DViewer] No movement set or model not loaded, skipping animation update`);
+    if (!modelRef.current || !currentMovement) {
+      console.log(`ℹ️ [Model3DViewer] Movement update skipped: model=${!!modelRef.current}, movement=${currentMovement}`);
       return;
     }
+
+    // Check if controller is ready, but don't log as error if just loading
+    // Note: modelRef is set early, but controller creation waits for all animation loads
+    const hasAnimationSources = (animationUrls?.length || 0) > 0;
+    if (!animationControllerRef.current && hasAnimationSources && isLoading) {
+      console.log(`⏳ [Model3DViewer] Animation controller not ready yet (loading extra animations)...`);
+      return;
+    }
+
+    console.log(`🔍 [Model3DViewer] Movement update: ${currentMovement}`, {
+      hasController: !!animationControllerRef.current,
+      controllerState: animationControllerRef.current?.getCurrentState(),
+    });
 
     // If we have animations, use the animation controller
     if (animationControllerRef.current) {
@@ -647,12 +684,12 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       // Fallback: Use simple visual effects when model has no animations
       // IMPORTANT: Use subtle effects that don't move the model out of view
       console.log(`🎨 [Model3DViewer] Using fallback visual effect for movement: ${currentMovement}`);
-      
+
       const movement = currentMovement.toLowerCase();
       const model = modelRef.current;
-      
+
       if (!model) return;
-      
+
       // Store original values for reset
       // Get current scale from model (not baseScaleRef which might be stale)
       const currentScale = model.scale.x;
@@ -662,7 +699,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
         y: model.rotation.y,
         z: model.rotation.z,
       };
-      
+
       // Apply subtle visual feedback based on movement
       // NOTE: These are temporary fallback effects. For proper animations, 
       // you need to regenerate the avatar with Meshy's rigging/animation API enabled.
@@ -673,7 +710,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
         model.scale.setScalar(targetScale);
         console.log(`🎨 [Model3DViewer] Applied talking effect (scale: ${currentScale.toFixed(3)} → ${targetScale.toFixed(3)})`);
         console.log(`⚠️ [Model3DViewer] This is a fallback effect. For proper animations, regenerate avatar with Meshy rigging/animation.`);
-        
+
         // Reset after animation
         setTimeout(() => {
           if (modelRef.current) {
@@ -684,7 +721,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
         // Very subtle rotation (0.05 instead of 0.1)
         model.rotation.z = originalRotation.z + 0.05;
         console.log(`🎨 [Model3DViewer] Applied thinking effect (subtle tilt)`);
-        
+
         setTimeout(() => {
           if (modelRef.current) {
             modelRef.current.rotation.z = originalRotation.z;
@@ -694,7 +731,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
         // Very subtle forward lean
         model.rotation.x = originalRotation.x - 0.05;
         console.log(`🎨 [Model3DViewer] Applied walking effect (subtle lean)`);
-        
+
         setTimeout(() => {
           if (modelRef.current) {
             modelRef.current.rotation.x = originalRotation.x;
@@ -793,8 +830,25 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
     );
   }
 
+  const [layoutReady, setLayoutReady] = useState(false);
+  const [viewDimensions, setViewDimensions] = useState({ width: 0, height: 0 });
+
   return (
-    <View style={[styles.container, enableAR && styles.containerTransparent]} {...panResponder.panHandlers}>
+    <View
+      style={[styles.container, enableAR && styles.containerTransparent]}
+      {...panResponder.panHandlers}
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        console.log(`📏 [Model3DViewer] Container layout: ${width}x${height}`);
+        if (width > 0 && height > 0 && !layoutReady) {
+          setViewDimensions({ width, height });
+          // Add a delay to ensure native view hierarchy is stable before creating GL context
+          setTimeout(() => {
+            setLayoutReady(true);
+          }, 200);
+        }
+      }}
+    >
       {/* Controls Bar - Hide in AR mode */}
       {!enableAR && (
         <View style={styles.controlsBar}>
@@ -820,10 +874,17 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
         </View>
       )}
 
-      <GLView
-        style={[styles.glView, enableAR && styles.glViewTransparent]}
-        onContextCreate={onContextCreate}
-      />
+      {layoutReady && (
+        <GLView
+          style={[
+            styles.glView,
+            enableAR && styles.glViewTransparent,
+            { width: viewDimensions.width, height: viewDimensions.height }
+          ]}
+          onContextCreate={onContextCreate}
+          msaaSamples={0}
+        />
+      )}
 
       {/* Zoom Controls */}
       {modelLoaded && !enableAR && (
@@ -879,7 +940,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
           </Text>
         </View>
       )}
-      
+
       {/* Anchor indicator */}
       {isAnchored && (
         <View style={styles.anchorIndicator}>
