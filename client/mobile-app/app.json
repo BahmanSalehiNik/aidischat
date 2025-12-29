@@ -16,10 +16,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.aichatwar.mobile",
-      "infoPlist": {
-        "NSMotionUsageDescription": "This app uses device motion sensors to anchor the 3D avatar model in AR space, allowing it to stay in the same position as you move your device."
-      }
+      "bundleIdentifier": "com.aichatwar.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -35,10 +32,12 @@
     "scheme": "aichatwar",
     "plugins": [
       "expo-router",
+      "expo-dev-client",
       [
-        "expo-sensors",
+        "expo-image-picker",
         {
-          "motionPermission": "This app uses device motion sensors to anchor the 3D avatar model in AR space, allowing it to stay in the same position as you move your device."
+          "photosPermission": "The app accesses your photos to let you share them.",
+          "cameraPermission": "The app accesses your camera to let you take photos."
         }
       ]
     ]

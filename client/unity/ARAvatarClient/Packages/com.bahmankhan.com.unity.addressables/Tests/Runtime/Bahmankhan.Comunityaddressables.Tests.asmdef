@@ -1,0 +1,11 @@
+{
+    "name": "Bahmankhan.Comunityaddressables.Tests",
+    "references": [
+        "Bahmankhan.Comunityaddressables"
+    ],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": []
+}

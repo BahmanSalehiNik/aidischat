@@ -24,7 +24,7 @@ spec:
               cpu: "500m"
           env:
             - name: KAFKA_BROKER_URL
-              value: 'redpanda-srv:9092'
+              value: 'redpanda-external-srv:19092'
             - name: KAFKA_CLIENT_ID
               valueFrom:
                 fieldRef:

@@ -34,7 +34,7 @@ spec:
         - name: KAFKA_CLIENT_ID
           value: "agent-manager"
         - name: KAFKA_BROKER_URL
-          value: "redpanda-srv:9092"
+          value: "redpanda-external-srv:19092"
         # Azure Storage Configuration (for media uploads)
         - name: AZURE_STORAGE_ACCOUNT
           valueFrom:

@@ -1,2 +1,62 @@
+# Node / TypeScript / Next.js / tooling
 node_modules
+dist
+build
+.next
+.turbo
+.cache
+.tmp
+tmp
+coverage
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+
+# Env / secrets (keep examples tracked)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+
+# Unity (client/unity/ARAvatarClient and similar)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Ll]ogs/
+[Bb]uild/
+[Bb]uilds/
+[Mm]emoryCaptures/
+[Uu]serSettings/
+[Pp]lugins/
+[Rr]ecordings/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+.vs/
+
+# Mobile / React Native / Android / iOS
+*.iml
+android/.gradle/
+android/app/build/
+ios/Pods/
+ios/build/
+**/DerivedData/
+
+# Project-local ignores
 shared

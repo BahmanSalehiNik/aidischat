@@ -1,34 +1,34 @@
-# Service + Endpoints to expose Redpanda running outside k8s (Docker Compose)
-# This allows k8s pods to access Redpanda on the host machine
-# 
-# For Linux: Use host IP (192.168.178.179) or host.minikube.internal
-# For Mac/Windows: Can use host.docker.internal
+# Expose an external Redpanda (e.g., Docker Compose on the host) to k8s pods.
+# Use a distinct service name to avoid clashing with the in-cluster redpanda-srv.
+# Update the IP and port to match your host listener/advertise settings.
 #
-# To get your host IP: hostname -I | awk '{print $1}'
-# Or use: minikube ssh -- hostname -I | awk '{print $1}'
-
+# For Minikube (docker driver), the host-gateway IP is typically 192.168.58.1.
+# If your external listener is 19092 (OUTSIDE), point pods to this service at port 19092.
+#
+# After adding, point KAFKA_BROKER / KAFKA_BROKER_URL in deployments to:
+#   redpanda-external-srv:19092
+#
 apiVersion: v1
 kind: Endpoints
 metadata:
-  name: redpanda-srv
+  name: redpanda-external-srv
 subsets:
   - addresses:
-      - ip: 192.168.58.1  # Minikube host gateway IP (host.minikube.internal) - update this if your IP changes
+      - ip: 192.168.58.1  # host gateway IP (update if different)
     ports:
       - name: kafka
-        port: 9092
+        port: 19092       # external listener port
         protocol: TCP
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: redpanda-srv
+  name: redpanda-external-srv
 spec:
   ports:
     - name: kafka
-      port: 9092
-      targetPort: 9092
+      port: 19092
+      targetPort: 19092
       protocol: TCP
-  # No selector - endpoints are manually managed above
-
+  # No selector; endpoints are manually defined above
 
