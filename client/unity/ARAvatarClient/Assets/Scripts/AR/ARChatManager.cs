@@ -178,11 +178,12 @@ namespace AIChatAR.AR
         /// </summary>
         public void SetModelUrl(string url)
         {
-            // HARDCODED TEST URL (Robot Expressive)
-            // This is to verify that GLB loading and rendering works, independent of Azure SAS token issues.
-            // Use a known-good public GLB (Astronaut from modelviewer.dev)
-            url = "https://modelviewer.dev/shared-assets/models/Astronaut.glb";
-            Debug.LogWarning($"⚠️ [ARChatManager] FORCING HARDCODED TEST MODEL: {url}");
+            // HARDCODED TEST URL (GLTF with separate textures)
+            // This is to verify that GLTF loading and rendering works, independent of Azure SAS token issues.
+            // Use a known-good public GLTF with separate textures (Duck from Khronos glTF Sample Models)
+            // GLTF format with separate textures is more reliable for texture handling in Unity
+            url = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf";
+            Debug.LogWarning($"⚠️ [ARChatManager] FORCING HARDCODED TEST MODEL (GLTF with separate textures): {url}");
 
             if (!string.IsNullOrEmpty(url))
             {

@@ -58,7 +58,7 @@ namespace AIChatAR.AR
             // MANUAL TEST BUTTON
             if (GUI.Button(new Rect(20, Screen.height - 150, 300, 100), "LOAD TEST MODEL"))
             {
-               string testUrl = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF-Binary/Duck.glb";
+               string testUrl = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf";
                LoadModelFromUrl(testUrl);
             }
         }
@@ -223,8 +223,8 @@ namespace AIChatAR.AR
         public void LoadModelFromUrl(string url)
         {
             // HARDCODED OVERRIDE FOR DEBUGGING
-            // Use a known-good public GLB (Astronaut from modelviewer.dev)
-            url = "https://modelviewer.dev/shared-assets/models/Astronaut.glb";
+            // Use a known-good public GLTF (Duck from Khronos glTF Sample Models)
+            url = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf";
             Debug.LogWarning($"⚠️ [AvatarLoader] FORCING HARDCODED TEST MODEL: {url}");
 
             if (string.IsNullOrEmpty(url))
@@ -376,7 +376,7 @@ namespace AIChatAR.AR
         }
 
         /// <summary>
-        /// Coroutine to load GLB model using Unity's glTFast
+        /// Coroutine to load GLB/GLTF model using Unity's glTFast
         /// Replaced async Task with Coroutine to avoid synchronization context stalls
         /// </summary>
         private IEnumerator LoadGLBModel(string url)
@@ -439,52 +439,89 @@ namespace AIChatAR.AR
             
             yield return null; // Wait one frame to ensure UI updates
 
-            // --- STEP 1: DOWNLOAD (BLUE) ---
-            Debug.Log($"📥 [AvatarLoader] Starting Download...");
-            UpdateDebugState(Color.blue, 0.4f, $"Downloading from {url}..."); // BLUE = RETRIEVING
-            
-            byte[] modelData = null;
-            
-            using (UnityWebRequest webRequest = UnityWebRequest.Get(url))
-            {
-                yield return webRequest.SendWebRequest(); // Standard Coroutine Wait
-
-                if (webRequest.result != UnityWebRequest.Result.Success)
-                {
-                    Debug.LogError($"❌ [AvatarLoader] Network Error: {webRequest.error}");
-                    OnError?.Invoke($"Network Error: {webRequest.error}");
-                    UpdateDebugState(Color.red, 0.6f, $"Network Error: {webRequest.error}"); // RED = FAIL
-                    yield break;
-                }
-                
-                Debug.Log($"✅ [AvatarLoader] Download Success! {webRequest.downloadHandler.data.Length} bytes received.");
-                modelData = webRequest.downloadHandler.data;
-            }
-            
-            if (modelData == null || modelData.Length == 0)
-            {
-                Debug.LogError("❌ [AvatarLoader] Downloaded data is empty");
-                UpdateDebugState(Color.red, 0.6f, "Data Empty");
-                yield break;
-            }
-
-            // --- STEP 2: PARSE & LOAD (CYAN) ---
-            UpdateDebugState(Color.cyan, 0.3f, $"Parsing {modelData.Length} bytes..."); // CYAN = PARSING
-            Debug.Log($"📥 [AvatarLoader] Loading {modelData.Length} bytes into glTFast...");
+            // Detect format from URL
+            bool isGLTF = url.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase);
+            bool isGLB = url.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase);
             
             var gltf = new GltfImport();
-            
-            // Bridge Async Task to Coroutine
-            var loadTask = gltf.LoadGltfBinary(modelData);
-            while (!loadTask.IsCompleted) yield return null;
-            
-            bool success = loadTask.Result;
+            Task<bool> loadTask;
+            bool success = false;
+
+            if (isGLTF)
+            {
+                // GLTF format (JSON + separate files) - use Load with URL directly
+                // GLTFast will automatically download the .gltf file and all referenced resources (bin, textures)
+                Debug.Log("📦 [AvatarLoader] Detected GLTF format (JSON + separate textures)");
+                Debug.Log($"📦 [AvatarLoader] Loading GLTF directly from URL: {url}");
+                
+                // --- STEP 1: LOAD (BLUE) ---
+                UpdateDebugState(Color.blue, 0.4f, $"Loading GLTF from {url}..."); // BLUE = LOADING
+                
+                // For GLTF files, GLTFast can load directly from URL
+                // It will automatically resolve relative paths for .bin files and textures
+                loadTask = gltf.Load(url);
+                while (!loadTask.IsCompleted) yield return null;
+                
+                success = loadTask.Result;
+            }
+            else if (isGLB)
+            {
+                // GLB format (binary, embedded textures) - download first, then load
+                Debug.Log("📦 [AvatarLoader] Detected GLB format (binary, embedded textures)");
+                
+                // --- STEP 1: DOWNLOAD (BLUE) ---
+                Debug.Log($"📥 [AvatarLoader] Starting Download...");
+                UpdateDebugState(Color.blue, 0.4f, $"Downloading from {url}..."); // BLUE = RETRIEVING
+                
+                byte[] modelData = null;
+                
+                using (UnityWebRequest webRequest = UnityWebRequest.Get(url))
+                {
+                    yield return webRequest.SendWebRequest(); // Standard Coroutine Wait
+
+                    if (webRequest.result != UnityWebRequest.Result.Success)
+                    {
+                        Debug.LogError($"❌ [AvatarLoader] Network Error: {webRequest.error}");
+                        OnError?.Invoke($"Network Error: {webRequest.error}");
+                        UpdateDebugState(Color.red, 0.6f, $"Network Error: {webRequest.error}"); // RED = FAIL
+                        yield break;
+                    }
+                    
+                    Debug.Log($"✅ [AvatarLoader] Download Success! {webRequest.downloadHandler.data.Length} bytes received.");
+                    modelData = webRequest.downloadHandler.data;
+                }
+                
+                if (modelData == null || modelData.Length == 0)
+                {
+                    Debug.LogError("❌ [AvatarLoader] Downloaded data is empty");
+                    UpdateDebugState(Color.red, 0.6f, "Data Empty");
+                    yield break;
+                }
+
+                // --- STEP 2: PARSE & LOAD (CYAN) ---
+                UpdateDebugState(Color.cyan, 0.3f, $"Parsing {modelData.Length} bytes..."); // CYAN = PARSING
+                Debug.Log($"📥 [AvatarLoader] Loading {modelData.Length} bytes into glTFast...");
+                
+                // Bridge Async Task to Coroutine
+                loadTask = gltf.LoadGltfBinary(modelData);
+                while (!loadTask.IsCompleted) yield return null;
+                
+                success = loadTask.Result;
+            }
+            else
+            {
+                Debug.LogError($"❌ [AvatarLoader] Unknown format. URL must end with .gltf or .glb");
+                OnError?.Invoke("Unknown model format");
+                UpdateDebugState(Color.red, 0.6f, "Unknown Format");
+                yield break;
+            }
             
             if (!success)
             {
-                Debug.LogError($"❌ [AvatarLoader] glTFast.LoadGltfBinary returned false.");
-                OnError?.Invoke("Failed to parse 3D model data");
-                UpdateDebugState(Color.red, 0.6f, "Parse Failed");
+                string formatType = isGLTF ? "GLTF" : "GLB";
+                Debug.LogError($"❌ [AvatarLoader] glTFast.Load{formatType} returned false.");
+                OnError?.Invoke($"Failed to parse {formatType} 3D model data");
+                UpdateDebugState(Color.red, 0.6f, $"Parse Failed ({formatType})");
             }
             else
             {
@@ -545,124 +582,6 @@ namespace AIChatAR.AR
             loadModelCoroutine = null;
         }
         
-        // ... (State vars unchanged)
-
-        // ... (Inside PersistentFixer)
-        private IEnumerator ApplyURPFix(GameObject root)
-        {
-            Debug.Log("🛡️ [AvatarLoader] Applying URP Material Fix...");
-            yield return null; // Wait 1 frame only (No long delay)
-
-            if (root == null) yield break;
-
-            // REMOVED: DisableAnimatorAndPhysics(root); 
-            // We MUST let the animator run, otherwise the mesh might stay collapsed at (0,0,0) bind pose.
-            Debug.Log("   ✨ Animator left ENABLED to ensure mesh expansion.");
-
-            // 2. FORCE BOUNDS (Prevent Culling)
-            var skinnedMeshes = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            foreach (var smr in skinnedMeshes)
-            {
-                smr.updateWhenOffscreen = true;
-                smr.localBounds = new Bounds(Vector3.zero, Vector3.one * 10f); // Force giant bounds
-                Debug.Log($"   📦 Forced bounds on {smr.name} to 10m");
-            }
-
-            // 3. Fix Materials -> FORCE CYAN FOR DIAGNOSTIC
-            var renderers = root.GetComponentsInChildren<Renderer>(true);
-            Debug.Log($"🛡️ [AvatarLoader] DIAGNOSTIC: Forcing Cyan Material on {renderers.Length} renderers");
-
-            foreach (var r in renderers)
-            {
-                if (r == null) continue;
-                // Force Simple URP Cyan Material
-                Material cyanMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-                cyanMat.color = Color.cyan;
-                cyanMat.name = "DiagnosticCyan";
-                r.material = cyanMat;
-                Debug.Log($"   🎨 Forced Cyan on {r.name}");
-            }
-            debugMessage = "Success: Model Loaded (Cyan Diagnostic)";
-            
-            // 4. Force Layer to Default (0) - Recursively
-            void SetLayerRecursively(GameObject obj, int newLayer)
-            {
-                if (null == obj) return;
-                obj.layer = newLayer;
-                foreach (Transform child in obj.transform)
-                {
-                    if (null == child) continue;
-                    SetLayerRecursively(child.gameObject, newLayer);
-                }
-            }
-            SetLayerRecursively(root, 0); // Layer 0 = Default
-            Debug.Log("🛡️ [AvatarLoader] Forced Layer to DEFAULT (0) recursively.");
-
-            // 5. GEOMETRY CENTERING (Pull mesh to pivot)
-            // Calculate total bounds again
-            Bounds totalBounds = new Bounds(root.transform.position, Vector3.zero);
-            var renderers2 = root.GetComponentsInChildren<Renderer>(true);
-            if (renderers2.Length > 0)
-            {
-                totalBounds = renderers2[0].bounds;
-                foreach (var r in renderers2) totalBounds.Encapsulate(r.bounds);
-                
-                // If Center is far from Pivot (Root Position), move Root to compensate
-                Vector3 centerWorld = totalBounds.center;
-                Vector3 pivotWorld = root.transform.position;
-                Vector3 offset = pivotWorld - centerWorld;
-                
-                // Only center if significant offset (> 1m)
-                if (offset.magnitude > 1.0f)
-                {
-                     Debug.LogWarning($"⚠️ [AvatarLoader] Mesh is offset by {offset} from Pivot. Recentering...");
-                     // We can't move the root because that moves the bounds.
-                     // We must move the children? Or just offset the root's position?
-                     // Moving the Children is safer for the wrapper.
-                     foreach (Transform child in root.transform)
-                     {
-                         child.position += offset;
-                     }
-                     Debug.Log("   ✅ Moved children to align Mesh Center with Pivot.");
-                }
-            }
-            // End Geometry Centering
-
-            /*
-            if (baseMaterial != null)
-            {
-                // ... (Disabled original logic for diagnostic)
-            }
-            */
-
-            // One final stats check
-            try { DebugModelStats(root); } catch { }
-        }
-
-        private void DisableAnimatorAndPhysics(GameObject root)
-        {
-            // 1. Disable Animator
-            var animators = root.GetComponentsInChildren<Animator>(true);
-            foreach (var anim in animators) { if(anim.enabled) anim.enabled = false; }
-            
-            // 2. Disable Animation
-            var animations = root.GetComponentsInChildren<Animation>(true);
-            foreach (var anim in animations) { if(anim.enabled) anim.enabled = false; }
-            
-            // 3. Disable Physics
-            var rbs = root.GetComponentsInChildren<Rigidbody>(true);
-            foreach (var rb in rbs) { if(!rb.isKinematic) rb.isKinematic = true; }
-            
-            // 4. PREVENT CULLING
-            var skinnedMeshes = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            foreach (var smr in skinnedMeshes) { smr.updateWhenOffscreen = true; }
-        }
-
-        private void FixMaterials(GameObject root)
-        {
-            // Deprecated - logic moved to PersistentFixer to share the material instance
-        }
-
         private void SetupAvatarTransform()
         {
              // Position avatar in AR space
@@ -769,78 +688,6 @@ namespace AIChatAR.AR
             }
         }
 
-        private void DebugModelStats(GameObject root)
-        {
-            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
-            Debug.Log($"📊 [AvatarLoader] Model Stats: {renderers.Length} renderers found.");
-            
-            if (renderers.Length == 0)
-            {
-                Debug.LogError("❌ [AvatarLoader] No renderers found in loaded model! It might be empty.");
-                return;
-            }
-
-            Bounds bounds = new Bounds(renderers[0].bounds.center, Vector3.zero);
-            foreach (Renderer r in renderers)
-            {
-                bounds.Encapsulate(r.bounds);
-                Debug.Log($"   🔹 Mesh: {r.name}, Enabled: {r.enabled}, Bounds: {r.bounds}, Material: {r.sharedMaterial?.name}, Shader: {r.sharedMaterial?.shader?.name}");
-            }
-            
-            Debug.Log($"📊 [AvatarLoader] Total Bounds: {bounds}, Size: {bounds.size}");
-            // OFFSET CHECK: Distance from Root (Pivot) to Mesh Center
-            float offsetDist = Vector3.Distance(root.transform.position, bounds.center);
-            Debug.Log($"📏 [AvatarLoader] Pivot Offset: {offsetDist}m (Center at {bounds.center})");
-            
-            debugMessage += $"\nRenderers: {renderers.Length}, Size: {bounds.size}";
-            
-            // Check if it's too small or too big
-            if (bounds.size.magnitude < 0.01f)
-            {
-                // BLIND FALLBACK: 100x failed. Try 1000x (NUCLEAR OPTION)
-                if (bounds.size.magnitude <= 0.0001f)
-                {
-                     Debug.LogWarning($"⚠️ [AvatarLoader] Model bounds are ZERO. NUCLEAR OPTION: Force Scale 1000.0x");
-                     root.transform.localScale = Vector3.one * 1000.0f;
-                }
-                else
-                {
-                    Debug.LogWarning("⚠️ [AvatarLoader] Model is extremely small! Scaling up...");
-                    float scaleFactor = 1.5f / bounds.size.magnitude;
-                    if (!float.IsInfinity(scaleFactor) && !float.IsNaN(scaleFactor))
-                    {
-                        root.transform.localScale = Vector3.one * scaleFactor;
-                        Debug.Log($"   Scale Factor applied: {scaleFactor}");
-                    }
-                }
-            }
-            else if (bounds.size.magnitude > 100f)
-            {
-                  Debug.LogWarning("⚠️ [AvatarLoader] Model is extremely large! Scaling down...");
-                  float scaleFactor = 1.5f / bounds.size.magnitude;
-                  root.transform.localScale = Vector3.one * scaleFactor;
-                  Debug.Log($"   Scale Factor applied: {scaleFactor}");
-            }
-        }
-
-        private void ForceVisibleMaterial(GameObject root)
-        {
-            Debug.Log("🎨 [AvatarLoader] FORCING VISIBLE MATERIAL (Orange)");
-            var renderers = root.GetComponentsInChildren<Renderer>(true);
-            Material debugMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-            if (debugMat == null) debugMat = new Material(Shader.Find("Unlit/Color")); // Fallback
-            
-            debugMat.color = new Color(1f, 0.5f, 0f, 1f); // Bright Orange
-            debugMat.name = "DebugOrange";
-
-            foreach (var r in renderers)
-            {
-                r.sharedMaterial = debugMat;
-            }
-        }
-
-        // Removed UpdateDebugState to clean up UI
-
         /// <summary>
         /// Set agent ID and start loading
         /// </summary>
@@ -888,4 +735,3 @@ namespace AIChatAR.AR
         }
     }
 }
-
