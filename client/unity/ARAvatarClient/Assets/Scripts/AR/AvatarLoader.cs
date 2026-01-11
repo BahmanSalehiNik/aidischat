@@ -20,6 +20,7 @@ namespace AIChatAR.AR
         [Header("Configuration")]
         [SerializeField] private string agentId;
         [SerializeField] private float pollInterval = 2.0f;
+        [SerializeField] private Material baseMaterial; // Drag a URP/Lit material here!
 
         [Header("References")]
         [SerializeField] private Transform avatarParent;
@@ -40,7 +41,7 @@ namespace AIChatAR.AR
         public System.Action<string> OnError;
 
         // DEBUG GUI
-        private string debugMessage = "AvatarLoader: Waiting for Start...";
+        private string debugMessage = "AvatarLoader: Initializing...";
         private GUIStyle debugStyle;
 
         void OnGUI()
@@ -69,15 +70,26 @@ namespace AIChatAR.AR
                 avatarAPI = FindObjectOfType<AvatarAPI>();
             }
 
-            // Don't auto-load - wait for explicit LoadModelFromUrl() call from ARChatManager
-            // This ensures AR session is initialized before loading
-            Debug.Log("ℹ️ [AvatarLoader] AvatarLoader initialized. Waiting for model URL...");
+            // Auto-start if agentId is set (restored to fix "Waiting for start" issue)
+            if (!string.IsNullOrEmpty(agentId))
+            {
+                Debug.Log($"ℹ️ [AvatarLoader] AvatarLoader initialized with agentId: {agentId}. Starting polling...");
+                StartPollingStatus();
+            }
+            else
+            {
+                Debug.Log("ℹ️ [AvatarLoader] AvatarLoader initialized. Waiting for agentId or model URL...");
+            }
         }
 
         void OnEnable()
         {
-            // Don't auto-start - wait for explicit StartPollingStatus() call
-            // This matches React Native behavior where polling starts when component mounts
+            // Auto-start if agentId is set and not already polling (restored to fix "Waiting for start" issue)
+            if (!string.IsNullOrEmpty(agentId) && !isPolling)
+            {
+                Debug.Log($"ℹ️ [AvatarLoader] OnEnable: Starting polling for agentId: {agentId}");
+                StartPollingStatus();
+            }
         }
 
         void OnDisable()
@@ -387,7 +399,7 @@ namespace AIChatAR.AR
                 loadedAvatar = new GameObject("Avatar");
                 
                 debugMessage = "Setting up Transform...";
-                SetupAvatarTransform(); // Helper method for positioning
+                SetupAvatarTransform(); // Helper method for positioning - CRITICAL: Called BEFORE downloading
                 
                 // Generate DEBUG SPHERE (Purple)
                 Debug.LogWarning("⚠️ [AvatarLoader] Creating DEBUG_SPHERE (Pre-load)");
@@ -528,6 +540,127 @@ namespace AIChatAR.AR
                 }
             }
             gltf.Dispose();
+            
+            // Clear coroutine reference when done
+            loadModelCoroutine = null;
+        }
+        
+        // ... (State vars unchanged)
+
+        // ... (Inside PersistentFixer)
+        private IEnumerator ApplyURPFix(GameObject root)
+        {
+            Debug.Log("🛡️ [AvatarLoader] Applying URP Material Fix...");
+            yield return null; // Wait 1 frame only (No long delay)
+
+            if (root == null) yield break;
+
+            // REMOVED: DisableAnimatorAndPhysics(root); 
+            // We MUST let the animator run, otherwise the mesh might stay collapsed at (0,0,0) bind pose.
+            Debug.Log("   ✨ Animator left ENABLED to ensure mesh expansion.");
+
+            // 2. FORCE BOUNDS (Prevent Culling)
+            var skinnedMeshes = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            foreach (var smr in skinnedMeshes)
+            {
+                smr.updateWhenOffscreen = true;
+                smr.localBounds = new Bounds(Vector3.zero, Vector3.one * 10f); // Force giant bounds
+                Debug.Log($"   📦 Forced bounds on {smr.name} to 10m");
+            }
+
+            // 3. Fix Materials -> FORCE CYAN FOR DIAGNOSTIC
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            Debug.Log($"🛡️ [AvatarLoader] DIAGNOSTIC: Forcing Cyan Material on {renderers.Length} renderers");
+
+            foreach (var r in renderers)
+            {
+                if (r == null) continue;
+                // Force Simple URP Cyan Material
+                Material cyanMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                cyanMat.color = Color.cyan;
+                cyanMat.name = "DiagnosticCyan";
+                r.material = cyanMat;
+                Debug.Log($"   🎨 Forced Cyan on {r.name}");
+            }
+            debugMessage = "Success: Model Loaded (Cyan Diagnostic)";
+            
+            // 4. Force Layer to Default (0) - Recursively
+            void SetLayerRecursively(GameObject obj, int newLayer)
+            {
+                if (null == obj) return;
+                obj.layer = newLayer;
+                foreach (Transform child in obj.transform)
+                {
+                    if (null == child) continue;
+                    SetLayerRecursively(child.gameObject, newLayer);
+                }
+            }
+            SetLayerRecursively(root, 0); // Layer 0 = Default
+            Debug.Log("🛡️ [AvatarLoader] Forced Layer to DEFAULT (0) recursively.");
+
+            // 5. GEOMETRY CENTERING (Pull mesh to pivot)
+            // Calculate total bounds again
+            Bounds totalBounds = new Bounds(root.transform.position, Vector3.zero);
+            var renderers2 = root.GetComponentsInChildren<Renderer>(true);
+            if (renderers2.Length > 0)
+            {
+                totalBounds = renderers2[0].bounds;
+                foreach (var r in renderers2) totalBounds.Encapsulate(r.bounds);
+                
+                // If Center is far from Pivot (Root Position), move Root to compensate
+                Vector3 centerWorld = totalBounds.center;
+                Vector3 pivotWorld = root.transform.position;
+                Vector3 offset = pivotWorld - centerWorld;
+                
+                // Only center if significant offset (> 1m)
+                if (offset.magnitude > 1.0f)
+                {
+                     Debug.LogWarning($"⚠️ [AvatarLoader] Mesh is offset by {offset} from Pivot. Recentering...");
+                     // We can't move the root because that moves the bounds.
+                     // We must move the children? Or just offset the root's position?
+                     // Moving the Children is safer for the wrapper.
+                     foreach (Transform child in root.transform)
+                     {
+                         child.position += offset;
+                     }
+                     Debug.Log("   ✅ Moved children to align Mesh Center with Pivot.");
+                }
+            }
+            // End Geometry Centering
+
+            /*
+            if (baseMaterial != null)
+            {
+                // ... (Disabled original logic for diagnostic)
+            }
+            */
+
+            // One final stats check
+            try { DebugModelStats(root); } catch { }
+        }
+
+        private void DisableAnimatorAndPhysics(GameObject root)
+        {
+            // 1. Disable Animator
+            var animators = root.GetComponentsInChildren<Animator>(true);
+            foreach (var anim in animators) { if(anim.enabled) anim.enabled = false; }
+            
+            // 2. Disable Animation
+            var animations = root.GetComponentsInChildren<Animation>(true);
+            foreach (var anim in animations) { if(anim.enabled) anim.enabled = false; }
+            
+            // 3. Disable Physics
+            var rbs = root.GetComponentsInChildren<Rigidbody>(true);
+            foreach (var rb in rbs) { if(!rb.isKinematic) rb.isKinematic = true; }
+            
+            // 4. PREVENT CULLING
+            var skinnedMeshes = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            foreach (var smr in skinnedMeshes) { smr.updateWhenOffscreen = true; }
+        }
+
+        private void FixMaterials(GameObject root)
+        {
+            // Deprecated - logic moved to PersistentFixer to share the material instance
         }
 
         private void SetupAvatarTransform()
@@ -635,6 +768,78 @@ namespace AIChatAR.AR
                 Debug.Log($"⚠️ [AvatarLoader] Debug State: Color={color}, Scale={scale}");
             }
         }
+
+        private void DebugModelStats(GameObject root)
+        {
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            Debug.Log($"📊 [AvatarLoader] Model Stats: {renderers.Length} renderers found.");
+            
+            if (renderers.Length == 0)
+            {
+                Debug.LogError("❌ [AvatarLoader] No renderers found in loaded model! It might be empty.");
+                return;
+            }
+
+            Bounds bounds = new Bounds(renderers[0].bounds.center, Vector3.zero);
+            foreach (Renderer r in renderers)
+            {
+                bounds.Encapsulate(r.bounds);
+                Debug.Log($"   🔹 Mesh: {r.name}, Enabled: {r.enabled}, Bounds: {r.bounds}, Material: {r.sharedMaterial?.name}, Shader: {r.sharedMaterial?.shader?.name}");
+            }
+            
+            Debug.Log($"📊 [AvatarLoader] Total Bounds: {bounds}, Size: {bounds.size}");
+            // OFFSET CHECK: Distance from Root (Pivot) to Mesh Center
+            float offsetDist = Vector3.Distance(root.transform.position, bounds.center);
+            Debug.Log($"📏 [AvatarLoader] Pivot Offset: {offsetDist}m (Center at {bounds.center})");
+            
+            debugMessage += $"\nRenderers: {renderers.Length}, Size: {bounds.size}";
+            
+            // Check if it's too small or too big
+            if (bounds.size.magnitude < 0.01f)
+            {
+                // BLIND FALLBACK: 100x failed. Try 1000x (NUCLEAR OPTION)
+                if (bounds.size.magnitude <= 0.0001f)
+                {
+                     Debug.LogWarning($"⚠️ [AvatarLoader] Model bounds are ZERO. NUCLEAR OPTION: Force Scale 1000.0x");
+                     root.transform.localScale = Vector3.one * 1000.0f;
+                }
+                else
+                {
+                    Debug.LogWarning("⚠️ [AvatarLoader] Model is extremely small! Scaling up...");
+                    float scaleFactor = 1.5f / bounds.size.magnitude;
+                    if (!float.IsInfinity(scaleFactor) && !float.IsNaN(scaleFactor))
+                    {
+                        root.transform.localScale = Vector3.one * scaleFactor;
+                        Debug.Log($"   Scale Factor applied: {scaleFactor}");
+                    }
+                }
+            }
+            else if (bounds.size.magnitude > 100f)
+            {
+                  Debug.LogWarning("⚠️ [AvatarLoader] Model is extremely large! Scaling down...");
+                  float scaleFactor = 1.5f / bounds.size.magnitude;
+                  root.transform.localScale = Vector3.one * scaleFactor;
+                  Debug.Log($"   Scale Factor applied: {scaleFactor}");
+            }
+        }
+
+        private void ForceVisibleMaterial(GameObject root)
+        {
+            Debug.Log("🎨 [AvatarLoader] FORCING VISIBLE MATERIAL (Orange)");
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            Material debugMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+            if (debugMat == null) debugMat = new Material(Shader.Find("Unlit/Color")); // Fallback
+            
+            debugMat.color = new Color(1f, 0.5f, 0f, 1f); // Bright Orange
+            debugMat.name = "DebugOrange";
+
+            foreach (var r in renderers)
+            {
+                r.sharedMaterial = debugMat;
+            }
+        }
+
+        // Removed UpdateDebugState to clean up UI
 
         /// <summary>
         /// Set agent ID and start loading

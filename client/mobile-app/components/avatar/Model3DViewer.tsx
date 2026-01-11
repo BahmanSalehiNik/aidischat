@@ -327,17 +327,7 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
       plane.receiveShadow = true;
       scene.add(plane);
 
-      // Add Debug Sphere (Purple) to verify scene rendering
-      // This is helpful if the model itself is invisible or fails to load
-      const debugGeometry = new THREE.SphereGeometry(0.5, 16, 16);
-      const debugMaterial = new THREE.MeshBasicMaterial({
-        color: 0x800080, // Purple
-        wireframe: true  // Wireframe to differentiate from model
-      });
-      const debugSphere = new THREE.Mesh(debugGeometry, debugMaterial);
-      debugSphere.position.set(2, 0, 0); // Position to the right
-      scene.add(debugSphere);
-      console.log('🟣 [Model3DViewer] Added debug sphere at (2, 0, 0)');
+      // Debug sphere removed - was causing confusion with purple model issue
 
       // Load GLB/GLTF model
       console.log(`🏁 [Model3DViewer] Loading model from URL: ${modelUrl}`);
@@ -410,11 +400,14 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
             // Handle both single material and material arrays
             const materials = Array.isArray(child.material) ? child.material : [child.material];
             materials.forEach((mat: THREE.Material) => {
-              // Enable color rendering for all material types
+              // Handle all material types that can render colors
               if (mat instanceof THREE.MeshStandardMaterial ||
                 mat instanceof THREE.MeshBasicMaterial ||
                 mat instanceof THREE.MeshPhongMaterial ||
-                mat instanceof THREE.MeshLambertMaterial) {
+                mat instanceof THREE.MeshLambertMaterial ||
+                mat instanceof THREE.MeshPhysicalMaterial ||
+                mat instanceof THREE.MeshToonMaterial) {
+                
                 // Force material update to ensure textures/colors load
                 mat.needsUpdate = true;
 
@@ -427,22 +420,69 @@ export const Model3DViewer: React.FC<Model3DViewerProps> = ({
                 // Ensure material is visible
                 mat.visible = true;
 
-                // For MeshStandardMaterial, ensure textures are loaded
-                if (mat instanceof THREE.MeshStandardMaterial) {
-                  // Force texture updates
-                  if (mat.map) mat.map.needsUpdate = true;
-                  if (mat.normalMap) mat.normalMap.needsUpdate = true;
-                  if (mat.roughnessMap) mat.roughnessMap.needsUpdate = true;
-                  if (mat.metalnessMap) mat.metalnessMap.needsUpdate = true;
+                // For PBR materials (Standard, Physical), ensure textures are loaded properly
+                if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
+                  // Force texture updates and handle missing textures
+                  const textureProps = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap'];
+                  textureProps.forEach(prop => {
+                    const texture = (mat as any)[prop];
+                    if (texture) {
+                      texture.needsUpdate = true;
+                      // Ensure texture is valid
+                      if (texture.image && !texture.image.complete) {
+                        texture.onLoad = () => {
+                          texture.needsUpdate = true;
+                          mat.needsUpdate = true;
+                        };
+                        texture.onError = () => {
+                          console.warn(`⚠️ [Model3DViewer] Texture ${prop} failed to load, using fallback color`);
+                          // Remove failed texture
+                          (mat as any)[prop] = null;
+                          mat.needsUpdate = true;
+                        };
+                      }
+                    }
+                  });
 
-                  // Ensure material uses color if no texture
-                  if (!mat.map && mat.color) {
-                    mat.color.setHex(0xffffff); // White base color
+                  // If no diffuse texture, ensure we have a proper base color
+                  if (!mat.map) {
+                    // Use the material's color if set, otherwise default to white
+                    if (!mat.color || mat.color.getHex() === 0x000000) {
+                      mat.color.setHex(0xcccccc); // Light gray instead of black
+                    }
+                    // Set reasonable defaults for PBR materials
+                    if (mat instanceof THREE.MeshStandardMaterial) {
+                      mat.roughness = mat.roughness ?? 0.7;
+                      mat.metalness = mat.metalness ?? 0.1;
+                    }
+                  }
+                }
+
+                // For basic materials, ensure color is set
+                if (mat instanceof THREE.MeshBasicMaterial) {
+                  if (!mat.color || mat.color.getHex() === 0x000000) {
+                    mat.color.setHex(0xcccccc);
                   }
                 }
 
                 // Force material to update again
                 mat.needsUpdate = true;
+              } else {
+                // For unknown material types, try to convert to MeshStandardMaterial
+                console.warn(`⚠️ [Model3DViewer] Unknown material type: ${mat.constructor.name}, converting to MeshStandardMaterial`);
+                try {
+                  const newMat = new THREE.MeshStandardMaterial({
+                    color: (mat as any).color?.getHex() || 0xcccccc,
+                    map: (mat as any).map || null,
+                    roughness: 0.7,
+                    metalness: 0.1,
+                  });
+                  child.material = Array.isArray(child.material) 
+                    ? child.material.map(() => newMat)
+                    : newMat;
+                } catch (e) {
+                  console.error(`❌ [Model3DViewer] Failed to convert material:`, e);
+                }
               }
             });
             // Force geometry update
