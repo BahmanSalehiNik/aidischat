@@ -58,8 +58,7 @@ namespace AIChatAR.AR
             // MANUAL TEST BUTTON
             if (GUI.Button(new Rect(20, Screen.height - 150, 300, 100), "LOAD TEST MODEL"))
             {
-               // GLB (binary glTF) - embedded resources, fewer URL resolution issues than .gltf
-               string testUrl = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF-Binary/Duck.glb";
+               string testUrl = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf";
                LoadModelFromUrl(testUrl);
             }
         }
@@ -224,8 +223,8 @@ namespace AIChatAR.AR
         public void LoadModelFromUrl(string url)
         {
             // HARDCODED OVERRIDE FOR DEBUGGING
-            // Use a known-good public GLB (Duck from Khronos glTF Sample Models)
-            url = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF-Binary/Duck.glb";
+            // Use a known-good public GLTF (Duck from Khronos glTF Sample Models)
+            url = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF/Duck.gltf";
             Debug.LogWarning($"⚠️ [AvatarLoader] FORCING HARDCODED TEST MODEL: {url}");
 
             if (string.IsNullOrEmpty(url))
