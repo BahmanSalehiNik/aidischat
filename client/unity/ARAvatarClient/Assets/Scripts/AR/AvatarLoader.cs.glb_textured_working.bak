@@ -29,6 +29,7 @@ namespace AIChatAR.AR
         // State
         private AvatarStatus currentStatus;
         private GameObject loadedAvatar;
+        private GameObject debugSphere;
         private Coroutine statusPollCoroutine;
         private Coroutine loadModelCoroutine;
         private bool isPolling = false;
@@ -53,8 +54,14 @@ namespace AIChatAR.AR
                 debugStyle.wordWrap = true;
             }
             GUI.Label(new Rect(20, 20, Screen.width - 40, 600), debugMessage, debugStyle);
-
-            // NOTE: Hardcoded test URLs removed. Use Meshy/Azure-provided URLs (deeplink / backend) instead.
+            
+            // MANUAL TEST BUTTON
+            if (GUI.Button(new Rect(20, Screen.height - 150, 300, 100), "LOAD TEST MODEL"))
+            {
+               // GLB (binary glTF) - embedded resources, fewer URL resolution issues than .gltf
+               string testUrl = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF-Binary/Duck.glb";
+               LoadModelFromUrl(testUrl);
+            }
         }
 
         void Start()
@@ -216,8 +223,10 @@ namespace AIChatAR.AR
         /// </summary>
         public void LoadModelFromUrl(string url)
         {
-            // MODIFICATION vs backup:
-            // Do NOT force a hardcoded test URL. Use the URL passed in (Meshy/Azure).
+            // HARDCODED OVERRIDE FOR DEBUGGING
+            // Use a known-good public GLB (Duck from Khronos glTF Sample Models)
+            url = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF-Binary/Duck.glb";
+            Debug.LogWarning($"⚠️ [AvatarLoader] FORCING HARDCODED TEST MODEL: {url}");
 
             if (string.IsNullOrEmpty(url))
             {
@@ -225,7 +234,7 @@ namespace AIChatAR.AR
                 OnError?.Invoke("Model URL is empty");
                 return;
             }
-
+            
             // Check if AR session is initialized
             var arSession = FindObjectOfType<ARSession>();
             if (arSession == null)
@@ -236,7 +245,7 @@ namespace AIChatAR.AR
             {
                 Debug.Log($"✅ [AvatarLoader] AR Session found: {arSession.name}, State: {arSession.subsystem?.running ?? false}");
             }
-
+            
             // Check for AR origin
             var xrOrigin = FindObjectOfType<XROrigin>();
             var arSessionOrigin = FindObjectOfType<ARSessionOrigin>();
@@ -263,13 +272,13 @@ namespace AIChatAR.AR
                 Debug.Log("⚠️ [AvatarLoader] Stopping previous load coroutine");
                 StopCoroutine(loadModelCoroutine);
             }
-
+            
             Debug.Log("📥 [AvatarLoader] Starting LoadGLBModel coroutine...");
-
+            
             // Wait for AR session to initialize, then load model
             StartCoroutine(WaitForARAndLoad(decodedUrl));
         }
-
+        
         /// <summary>
         /// Wait for AR session to initialize, then load model
         /// </summary>
@@ -278,12 +287,12 @@ namespace AIChatAR.AR
             // Wait a few frames for AR session to initialize
             yield return new WaitForEndOfFrame();
             yield return new WaitForEndOfFrame();
-
+            
             // Check AR session
             var arSession = FindObjectOfType<ARSession>();
             int waitFrames = 0;
             int maxWaitFrames = 300; // Wait up to 5 seconds (60fps * 5)
-
+            
             // Wait for AR session to exist
             while (arSession == null && waitFrames < maxWaitFrames)
             {
@@ -291,7 +300,7 @@ namespace AIChatAR.AR
                 waitFrames++;
                 arSession = FindObjectOfType<ARSession>();
             }
-
+            
             if (arSession == null)
             {
                 Debug.LogWarning("⚠️ [AvatarLoader] AR Session not found after waiting, but proceeding with model load anyway");
@@ -299,18 +308,18 @@ namespace AIChatAR.AR
             else
             {
                 Debug.Log($"✅ [AvatarLoader] AR Session found after {waitFrames} frames");
-
+                
                 // Wait for AR session to be tracking (optional - don't wait too long)
                 int trackingWaitFrames = 0;
                 int maxTrackingWait = 120; // Wait up to 2 seconds for tracking
-                while (ARSession.state != ARSessionState.SessionTracking &&
+                while (ARSession.state != ARSessionState.SessionTracking && 
                        ARSession.state != ARSessionState.SessionInitializing &&
                        trackingWaitFrames < maxTrackingWait)
                 {
                     yield return null;
                     trackingWaitFrames++;
                 }
-
+                
                 if (ARSession.state == ARSessionState.SessionTracking)
                 {
                     Debug.Log($"✅ [AvatarLoader] AR Session is tracking after {trackingWaitFrames} frames");
@@ -324,7 +333,7 @@ namespace AIChatAR.AR
                     Debug.LogWarning($"⚠️ [AvatarLoader] AR Session state is {ARSession.state}, proceeding with model load anyway");
                 }
             }
-
+            
             // Now load the model
             Debug.Log("📥 [AvatarLoader] Starting model load coroutine...");
             loadModelCoroutine = StartCoroutine(LoadGLBModel(url));
@@ -376,26 +385,51 @@ namespace AIChatAR.AR
             Debug.Log($"📥 [AvatarLoader] Starting LoadGLBModel Coroutine with URL: {url}");
             debugMessage = "Coroutine Started...";
             yield return null;
-
-            // Backup behavior: safe shader fallback for forced visibility
+            
             Shader safeShader = Shader.Find("Unlit/Color");
             if (safeShader == null) safeShader = Shader.Find("Mobile/Diffuse");
             if (safeShader == null) safeShader = Shader.Find("Standard");
 
             // --- CLEANUP & SETUP (PURPLE) ---
-            try
+            try 
             {
                 debugMessage = "Cleaning up...";
                 if (loadedAvatar != null) Destroy(loadedAvatar);
-
+                if (debugSphere != null) Destroy(debugSphere);
+                
                 loadedAvatar = new GameObject("Avatar");
-
+                
                 debugMessage = "Setting up Transform...";
                 SetupAvatarTransform(); // Helper method for positioning - CRITICAL: Called BEFORE downloading
-
-                // MODIFICATION vs backup:
-                // Sphere/debugSphere removed.
-                debugMessage = "Initializing...";
+                
+                // Generate DEBUG SPHERE (Purple)
+                Debug.LogWarning("⚠️ [AvatarLoader] Creating DEBUG_SPHERE (Pre-load)");
+                debugSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                debugSphere.name = "DEBUG_SPHERE";
+                
+                if (loadedAvatar.transform.parent != null)
+                {
+                    debugSphere.transform.SetParent(loadedAvatar.transform.parent);
+                    debugSphere.transform.localPosition = loadedAvatar.transform.localPosition;
+                }
+                else
+                {
+                    debugSphere.transform.position = loadedAvatar.transform.position;
+                }
+                
+                if (safeShader != null)
+                {
+                    Material sphereMaterial = new Material(safeShader);
+                    if (debugSphere.GetComponent<Renderer>() != null)
+                        debugSphere.GetComponent<Renderer>().material = sphereMaterial;
+                }
+                else
+                {
+                    Debug.LogWarning("⚠️ [AvatarLoader] No suitable shader found. Using default material.");
+                }
+                
+                // SET STATE: PURPLE (Init)
+                UpdateDebugState(new Color(0.5f, 0f, 0.5f), 0.5f, "Initializing (Purple)...");
             }
             catch (System.Exception e)
             {
@@ -403,19 +437,13 @@ namespace AIChatAR.AR
                 debugMessage = $"CRASH in Setup:\n{e.Message}";
                 yield break;
             }
-
+            
             yield return null; // Wait one frame to ensure UI updates
 
-            // Detect format from URL (Azure SAS URLs include query strings, so strip ?/# first)
-            string urlNoQuery = url;
-            int q = urlNoQuery.IndexOf('?');
-            if (q >= 0) urlNoQuery = urlNoQuery.Substring(0, q);
-            int h = urlNoQuery.IndexOf('#');
-            if (h >= 0) urlNoQuery = urlNoQuery.Substring(0, h);
-
-            bool isGLTF = urlNoQuery.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase);
-            bool isGLB = urlNoQuery.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase);
-
+            // Detect format from URL
+            bool isGLTF = url.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase);
+            bool isGLB = url.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase);
+            
             var gltf = new GltfImport();
             Task<bool> loadTask;
             bool success = false;
@@ -426,28 +454,28 @@ namespace AIChatAR.AR
                 // GLTFast will automatically download the .gltf file and all referenced resources (bin, textures)
                 Debug.Log("📦 [AvatarLoader] Detected GLTF format (JSON + separate textures)");
                 Debug.Log($"📦 [AvatarLoader] Loading GLTF directly from URL: {url}");
-
+                
                 // --- STEP 1: LOAD (BLUE) ---
-                debugMessage = $"Loading GLTF from\n{url}";
-
+                UpdateDebugState(Color.blue, 0.4f, $"Loading GLTF from {url}..."); // BLUE = LOADING
+                
                 // For GLTF files, GLTFast can load directly from URL
                 // It will automatically resolve relative paths for .bin files and textures
                 loadTask = gltf.Load(url);
                 while (!loadTask.IsCompleted) yield return null;
-
+                
                 success = loadTask.Result;
             }
             else if (isGLB)
             {
                 // GLB format (binary, embedded textures) - download first, then load
                 Debug.Log("📦 [AvatarLoader] Detected GLB format (binary, embedded textures)");
-
+                
                 // --- STEP 1: DOWNLOAD (BLUE) ---
                 Debug.Log($"📥 [AvatarLoader] Starting Download...");
-                debugMessage = $"Downloading...\n{url}";
-
+                UpdateDebugState(Color.blue, 0.4f, $"Downloading from {url}..."); // BLUE = RETRIEVING
+                
                 byte[] modelData = null;
-
+                
                 using (UnityWebRequest webRequest = UnityWebRequest.Get(url))
                 {
                     yield return webRequest.SendWebRequest(); // Standard Coroutine Wait
@@ -456,75 +484,75 @@ namespace AIChatAR.AR
                     {
                         Debug.LogError($"❌ [AvatarLoader] Network Error: {webRequest.error}");
                         OnError?.Invoke($"Network Error: {webRequest.error}");
-                        debugMessage = $"Network Error:\n{webRequest.error}";
+                        UpdateDebugState(Color.red, 0.6f, $"Network Error: {webRequest.error}"); // RED = FAIL
                         yield break;
                     }
-
+                    
                     Debug.Log($"✅ [AvatarLoader] Download Success! {webRequest.downloadHandler.data.Length} bytes received.");
                     modelData = webRequest.downloadHandler.data;
                 }
-
+                
                 if (modelData == null || modelData.Length == 0)
                 {
                     Debug.LogError("❌ [AvatarLoader] Downloaded data is empty");
-                    debugMessage = "Data Empty";
+                    UpdateDebugState(Color.red, 0.6f, "Data Empty");
                     yield break;
                 }
 
                 // --- STEP 2: PARSE & LOAD (CYAN) ---
-                debugMessage = $"Parsing {modelData.Length} bytes...";
+                UpdateDebugState(Color.cyan, 0.3f, $"Parsing {modelData.Length} bytes..."); // CYAN = PARSING
                 Debug.Log($"📥 [AvatarLoader] Loading {modelData.Length} bytes into glTFast...");
-
+                
                 // Bridge Async Task to Coroutine
                 loadTask = gltf.LoadGltfBinary(modelData);
                 while (!loadTask.IsCompleted) yield return null;
-
+                
                 success = loadTask.Result;
             }
             else
             {
                 Debug.LogError($"❌ [AvatarLoader] Unknown format. URL must end with .gltf or .glb");
                 OnError?.Invoke("Unknown model format");
-                debugMessage = "Unknown Format";
+                UpdateDebugState(Color.red, 0.6f, "Unknown Format");
                 yield break;
             }
-
+            
             if (!success)
             {
                 string formatType = isGLTF ? "GLTF" : "GLB";
                 Debug.LogError($"❌ [AvatarLoader] glTFast.Load{formatType} returned false.");
                 OnError?.Invoke($"Failed to parse {formatType} 3D model data");
-                debugMessage = $"Parse Failed ({formatType})";
+                UpdateDebugState(Color.red, 0.6f, $"Parse Failed ({formatType})");
             }
             else
             {
                 // --- STEP 3: INSTANTIATE (YELLOW) ---
-                debugMessage = "Instantiating...";
+                UpdateDebugState(Color.yellow, 0.35f, "Instantiating...");
                 Debug.Log("📥 [AvatarLoader] Instantiating scene...");
-
+                
                 var instantiateTask = gltf.InstantiateMainSceneAsync(loadedAvatar.transform);
                 while (!instantiateTask.IsCompleted) yield return null;
-
+                
                 bool instantiateSuccess = instantiateTask.Result;
-
+                
                 if (instantiateSuccess)
                 {
                     Debug.Log($"✅ [AvatarLoader] Avatar instantiated successfully!");
-
+                    
                     // --- FORCE VISIBILITY (GREEN) ---
                     var renderers = loadedAvatar.GetComponentsInChildren<Renderer>();
                     if (renderers.Length > 0)
                     {
                         Material debugMat = new Material(safeShader);
                         debugMat.color = new Color(1f, 0.5f, 0f); // ORANGE
-
+                        
                         Bounds totalBounds = new Bounds(renderers[0].transform.position, Vector3.zero);
                         foreach (var r in renderers)
                         {
                             r.material = debugMat;
                             totalBounds.Encapsulate(r.bounds);
                         }
-
+                        
                         // Force Scale to 1m
                         float maxDim = Mathf.Max(totalBounds.size.x, totalBounds.size.y, totalBounds.size.z);
                         if (maxDim > 0)
@@ -532,36 +560,36 @@ namespace AIChatAR.AR
                             float scaleFactor = 1.0f / maxDim;
                             loadedAvatar.transform.localScale = Vector3.one * scaleFactor;
                         }
-
-                        debugMessage = $"Success! Scale={maxDim}m -> 1m. Look for ORANGE.";
+                        
+                        UpdateDebugState(Color.green, 0.2f, $"Success! Scale={maxDim}m -> 1m. Look for ORANGE."); // GREEN = SUCCESS
                     }
                     else
                     {
                         Debug.LogError("❌ [AvatarLoader] No Renderers found!");
-                        debugMessage = "Success but EMPTY (No Renderers)";
+                        UpdateDebugState(Color.magenta, 0.6f, "Success but EMPTY (No Renderers)"); // EMPTY
                     }
-
+                    
                     OnAvatarLoaded?.Invoke(loadedAvatar);
                 }
                 else
                 {
                     Debug.LogError("❌ [AvatarLoader] Failed to instantiate scene");
-                    debugMessage = "Instantiate Failed";
+                    UpdateDebugState(Color.red, 0.6f, "Instantiate Failed");
                 }
             }
             gltf.Dispose();
-
+            
             // Clear coroutine reference when done
             loadModelCoroutine = null;
         }
-
+        
         private void SetupAvatarTransform()
         {
-            // Position avatar in AR space
+             // Position avatar in AR space
             Transform parentTransform = null;
             Vector3 targetLocalPosition = Vector3.zero;
             Quaternion targetLocalRotation = Quaternion.identity;
-
+            
             var xrOrigin = FindObjectOfType<XROrigin>();
             var arSessionOrigin = FindObjectOfType<ARSessionOrigin>();
             var mainCamera = Camera.main;
@@ -573,7 +601,7 @@ namespace AIChatAR.AR
                 {
                     Vector3 cameraPos = mainCamera.transform.position;
                     Vector3 cameraForward = mainCamera.transform.forward;
-                    cameraForward.y = 0;
+                    cameraForward.y = 0; 
                     cameraForward.Normalize();
                     Vector3 worldPos = cameraPos + (cameraForward * 1.5f);
                     targetLocalPosition = parentTransform.InverseTransformPoint(worldPos);
@@ -589,29 +617,29 @@ namespace AIChatAR.AR
                 parentTransform = arSessionOrigin.trackablesParent;
                 if (mainCamera != null)
                 {
-                    Vector3 cameraPos = mainCamera.transform.position;
-                    Vector3 cameraForward = mainCamera.transform.forward;
-                    cameraForward.y = 0;
-                    cameraForward.Normalize();
-                    Vector3 worldPos = cameraPos + (cameraForward * 1.5f);
-                    targetLocalPosition = parentTransform.InverseTransformPoint(worldPos);
-                    targetLocalRotation = Quaternion.LookRotation(-cameraForward);
+                     Vector3 cameraPos = mainCamera.transform.position;
+                     Vector3 cameraForward = mainCamera.transform.forward;
+                     cameraForward.y = 0;
+                     cameraForward.Normalize();
+                     Vector3 worldPos = cameraPos + (cameraForward * 1.5f);
+                     targetLocalPosition = parentTransform.InverseTransformPoint(worldPos);
+                     targetLocalRotation = Quaternion.LookRotation(-cameraForward);
                 }
                 else
                 {
-                    targetLocalPosition = new Vector3(0f, -0.5f, 1.5f);
+                     targetLocalPosition = new Vector3(0f, -0.5f, 1.5f);
                 }
             }
             else if (mainCamera != null)
             {
-                parentTransform = null;
-                Vector3 cameraPos = mainCamera.transform.position;
-                Vector3 cameraForward = mainCamera.transform.forward;
-                targetLocalPosition = cameraPos + (cameraForward * 1.5f);
-                Vector3 directionToCamera = cameraPos - targetLocalPosition;
-                directionToCamera.y = 0;
-                if (directionToCamera != Vector3.zero)
-                    targetLocalRotation = Quaternion.LookRotation(directionToCamera);
+                 parentTransform = null; 
+                 Vector3 cameraPos = mainCamera.transform.position;
+                 Vector3 cameraForward = mainCamera.transform.forward;
+                 targetLocalPosition = cameraPos + (cameraForward * 1.5f);
+                 Vector3 directionToCamera = cameraPos - targetLocalPosition;
+                 directionToCamera.y = 0;
+                 if (directionToCamera != Vector3.zero)
+                     targetLocalRotation = Quaternion.LookRotation(directionToCamera);
             }
             else if (avatarParent != null)
             {
@@ -623,10 +651,10 @@ namespace AIChatAR.AR
                 parentTransform = transform;
                 targetLocalPosition = Vector3.forward * 1.5f;
             }
-
+            
             if (parentTransform != null)
                 loadedAvatar.transform.SetParent(parentTransform);
-
+            
             if (parentTransform != null)
             {
                 loadedAvatar.transform.localPosition = targetLocalPosition;
@@ -638,8 +666,27 @@ namespace AIChatAR.AR
                 loadedAvatar.transform.rotation = targetLocalRotation;
             }
 
-            loadedAvatar.transform.localScale = Vector3.one;
+            loadedAvatar.transform.localScale = Vector3.one; 
             if (!loadedAvatar.activeSelf) loadedAvatar.SetActive(true);
+        }
+
+        /// <summary>
+        /// Update debug sphere color and scale to indicate state
+        /// </summary>
+        private void UpdateDebugState(Color color, float scale, string msg = null)
+        {
+            if (msg != null) debugMessage = $"Status: {msg}\nColor: {color}\nScale: {scale}";
+            
+            if (debugSphere != null)
+            {
+                var renderer = debugSphere.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    renderer.material.color = color;
+                }
+                debugSphere.transform.localScale = new Vector3(scale, scale, scale);
+                Debug.Log($"⚠️ [AvatarLoader] Debug State: Color={color}, Scale={scale}");
+            }
         }
 
         /// <summary>
@@ -689,5 +736,3 @@ namespace AIChatAR.AR
         }
     }
 }
-
-

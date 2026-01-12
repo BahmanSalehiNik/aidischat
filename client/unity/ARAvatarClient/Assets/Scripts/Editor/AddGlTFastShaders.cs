@@ -33,6 +33,17 @@ public class AddGlTFastShaders : MonoBehaviour
         {
              AddShader(unlitShader);
         }
+
+        // Add Universal Render Pipeline/Lit
+        Shader urpLit = Shader.Find("Universal Render Pipeline/Lit");
+        if (urpLit == null)
+        {
+             Debug.LogError("❌ Could not find 'Universal Render Pipeline/Lit' shader via Shader.Find()");
+        }
+        else
+        {
+             AddShader(urpLit);
+        }
     }
 
     private static void AddShader(Shader shader)

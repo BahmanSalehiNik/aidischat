@@ -836,7 +836,9 @@ PlayerSettings:
   webWasm2023: 0
   webEnableSubmoduleStrippingCompatibility: 0
   scriptingDefineSymbols:
-    iPhone: UNITY_XR_ARKIT_LOADER_ENABLED
+    Android: UNITY_ANIMATION
+    Standalone: UNITY_ANIMATION
+    iPhone: UNITY_XR_ARKIT_LOADER_ENABLED;UNITY_ANIMATION
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend:

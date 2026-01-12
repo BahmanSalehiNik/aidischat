@@ -102,13 +102,24 @@ export class MeshyProvider extends BaseModelProvider {
       console.log(`[MeshyProvider] Using Meshy URL directly for rigging (must be publicly accessible)`);
 
       // Step 6: Auto-rig the model (required for animations)
-      // Use Meshy's URL directly - it's already publicly accessible
+      //
+      // CRITICAL: To preserve textures/materials in rigged outputs, prefer using Meshy's `input_task_id`
+      // (the refine task id) instead of an external `model_url`. We observed that rigging via `model_url`
+      // can return GLBs with 0 materials/textures.
+      //
+      // This does NOT do any merging/extraction/conversion on our side; it's purely using Meshy's API
+      // in the recommended way.
       let riggedModelUrl = modelUrl;
       let rigTaskId: string | null = null;
       try {
         console.log(`[MeshyProvider] Starting auto-rigging for model...`);
-        console.log(`[MeshyProvider] Model URL: ${modelUrl}`);
-        rigTaskId = await this.createRigTask(modelUrl);
+        if (refineTaskId) {
+          console.log(`[MeshyProvider] Using input_task_id for rigging (texture-preserving): ${refineTaskId}`);
+          rigTaskId = await this.createRigTask({ inputTaskId: refineTaskId });
+        } else {
+          console.log(`[MeshyProvider] Model URL: ${modelUrl}`);
+          rigTaskId = await this.createRigTask({ modelUrl });
+        }
         console.log(`[MeshyProvider] Rig task created: ${rigTaskId}`);
         
         const rigResult = await this.pollRigTask(rigTaskId);
@@ -133,23 +144,35 @@ export class MeshyProvider extends BaseModelProvider {
       // See: docs/MESHY_RIGGING_ANIMATION.md
       let animatedModelUrl = riggedModelUrl;
       let animationUrls: string[] = [];
+      let animationClips: Array<{ name: string; url: string }> = [];
       if (rigTaskId) {
         try {
           console.log(`[MeshyProvider] Adding animations to rigged model...`);
-          console.log(`[MeshyProvider] Generating minimal animation set for mobile AR (idle, thinking, walk)`);
+          console.log(`[MeshyProvider] Generating minimal animation set for mobile AR (idle, thinking, talking, walking)`);
           
           // Generate multiple animations (each returns separate GLB)
-          // Recommended minimal set: Idle (0), Thinking (36), Wave (28)
-          // Alternative: Casual_Walk (30) instead of Wave
+          // Recommended minimal set:
+          // - Idle (0)
+          // - Thinking (36 by default; configurable)
+          // - Talking (3 by default; configurable - availability may vary by library version)
+          // - Walking (1 by default; configurable)
+          //
+          // NOTE: Meshy action IDs can vary by library version. If a specific action_id fails,
+          // Meshy will return an error and we will continue with remaining animations.
+          const thinkingActionId = parseInt(process.env.MESHY_THINKING_ACTION_ID || '36', 10);
+          const talkingActionId = parseInt(process.env.MESHY_TALKING_ACTION_ID || '3', 10);
+          const walkingActionId = parseInt(process.env.MESHY_WALKING_ACTION_ID || '1', 10);
+
           const animationSet = [
             { name: 'idle', action_id: 0 }, // Idle
-            { name: 'thinking', action_id: 36 }, // Confused_Scratch
-            { name: 'wave', action_id: 28 }, // Big_Wave_Hello
-            // Alternative: { name: 'walk', action_id: 30 }, // Casual_Walk
+            { name: 'thinking', action_id: thinkingActionId }, // Thinking / gesture-style
+            { name: 'talking', action_id: talkingActionId }, // Talking (if available)
+            { name: 'walking', action_id: walkingActionId }, // Walking
           ];
           
           const animationResults = await this.addMultipleAnimations(rigTaskId, animationSet);
-          animationUrls = animationResults.map(r => r.url).filter(Boolean);
+          animationClips = animationResults.filter(r => !!r.url);
+          animationUrls = animationClips.map(r => r.url);
           
           // IMPORTANT: Keep rigged base character URL as modelUrl
           // Animations are separate GLBs that should be loaded as clips in the engine
@@ -159,7 +182,7 @@ export class MeshyProvider extends BaseModelProvider {
           
           console.log(`[MeshyProvider] Animations added: ${animationUrls.length} animations`);
           console.log(`[MeshyProvider] Rigged base character: ${riggedModelUrl}`);
-          console.log(`[MeshyProvider] Animation URLs:`, animationUrls);
+          console.log(`[MeshyProvider] Animation clips:`, animationClips);
           console.log(`[MeshyProvider] Note: Load rigged base character + animation clips separately in engine`);
         } catch (error: any) {
           console.warn(`[MeshyProvider] Animation addition failed: ${error.message}`);
@@ -171,6 +194,7 @@ export class MeshyProvider extends BaseModelProvider {
       return {
         modelId: `meshy_${taskId}`,
         modelUrl: animatedModelUrl, // Rigged base character URL
+        animationClips: animationClips.length > 0 ? animationClips : undefined,
         animationUrls: animationUrls.length > 0 ? animationUrls : undefined, // Separate animation GLB URLs
         format: AvatarModelFormat.GLB,
         metadata: {
@@ -391,22 +415,32 @@ export class MeshyProvider extends BaseModelProvider {
    * - rigged_character_glb_url: Base rigged character
    * - basic_animations: Optional walking/running animations
    */
-  private async createRigTask(modelUrl: string): Promise<string> {
-    const response = await axios.post(
-      `${this.baseUrl}/openapi/v1/rigging`,
-      {
-        model_url: modelUrl,
-        rig_preset: 'STANDARD_HUMANOID', // Explicit preset for humanoid characters
-        height_meters: 1.75, // Character height in meters - strongly recommended for better skeleton scaling
+  private async createRigTask(modelUrl: string): Promise<string>;
+  private async createRigTask(args: { modelUrl?: string; inputTaskId?: string }): Promise<string>;
+  private async createRigTask(arg: string | { modelUrl?: string; inputTaskId?: string }): Promise<string> {
+    const body: any = {
+      rig_preset: 'STANDARD_HUMANOID', // Explicit preset for humanoid characters
+      height_meters: 1.75, // Improves skeleton scaling
+    };
+
+    if (typeof arg === 'string') {
+      body.model_url = arg;
+    } else if (arg.inputTaskId) {
+      // Meshy supports rigging by task id (e.g., refine_task_id) which can preserve textures/materials.
+      body.input_task_id = arg.inputTaskId;
+    } else if (arg.modelUrl) {
+      body.model_url = arg.modelUrl;
+    } else {
+      throw new Error('createRigTask requires either modelUrl or inputTaskId');
+    }
+
+    const response = await axios.post(`${this.baseUrl}/openapi/v1/rigging`, body, {
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
       },
-      {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 30000,
-      }
-    );
+      timeout: 30000,
+    });
 
     // Response structure: { "result": "rigging_task_id" } or { "rigging_task_id": "..." }
     const taskId = response.data.result || response.data.rigging_task_id || response.data.id;

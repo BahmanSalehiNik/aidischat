@@ -12,6 +12,7 @@ namespace AIChatAR.Models
         public int progress; // 0-100
         public string error;
         public string modelUrl;
+        public string[] animationUrls; // Separate animation GLB URLs (Meshy pipeline)
         public string format; // "glb" | "gltf" | "vrm"
         public string modelType; // "3d" | "2d"
         public int estimatedTimeRemaining; // seconds

@@ -19,6 +19,12 @@ namespace AIChatAR.AR
         [SerializeField] private string wsUrl = "ws://localhost:3000/api/realtime";
         [SerializeField] private string authToken;
 
+        [Header("Debug/Test Model Override")]
+        [Tooltip("If enabled, SetModelUrl will ignore the provided URL and load forcedTestModelUrl instead.")]
+        [SerializeField] private bool forceTestModelUrl = false;
+        [SerializeField] private string forcedTestModelUrl =
+            "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Fox/glTF-Binary/Fox.glb";
+
         [Header("References")]
         [SerializeField] private AvatarLoader avatarLoader;
         [SerializeField] private ARAPI arAPI;
@@ -30,6 +36,7 @@ namespace AIChatAR.AR
         private List<ARMessage> messages = new List<ARMessage>();
         private ProviderTokens providerTokens;
         private string modelUrl;
+        private string[] animationUrls;
         private string streamingMessageId;
         private string streamingContent = "";
 
@@ -178,11 +185,11 @@ namespace AIChatAR.AR
         /// </summary>
         public void SetModelUrl(string url)
         {
-            // HARDCODED TEST URL (GLB)
-            // This is to verify that GLB loading and rendering works, independent of Azure SAS token issues.
-            // Use a known-good public GLB (Duck from Khronos glTF Sample Models)
-            url = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF-Binary/Duck.glb";
-            Debug.LogWarning($"⚠️ [ARChatManager] FORCING HARDCODED TEST MODEL (GLB): {url}");
+            if (forceTestModelUrl && !string.IsNullOrEmpty(forcedTestModelUrl))
+            {
+                url = forcedTestModelUrl;
+                Debug.LogWarning($"⚠️ [ARChatManager] FORCING TEST MODEL URL: {url}");
+            }
 
             if (!string.IsNullOrEmpty(url))
             {
@@ -230,6 +237,23 @@ namespace AIChatAR.AR
             {
                 Debug.LogWarning("⚠️ [ARChatManager] SetModelUrl called with empty URL");
             }
+        }
+
+        /// <summary>
+        /// Set animation URLs (from deep link or status endpoint).
+        ///
+        /// NOTE: Current Unity AvatarLoader is intentionally base-model-only (no separate animation GLBs).
+        /// We keep these URLs stored here for future use, but we do not forward them to AvatarLoader.
+        /// </summary>
+        public void SetAnimationUrls(string[] urls)
+        {
+            if (urls == null || urls.Length == 0)
+            {
+                return;
+            }
+
+            animationUrls = urls;
+            Debug.Log($"✅ [ARChatManager] Animation URLs set: {animationUrls.Length}");
         }
 
         /// <summary>
@@ -323,6 +347,13 @@ namespace AIChatAR.AR
                         {
                             modelUrl = status.modelUrl;
                             Debug.Log($"✅ Avatar model URL: {modelUrl}");
+
+                            // Capture animation URLs from status (if present) unless already provided via deep link.
+                            if ((animationUrls == null || animationUrls.Length == 0) && status.animationUrls != null && status.animationUrls.Length > 0)
+                            {
+                                animationUrls = status.animationUrls;
+                                Debug.Log($"✅ Avatar animation URLs: {animationUrls.Length}");
+                            }
                         }
                         avatarReceived = true;
                     },
@@ -486,6 +517,7 @@ namespace AIChatAR.AR
             var lipSyncController = GetComponentInChildren<LipSyncController>();
             var emotionController = GetComponentInChildren<EmotionController>();
             var gestureController = GetComponentInChildren<GestureController>();
+            var animationPlayer = FindObjectOfType<RuntimeAnimationPlayer>();
 
             // Apply emotion markers
             var emotionMarkers = AIChatAR.Utils.MarkerParser.GetMarkersByType(parsed, AIChatAR.Utils.MarkerParser.MarkerType.Emotion);
@@ -503,9 +535,28 @@ namespace AIChatAR.AR
                 gestureController.PlayGesture(lastGesture.value);
             }
 
+            // Apply movement markers (idle/thinking/talking/walking)
+            var movementMarkers = AIChatAR.Utils.MarkerParser.GetMarkersByType(parsed, AIChatAR.Utils.MarkerParser.MarkerType.Movement);
+            if (movementMarkers.Count > 0 && animationPlayer != null)
+            {
+                var lastMovement = movementMarkers[movementMarkers.Count - 1];
+                var movement = (lastMovement.value ?? "").Trim().ToLowerInvariant();
+                if (!string.IsNullOrEmpty(movement))
+                {
+                    Debug.Log($"🎞️ [ARChatManager] Movement marker: {movement}");
+                    animationPlayer.Play(movement, true);
+                }
+            }
+
             // Generate TTS and play with lip sync
             if (ttsController != null && !string.IsNullOrEmpty(cleanText))
             {
+                // While speaking, prefer talking animation if available.
+                if (animationPlayer != null)
+                {
+                    animationPlayer.Play("talking", true);
+                }
+
                 bool ttsComplete = false;
                 AudioClip audioClip = null;
                 float audioDuration = 0f;
@@ -528,6 +579,18 @@ namespace AIChatAR.AR
                 {
                     // Play audio
                     ttsController.PlayAudio(audioClip, audioDuration);
+
+                    // When playback completes, return to idle
+                    System.Action onDone = null;
+                    onDone = () =>
+                    {
+                        ttsController.OnPlaybackComplete -= onDone;
+                        if (animationPlayer != null)
+                        {
+                            animationPlayer.Play("idle", true);
+                        }
+                    };
+                    ttsController.OnPlaybackComplete += onDone;
 
                     // Generate and play visemes (simplified - in production, use proper phoneme-to-viseme conversion)
                     if (lipSyncController != null)

@@ -143,6 +143,7 @@ namespace AIChatAR.Utils
                     string agentId = null;
                     string roomId = null;
                     string modelUrl = null;
+                    var animUrls = new System.Collections.Generic.List<string>();
 
                     if (!string.IsNullOrEmpty(queryString))
                     {
@@ -170,16 +171,30 @@ namespace AIChatAR.Utils
                                     modelUrl = value;
                                     Debug.Log($"📋 [DeepLink] modelUrl: {modelUrl}");
                                 }
+                                else if (key.Equals("animUrl", StringComparison.OrdinalIgnoreCase) ||
+                                         key.Equals("animationUrl", StringComparison.OrdinalIgnoreCase) ||
+                                         key.Equals("animationUrls", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // Repeated animUrl params are supported: &animUrl=...&animUrl=...
+                                    if (!string.IsNullOrEmpty(value))
+                                    {
+                                        animUrls.Add(value);
+                                    }
+                                }
                             }
                         }
                     }
 
                     Debug.Log($"📋 [DeepLink] Parsed - agentId: {agentId}, roomId: {roomId}, modelUrl: {(string.IsNullOrEmpty(modelUrl) ? "not provided" : "provided")}");
+                    if (animUrls.Count > 0)
+                    {
+                        Debug.Log($"📋 [DeepLink] Parsed animation URLs: {animUrls.Count}");
+                    }
 
                     // Initialize AR Chat with parameters
                     if (!string.IsNullOrEmpty(agentId))
                     {
-                        InitializeARChatWithAgent(agentId, roomId, modelUrl);
+                        InitializeARChatWithAgent(agentId, roomId, modelUrl, animUrls);
                     }
                     else
                     {
@@ -197,7 +212,11 @@ namespace AIChatAR.Utils
             }
         }
 
-        private void InitializeARChatWithAgent(string agentId, string roomId = null, string modelUrl = null)
+        private void InitializeARChatWithAgent(
+            string agentId,
+            string roomId = null,
+            string modelUrl = null,
+            System.Collections.Generic.List<string> animationUrls = null)
         {
             Debug.Log($"🚀 [DeepLink] Initializing AR Chat with agentId: {agentId}");
 
@@ -207,6 +226,13 @@ namespace AIChatAR.Utils
             {
                 // Set agent ID
                 arChatManager.SetAgentId(agentId);
+
+                // Set animation URLs if provided (set before model load to avoid races)
+                if (animationUrls != null && animationUrls.Count > 0)
+                {
+                    arChatManager.SetAnimationUrls(animationUrls.ToArray());
+                    Debug.Log($"✅ [DeepLink] Animation URLs set from deep link: {animationUrls.Count}");
+                }
 
                 // Set model URL if provided (for faster loading)
                 if (!string.IsNullOrEmpty(modelUrl))

@@ -26,6 +26,7 @@ interface ARViewerProps {
 const ARViewerComponent: React.FC<ARViewerProps> = ({
   agentId,
   modelUrl,
+  animationUrls,
   onClose
 }) => {
   const [isReady, setIsReady] = useState(false);
@@ -72,6 +73,14 @@ const ARViewerComponent: React.FC<ARViewerProps> = ({
 
       if (modelUrl) {
         queryParams.append('modelUrl', modelUrl);
+      }
+
+      // Pass animation URLs to Unity (repeat key so Unity can collect them).
+      // NOTE: URLSearchParams will safely encode SAS tokens and special chars.
+      if (animationUrls && animationUrls.length > 0) {
+        for (const url of animationUrls) {
+          if (url) queryParams.append('animUrl', url);
+        }
       }
 
       const unityUrl = `aichatar://ar?${queryParams.toString()}`;

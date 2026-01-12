@@ -17,6 +17,7 @@ namespace AIChatAR.Utils
         public enum MarkerType
         {
             Emotion,
+            Movement,
             Gesture,
             Pose,
             Tone
