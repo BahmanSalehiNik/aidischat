@@ -242,8 +242,8 @@ namespace AIChatAR.AR
         /// <summary>
         /// Set animation URLs (from deep link or status endpoint).
         ///
-        /// NOTE: Current Unity AvatarLoader is intentionally base-model-only (no separate animation GLBs).
-        /// We keep these URLs stored here for future use, but we do not forward them to AvatarLoader.
+        /// NOTE: Base model is still the default. We forward these URLs to AvatarLoader so it can
+        /// switch to idle via an in-Unity button (no auto-play).
         /// </summary>
         public void SetAnimationUrls(string[] urls)
         {
@@ -254,6 +254,16 @@ namespace AIChatAR.AR
 
             animationUrls = urls;
             Debug.Log($"✅ [ARChatManager] Animation URLs set: {animationUrls.Length}");
+
+            // Forward to AvatarLoader (store-only; does not auto-load animations)
+            if (avatarLoader == null)
+            {
+                avatarLoader = GetComponentInChildren<AvatarLoader>() ?? FindObjectOfType<AvatarLoader>();
+            }
+            if (avatarLoader != null)
+            {
+                avatarLoader.SetAnimationUrls(animationUrls);
+            }
         }
 
         /// <summary>

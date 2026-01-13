@@ -115,7 +115,18 @@ export class MeshyProvider extends BaseModelProvider {
         console.log(`[MeshyProvider] Starting auto-rigging for model...`);
         if (refineTaskId) {
           console.log(`[MeshyProvider] Using input_task_id for rigging (texture-preserving): ${refineTaskId}`);
-          rigTaskId = await this.createRigTask({ inputTaskId: refineTaskId });
+          try {
+            rigTaskId = await this.createRigTask({ inputTaskId: refineTaskId });
+          } catch (error: any) {
+            // If Meshy rejects rigging-by-task-id (common 422 for non-humanoids), retry via model_url.
+            // This can be less reliable for preserving textures, but enables animations when it works.
+            const status = error?.response?.status;
+            const data = error?.response?.data;
+            console.warn(`[MeshyProvider] Rigging via input_task_id failed${status ? ` (HTTP ${status})` : ''}: ${error?.message}`);
+            if (data) console.warn(`[MeshyProvider] Rigging error response: ${JSON.stringify(data)}`);
+            console.warn(`[MeshyProvider] Retrying rigging via model_url as fallback...`);
+            rigTaskId = await this.createRigTask({ modelUrl });
+          }
         } else {
           console.log(`[MeshyProvider] Model URL: ${modelUrl}`);
           rigTaskId = await this.createRigTask({ modelUrl });
@@ -133,7 +144,10 @@ export class MeshyProvider extends BaseModelProvider {
           // These can be used as fallback if custom animations fail
         }
       } catch (error: any) {
-        console.warn(`[MeshyProvider] Auto-rigging failed: ${error.message}`);
+        const status = error?.response?.status;
+        const data = error?.response?.data;
+        console.warn(`[MeshyProvider] Auto-rigging failed${status ? ` (HTTP ${status})` : ''}: ${error?.message}`);
+        if (data) console.warn(`[MeshyProvider] Rigging error response: ${JSON.stringify(data)}`);
         console.warn(`[MeshyProvider] Possible causes: model not humanoid, unclear body structure, or not in T-pose`);
         console.warn(`[MeshyProvider] Using unrigged model. Animations will not work.`);
         // Continue with unrigged model - animations won't work but model will still load
@@ -218,9 +232,18 @@ export class MeshyProvider extends BaseModelProvider {
     // Text-to-3D is two-stage: Preview (geometry) → Refine (texture)
     // This is Stage 1: Preview - generates geometry only (no textures yet)
     
-    // Enhance prompt for rigging compatibility
-    const enhancedPrompt = `${prompt}, humanoid character in T-pose, simple geometry, game-ready, mobile-optimized`;
-    const negativePrompt = 'blurry, low quality, distorted, deformed, complex pose, high poly, detailed geometry';
+    // Enhance prompt for rigging compatibility.
+    // Meshy can still output non‑T‑pose characters unless we are very explicit in the text prompt.
+    // A strict T‑pose dramatically increases the success rate of Meshy rigging + animation generation.
+    const enhancedPrompt =
+      `${prompt}, ` +
+      `full body humanoid character in a STRICT T-POSE (arms straight out horizontally at shoulder height, elbows straight, palms down), ` +
+      `legs straight, feet shoulder-width apart, neutral face, front-facing, centered, ` +
+      `simple clean silhouette, game-ready, mobile-optimized`;
+    const negativePrompt =
+      'blurry, low quality, distorted, deformed, complex pose, dynamic pose, action pose, walking, running, sitting, crouching, kneeling, jumping, dancing, ' +
+      'A-pose, arms down, arms bent, elbows bent, hands on hips, crossed arms, ' +
+      'high poly, extremely detailed geometry, cluttered accessories, cropped body';
     
     // Mobile-optimized parameters for lightweight models
     // target_polycount: 6k-15k for AR characters (using 10k as middle ground)

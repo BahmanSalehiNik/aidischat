@@ -8,6 +8,7 @@ using Unity.XR.CoreUtils;
 using AIChatAR.Models;
 using AIChatAR.API;
 using GLTFast;
+using System.Collections.Generic;
 
 namespace AIChatAR.AR
 {
@@ -34,6 +35,11 @@ namespace AIChatAR.AR
         private bool isPolling = false;
         private bool autoStartOnEnable = false; // Set to true if you want auto-start behavior
 
+        // Animation GLB URLs (separate files; stored only — base model remains default)
+        private readonly List<string> animationUrls = new List<string>();
+        private bool autoPlayLegacyAnimationOnNextLoad = false;
+        private string autoPlayLegacyAnimationName = null;
+
         // Events
         public System.Action<AvatarStatus> OnStatusChanged;
         public System.Action<GameObject> OnAvatarLoaded;
@@ -55,6 +61,83 @@ namespace AIChatAR.AR
             GUI.Label(new Rect(20, 20, Screen.width - 40, 600), debugMessage, debugStyle);
 
             // NOTE: Hardcoded test URLs removed. Use Meshy/Azure-provided URLs (deeplink / backend) instead.
+
+            // Button: switch to idle animation GLB (if provided via SetAnimationUrls)
+            if (GUI.Button(new Rect(20, Screen.height - 160, 380, 110), "LOAD IDLE GLB"))
+            {
+                LoadIdleGlb();
+            }
+        }
+
+        /// <summary>
+        /// Receive animation GLB URLs (e.g. idle/talking/walking) from deep link or status endpoint.
+        /// This does NOT auto-load animations; it only stores them for button-triggered loading.
+        /// </summary>
+        public void SetAnimationUrls(string[] urls)
+        {
+            animationUrls.Clear();
+            if (urls == null) return;
+            foreach (var u in urls)
+            {
+                if (!string.IsNullOrEmpty(u)) animationUrls.Add(u);
+            }
+            Debug.Log($"🎞️ [AvatarLoader] Stored animation URLs: {animationUrls.Count}");
+        }
+
+        private void LoadIdleGlb()
+        {
+            // Find a URL whose embedded name is "idle" (backend uploads as: {agentId}_anim_{name}_{timestamp}.glb)
+            string idleUrl = null;
+            foreach (var u in animationUrls)
+            {
+                var name = TryExtractAnimNameFromUrl(u);
+                if (string.Equals(name, "idle", StringComparison.OrdinalIgnoreCase))
+                {
+                    idleUrl = u;
+                    break;
+                }
+            }
+
+            if (string.IsNullOrEmpty(idleUrl))
+            {
+                Debug.LogWarning("⚠️ [AvatarLoader] No idle animation URL available. Make sure backend returned animationUrls[] and it includes an 'idle' clip.");
+                debugMessage = "No idle URL";
+                return;
+            }
+
+            Debug.Log($"🎞️ [AvatarLoader] Loading IDLE GLB URL: {idleUrl}");
+            debugMessage = "Loading IDLE GLB...";
+            // When loading the idle GLB, auto-play its animation using Unity's legacy Animation component.
+            autoPlayLegacyAnimationOnNextLoad = true;
+            autoPlayLegacyAnimationName = "idle";
+            LoadModelFromUrl(idleUrl);
+        }
+
+        private static string TryExtractAnimNameFromUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return null;
+            try
+            {
+                // Strip query
+                var clean = url;
+                var q = clean.IndexOf('?');
+                if (q >= 0) clean = clean.Substring(0, q);
+                var lastSlash = clean.LastIndexOf('/');
+                var filename = lastSlash >= 0 ? clean.Substring(lastSlash + 1) : clean;
+
+                // Find "_anim_" marker: {agentId}_anim_{name}_{timestamp}.glb
+                var marker = "_anim_";
+                var idx = filename.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                if (idx < 0) return null;
+                var after = filename.Substring(idx + marker.Length);
+                var nextUnderscore = after.IndexOf('_');
+                if (nextUnderscore <= 0) return null;
+                return after.Substring(0, nextUnderscore).ToLowerInvariant();
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         void Start()
@@ -171,6 +254,13 @@ namespace AIChatAR.AR
                 {
                     currentStatus = status;
                     OnStatusChanged?.Invoke(status);
+
+                    // Store animation GLB URLs if backend provides them (base model is still the default).
+                    // This enables the "LOAD IDLE GLB" button without requiring animation URLs in the deep link.
+                    if (status.animationUrls != null && status.animationUrls.Length > 0)
+                    {
+                        SetAnimationUrls(status.animationUrls);
+                    }
 
                     if (status.status == "ready" && !string.IsNullOrEmpty(status.modelUrl))
                     {
@@ -502,7 +592,14 @@ namespace AIChatAR.AR
                 debugMessage = "Instantiating...";
                 Debug.Log("📥 [AvatarLoader] Instantiating scene...");
 
-                var instantiateTask = gltf.InstantiateMainSceneAsync(loadedAvatar.transform);
+                // IMPORTANT: Disable glTFast's automatic Animation component wiring during instantiation.
+                // On some devices/GLBs, GLTFast.GameObjectInstantiator.AddAnimation can throw and prevent playback.
+                // We'll instantiate meshes/skeleton only, then play the clip ourselves via legacy `Animation`.
+                var instantiationSettings = new InstantiationSettings();
+                instantiationSettings.Mask = ComponentType.All & ~ComponentType.Animation;
+                var instantiator = new GameObjectInstantiator(gltf, loadedAvatar.transform, null, instantiationSettings);
+
+                var instantiateTask = gltf.InstantiateMainSceneAsync(instantiator);
                 while (!instantiateTask.IsCompleted) yield return null;
 
                 bool instantiateSuccess = instantiateTask.Result;
@@ -511,17 +608,31 @@ namespace AIChatAR.AR
                 {
                     Debug.Log($"✅ [AvatarLoader] Avatar instantiated successfully!");
 
+                    // Use the scene root created by glTFast (may be the parent itself or a child "Scene")
+                    var sceneRoot = instantiator.SceneTransform != null ? instantiator.SceneTransform.gameObject : loadedAvatar;
+
+                    // If we intentionally loaded an animation GLB (e.g. idle), auto-play its embedded clip
+                    // using Unity legacy Animation component (not Animator).
+                    if (autoPlayLegacyAnimationOnNextLoad)
+                    {
+                        TryPlayLegacyAnimationFromGltf(gltf, sceneRoot, autoPlayLegacyAnimationName);
+                        autoPlayLegacyAnimationOnNextLoad = false;
+                        autoPlayLegacyAnimationName = null;
+                    }
+
                     // --- FORCE VISIBILITY (GREEN) ---
-                    var renderers = loadedAvatar.GetComponentsInChildren<Renderer>();
+                    var renderers = sceneRoot.GetComponentsInChildren<Renderer>();
                     if (renderers.Length > 0)
                     {
-                        Material debugMat = new Material(safeShader);
-                        debugMat.color = new Color(1f, 0.5f, 0f); // ORANGE
-
                         Bounds totalBounds = new Bounds(renderers[0].transform.position, Vector3.zero);
                         foreach (var r in renderers)
                         {
-                            r.material = debugMat;
+
+
+                        Material debugMat = new Material(safeShader);
+                        debugMat.color = new Color(1f, 0.5f, 0f); // ORANGE
+                        r.material = debugMat;
+
                             totalBounds.Encapsulate(r.bounds);
                         }
 
@@ -553,6 +664,53 @@ namespace AIChatAR.AR
 
             // Clear coroutine reference when done
             loadModelCoroutine = null;
+        }
+
+        private void TryPlayLegacyAnimationFromGltf(GltfImport gltf, GameObject root, string preferredName)
+        {
+            if (gltf == null || root == null) return;
+            try
+            {
+                // Requires glTFast animation support. If not enabled, this will be empty.
+                var clips = gltf.GetAnimationClips();
+                if (clips == null || clips.Length == 0)
+                {
+                    Debug.LogWarning("⚠️ [AvatarLoader] No animation clips found in this GLB. Ensure glTFast animation support is enabled in the project.");
+                    return;
+                }
+
+                // Use first clip (Meshy animation GLBs typically contain a single clip).
+                var clip = clips[0];
+                if (clip == null)
+                {
+                    Debug.LogWarning("⚠️ [AvatarLoader] Animation clip[0] was null.");
+                    return;
+                }
+
+                string clipName = !string.IsNullOrEmpty(preferredName) ? preferredName : (string.IsNullOrEmpty(clip.name) ? "clip0" : clip.name);
+
+                // Legacy Animation component requires legacy clips.
+                clip.legacy = true;
+                clip.wrapMode = WrapMode.Loop;
+
+                var anim = root.GetComponent<Animation>();
+                if (anim == null) anim = root.AddComponent<Animation>();
+
+                // Add + play
+                if (anim.GetClip(clipName) == null)
+                {
+                    anim.AddClip(clip, clipName);
+                }
+                anim.clip = anim.GetClip(clipName);
+                anim.Play(clipName);
+
+                Debug.Log($"✅ [AvatarLoader] Playing legacy animation clip: {clipName}");
+                debugMessage = $"Playing: {clipName}";
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"⚠️ [AvatarLoader] Failed to play legacy animation: {e.Message}");
+            }
         }
 
         private void SetupAvatarTransform()
