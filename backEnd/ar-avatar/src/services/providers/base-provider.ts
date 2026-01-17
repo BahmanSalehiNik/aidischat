@@ -5,6 +5,17 @@ export interface GeneratedModel {
   modelId: string;
   modelUrl: string;
   format: AvatarModelFormat;
+  /**
+   * Optional structured animation clips.
+   * For Meshy, animations are typically returned as separate GLBs (one per action).
+   *
+   * IMPORTANT: `name` is the canonical movement name we use across the system:
+   * - idle
+   * - thinking
+   * - talking
+   * - walking
+   */
+  animationClips?: Array<{ name: string; url: string }>;
   animationUrls?: string[]; // Separate animation GLB URLs (for Meshy)
   metadata: {
     polygonCount?: number;

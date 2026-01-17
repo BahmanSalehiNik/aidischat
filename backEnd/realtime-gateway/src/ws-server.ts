@@ -29,7 +29,7 @@ function logSocketMappingState() {
       socketCount: sockets.size,
       openSockets: Array.from(sockets).filter(ws => ws.readyState === WebSocket.OPEN).length,
       closedSockets: Array.from(sockets).filter(ws => ws.readyState !== WebSocket.OPEN).length,
-      socketStates: Array.from(sockets).map((ws: WebSocket & { user?: { id: string; type?: string } }) => ({
+      socketStates: Array.from(sockets).map((ws: WebSocket & { user?: { id: string; email?: string; type?: string } }) => ({
         readyState: ws.readyState,
         hasUser: !!ws.user,
         userId: ws.user?.id,
@@ -338,10 +338,10 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
     });
   }, HEARTBEAT_INTERVAL);
 
-  wss.on('connection', async (ws: WebSocket & { user?: { id: string; type?: string }; isAlive?: boolean }, req: IncomingMessage) => {
+  wss.on('connection', async (ws: WebSocket & { user?: { id: string; email?: string; type?: string }; isAlive?: boolean }, req: IncomingMessage) => {
     const userPayload = (req as any).userPayload;
     if (userPayload) {
-      ws.user = { id: userPayload.id, type: 'human' };
+      ws.user = { id: userPayload.id, email: userPayload.email, type: 'human' };
       ws.isAlive = true;
       
       // Track connected user
@@ -540,11 +540,13 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
         console.log(`📤 [WS] Publishing message.send to Kafka: roomId=${roomId}, content=${msg.content?.substring(0, 50) || 'empty'}, senderId=${ws.user?.id}`);
         
         const publisher = new MessageIngestPublisher(kafkaProducer);
+        const senderName = ws.user?.email ? ws.user.email.split('@')[0] : undefined;
         await publisher.publish({
           roomId,
           content: msg.content,
           senderId: ws.user?.id || '',
           senderType: ws.user?.type || 'human',
+          senderName,
           tempId: msg.tempId,
           replyToMessageId: msg.replyToMessageId, // Support replies
         });
@@ -595,6 +597,7 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
         }
         
         const publisher = new MessageReplyIngestPublisher(kafkaProducer);
+        const fallbackSenderName = ws.user?.email ? ws.user.email.split('@')[0] : undefined;
         await publisher.publish({
           roomId,
           senderId: ws.user?.id || '',
@@ -602,7 +605,7 @@ export function startWebSocketServer(server: any, kafkaProducer: Producer) {
           content: msg.content,
           replyToMessageId: msg.replyToMessageId,
           attachments: msg.attachments,
-          senderName: msg.senderName,
+          senderName: msg.senderName || fallbackSenderName,
           dedupeKey: msg.tempId,
         });
         

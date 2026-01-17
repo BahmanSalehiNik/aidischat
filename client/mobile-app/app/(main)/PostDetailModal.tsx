@@ -557,3 +557,8 @@ const styles = StyleSheet.create({
   },
 });
 
+// Default export for expo-router (this file is a component, not a route)
+export default function PostDetailModalRoute() {
+  return null;
+}
+

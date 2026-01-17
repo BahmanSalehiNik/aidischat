@@ -1,150 +1,213 @@
-// AR Viewer Component using expo-ar (when available) or fallback to 3D viewer
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
+// AR Viewer Component using Deep Linking to Unity AR App
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, AppState, AppStateStatus, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Model3DViewer } from './Model3DViewer';
+import * as Linking from 'expo-linking';
+import { Marker } from '../../utils/markerParser';
 
 interface ARViewerProps {
+  agentId: string;
   modelUrl: string;
   onClose?: () => void;
+  // Animation/State props are no longer needed for preview, but kept for interface compatibility if needed later
+  animationUrls?: string[];
+  markers?: Marker[];
+  currentEmotion?: string;
+  currentMovement?: string;
 }
 
 /**
- * AR Viewer Component
+ * AR Viewer Component (Launcher Mode)
  * 
- * Note: expo-ar is not available in Expo SDK 54 by default.
- * For full AR support, you may need to:
- * 1. Use expo-gl with custom AR implementation
- * 2. Eject to bare workflow and use react-native-arkit/react-native-ar
- * 3. Use a WebView with WebXR (experimental)
- * 
- * For now, this provides a placeholder that can be enhanced later.
+ * This component acts as a bridge/launcher for the standalone Unity AR application.
+ * It does NOT render any 3D content locally (Three.js removed to prevent crashes).
+ * It handles the deep link construction and handoff to the Unity app.
  */
-export const ARViewer: React.FC<ARViewerProps> = ({ modelUrl, onClose }) => {
-  const [arSupported, setArSupported] = useState(false);
-  const [arMode, setArMode] = useState(false);
+const ARViewerComponent: React.FC<ARViewerProps> = ({
+  agentId,
+  modelUrl,
+  animationUrls,
+  onClose
+}) => {
+  const [isReady, setIsReady] = useState(false);
+  const [hasLaunched, setHasLaunched] = useState(false);
+  const unityLaunchTimeRef = useRef<number | null>(null);
 
+  // Safety delay to ensure navigation transition completes before launching external app
+  // This prevents UI jank or race conditions during screen transitions
   useEffect(() => {
-    // Check if AR is supported
-    // In a real implementation, you would check device capabilities
-    const checkARSupport = async () => {
-      // For iOS, check ARKit support
-      if (Platform.OS === 'ios') {
-        // ARKit is available on iOS 11+ devices with A9 chip or later
-        setArSupported(true);
-      } else if (Platform.OS === 'android') {
-        // ARCore support check would go here
-        setArSupported(true); // Assume supported for now
-      }
-    };
-
-    checkARSupport();
+    const timer = setTimeout(() => {
+      setIsReady(true);
+      // Optional: Auto-launch when ready? 
+      // User asked: "when the model is ready the app starts using unity"
+      // we'll trigger it automatically for a seamless flow.
+      handleLaunchUnity();
+    }, 800); // Increased slightly to 800ms for extra safety
+    return () => clearTimeout(timer);
   }, []);
 
-  const handleARPress = () => {
-    if (!arSupported) {
-      Alert.alert(
-        'AR Not Available',
-        'AR features require a device with AR support. Using 3D viewer instead.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
+  // Track app state to detect if launch was successful
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (unityLaunchTimeRef.current) {
+        const timeSinceLaunch = Date.now() - unityLaunchTimeRef.current;
+        if (nextAppState === 'background' && timeSinceLaunch < 2000) {
+          console.log('✅ [ARViewer] App went to background - Unity app likely opened');
+          setHasLaunched(true);
+        }
+      }
+    });
 
-    // Toggle AR mode
-    setArMode(!arMode);
-    
-    if (!arMode) {
-      Alert.alert(
-        'AR Mode',
-        'AR mode will place the avatar in your real-world environment. This feature requires additional setup.',
-        [
-          { text: 'Cancel', onPress: () => setArMode(false) },
-          { text: 'Continue', onPress: () => {
-            // In a full implementation, this would switch to AR view
-            Alert.alert('Info', 'Full AR implementation requires expo-ar or native AR modules.');
-          }}
-        ]
-      );
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const handleLaunchUnity = async () => {
+    try {
+      // Construct Deep Link URL
+      // aichatar://ar?agentId=...&modelUrl=...
+      const queryParams = new URLSearchParams({
+        agentId: agentId,
+      });
+
+      if (modelUrl) {
+        queryParams.append('modelUrl', modelUrl);
+      }
+
+      // Pass animation URLs to Unity (repeat key so Unity can collect them).
+      // NOTE: URLSearchParams will safely encode SAS tokens and special chars.
+      if (animationUrls && animationUrls.length > 0) {
+        for (const url of animationUrls) {
+          if (url) queryParams.append('animUrl', url);
+        }
+      }
+
+      const unityUrl = `aichatar://ar?${queryParams.toString()}`;
+      console.log('🔗 [ARViewer] Launching Unity with:', unityUrl);
+
+      const supported = await Linking.canOpenURL(unityUrl);
+
+      if (supported || Platform.OS === 'android') {
+        unityLaunchTimeRef.current = Date.now();
+        await Linking.openURL(unityUrl);
+      } else {
+        Alert.alert(
+          'AR App Not Installed',
+          'Please install the "AI Chat AR" companion app to view avatars in AR.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error: any) {
+      console.error('❌ [ARViewer] Error launching Unity:', error);
+      Alert.alert('Error', 'Could not open AR app: ' + error.message);
     }
   };
 
-  // For now, show 3D viewer with AR button
-  // In full implementation, this would switch between 3D and AR views
   return (
     <View style={styles.container}>
-      <Model3DViewer
-        modelUrl={modelUrl}
-        onClose={onClose}
-        enableAR={arSupported}
-        onARPress={handleARPress}
-      />
-      
-      {arMode && (
-        <View style={styles.arOverlay}>
-          <View style={styles.arInstructions}>
-            <Ionicons name="cube" size={48} color="#007AFF" />
-            <Text style={styles.arTitle}>AR Mode</Text>
-            <Text style={styles.arText}>
-              Point your camera at a flat surface to place the avatar.
-            </Text>
+      <View style={styles.content}>
+        <Ionicons name="cube" size={64} color="#007AFF" />
+        <Text style={styles.title}>Opening AR Experience...</Text>
+        <Text style={styles.subtitle}>
+          Launching high-fidelity avatar viewer.
+        </Text>
+
+        {!isReady && (
+          <ActivityIndicator size="large" color="#007AFF" style={styles.stats} />
+        )}
+
+        {isReady && (
+          <View style={styles.actions}>
             <TouchableOpacity
-              style={styles.arButton}
-              onPress={() => setArMode(false)}
+              style={styles.primaryButton}
+              onPress={handleLaunchUnity}
             >
-              <Text style={styles.arButtonText}>Exit AR</Text>
+              <Text style={styles.primaryButtonText}>
+                {hasLaunched ? "Re-open AR App" : "Launch AR App"}
+              </Text>
             </TouchableOpacity>
+
+            {onClose && (
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={onClose}
+              >
+                <Text style={styles.secondaryButtonText}>Return to Chat</Text>
+              </TouchableOpacity>
+            )}
           </View>
-        </View>
-      )}
+        )}
+      </View>
     </View>
   );
 };
+
+// Memoize to prevent re-renders, although less critical now without internal 3D state
+export const ARViewer = React.memo(ARViewerComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.modelUrl === nextProps.modelUrl &&
+    prevProps.agentId === nextProps.agentId
+  );
+});
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
-  },
-  arOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 100,
   },
-  arInstructions: {
+  content: {
     alignItems: 'center',
-    padding: 20,
+    padding: 30,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 20,
+    width: '85%',
+    maxWidth: 400,
   },
-  arTitle: {
-    fontSize: 24,
+  title: {
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#FFF',
-    marginTop: 16,
+    marginTop: 20,
     marginBottom: 8,
   },
-  arText: {
+  subtitle: {
     fontSize: 16,
-    color: '#FFF',
+    color: '#8E8E93',
     textAlign: 'center',
-    marginBottom: 24,
-    paddingHorizontal: 40,
+    marginBottom: 30,
+    lineHeight: 22,
   },
-  arButton: {
+  stats: {
+    marginBottom: 30,
+  },
+  actions: {
+    width: '100%',
+    gap: 12,
+  },
+  primaryButton: {
     backgroundColor: '#007AFF',
     paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
   },
-  arButtonText: {
+  primaryButtonText: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
   },
+  secondaryButton: {
+    paddingVertical: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '500',
+  },
 });
-

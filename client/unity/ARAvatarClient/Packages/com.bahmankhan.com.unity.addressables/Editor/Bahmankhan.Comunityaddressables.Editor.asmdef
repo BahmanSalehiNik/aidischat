@@ -1,0 +1,10 @@
+{
+    "name": "Bahmankhan.Comunityaddressables.Editor",
+    "references": [
+      "Bahmankhan.Comunityaddressables"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": []
+}

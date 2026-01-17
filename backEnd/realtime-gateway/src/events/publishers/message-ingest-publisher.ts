@@ -8,6 +8,7 @@ export class MessageIngestPublisher {
     content: string;
     senderId: string;
     senderType: string;
+    senderName?: string;
     tempId?: string;
     replyToMessageId?: string | null;
   }) {

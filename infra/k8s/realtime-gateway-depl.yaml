@@ -16,20 +16,19 @@ spec:
         - name: wait-for-kafka-topics
           image: redpandadata/redpanda:latest
           command:
-            - /bin/bash
+            - /bin/sh
             - -c
             - |
               set -e
               echo "Waiting for Kafka topics to be created..."
-              KAFKA_BROKER=${KAFKA_BROKER:-redpanda-srv:9092}
-              
-              # Required topics for realtime-gateway
-              required_topics=("message.created" "chat.message.reaction.created" "chat.message.reaction.removed" "chat.message.reply.created")
-              
-              # Wait for Kafka broker to be ready first (faster check with shorter timeout)
+              KAFKA_BROKER=${KAFKA_BROKER:-redpanda-external-srv:19092}
+
+              required_topics="message.created chat.message.reaction.created chat.message.reaction.removed chat.message.reply.created"
+
               echo "Waiting for Kafka broker..."
-              for i in {1..30}; do
-                if rpk cluster info --brokers $KAFKA_BROKER &>/dev/null; then
+              i=1
+              while [ $i -le 30 ]; do
+                if rpk cluster info --brokers "$KAFKA_BROKER" >/dev/null 2>&1; then
                   echo "✅ Kafka broker is ready"
                   break
                 fi
@@ -37,52 +36,39 @@ spec:
                   echo "❌ Kafka broker not ready after 30 seconds"
                   exit 1
                 fi
+                i=$((i+1))
                 sleep 1
               done
-              
-              # Wait for all required topics to exist (optimized - check all at once)
+
               max_attempts=60
-              for attempt in $(seq 1 $max_attempts); do
-                # Get topic list once per attempt (more efficient)
-                # Skip header line (NAME, PARTITIONS, REPLICAS) and empty lines
-                topic_list=$(rpk topic list --brokers $KAFKA_BROKER 2>/dev/null | grep -v "^NAME" | grep -v "^$" || echo "")
-                
-                if [ -z "$topic_list" ]; then
-                  if [ $attempt -lt $max_attempts ]; then
-                    echo "Waiting for Kafka to respond... (attempt $attempt/$max_attempts)"
-                    sleep 2
-                    continue
-                  fi
-                fi
-                
-                # Check all topics at once
+              attempt=1
+              while [ $attempt -le $max_attempts ]; do
+                topic_list=$(rpk topic list --brokers "$KAFKA_BROKER" 2>/dev/null | grep -v "^NAME" | grep -v "^$" || echo "")
+
                 all_exist=true
-                for topic in "${required_topics[@]}"; do
-                  # Check if topic exists (match topic name at start of line followed by space or end of line)
-                  if ! echo "$topic_list" | grep -qE "^$topic[[:space:]]"; then
-                    all_exist=false
-                    break
-                  fi
+                for topic in $required_topics; do
+                  echo "$topic_list" | grep -qE "^$topic[[:space:]]" || all_exist=false
                 done
-                
+
                 if [ "$all_exist" = true ]; then
                   echo "✅ All required topics exist"
                   exit 0
                 fi
-                
+
                 if [ $attempt -lt $max_attempts ]; then
                   echo "Waiting for topics... (attempt $attempt/$max_attempts)"
                   sleep 2
                 fi
+                attempt=$((attempt+1))
               done
-              
+
               echo "❌ Required topics not found after $max_attempts attempts"
               echo "Available topics:"
-              rpk topic list --brokers $KAFKA_BROKER 2>/dev/null || true
+              rpk topic list --brokers "$KAFKA_BROKER" 2>/dev/null || true
               exit 1
           env:
             - name: KAFKA_BROKER
-              value: 'redpanda-srv:9092'
+              value: 'redpanda-external-srv:19092'
       containers:
         - name: realtime-gateway
           image: bahmansalehinic4/realtime-gateway
@@ -95,7 +81,7 @@ spec:
               cpu: "500m"
           env:
             - name: KAFKA_BROKER
-              value: 'redpanda-srv:9092'
+              value: 'redpanda-external-srv:19092'
             - name: REDIS_URL
               value: 'redis://realtime-redis-srv:6379'
             - name: REDIS_ROOM_URL

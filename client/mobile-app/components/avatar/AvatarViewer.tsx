@@ -38,7 +38,7 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({ agentId, onClose }) 
 
   useEffect(() => {
     checkAvatarStatus();
-    
+
     // Poll for status updates if generating
     let pollInterval: NodeJS.Timeout | null = null;
     if (status === 'generating') {
@@ -57,7 +57,7 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({ agentId, onClose }) 
   const checkAvatarStatus = async () => {
     try {
       const avatarStatus = await avatarApi.getAvatarStatus(agentId);
-      
+
       if (avatarStatus.status === 'ready' && avatarStatus.modelUrl) {
         // Get download URL
         const downloadData = await avatarApi.getDownloadUrl(agentId);
@@ -89,6 +89,7 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({ agentId, onClose }) 
     if (viewMode === 'ar') {
       return (
         <ARViewer
+          agentId={agentId}
           modelUrl={downloadUrl}
           onClose={onClose}
         />

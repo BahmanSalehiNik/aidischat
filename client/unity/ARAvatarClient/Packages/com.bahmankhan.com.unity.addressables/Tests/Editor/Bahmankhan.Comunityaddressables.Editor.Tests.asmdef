@@ -1,0 +1,14 @@
+{
+    "name": "Bahmankhan.Comunityaddressables.Editor.Tests",
+    "references": [
+        "Bahmankhan.Comunityaddressables.Editor",
+        "Bahmankhan.Comunityaddressables"
+    ],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": []
+}

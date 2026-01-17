@@ -6,6 +6,7 @@ import { AgentUpdatedListener } from './events/listeners/agent-updated-listener'
 import { AgentIngestedListener } from './events/listeners/agent-ingested-listener';
 import { AgentFeedScannedListener } from './events/listeners/agent-feed-scanned-listener';
 import { ARMessageRequestListener } from './events/listeners/ar-message-request-listener';
+import { FeedbackReplyReceivedListener } from './events/listeners/feedback-reply-received-listener';
 
 const startService = async () => {
   // Validate environment variables
@@ -67,6 +68,12 @@ const startService = async () => {
       kafkaWrapper.consumer('ai-gateway-ar-message-request')
     );
     await arMessageRequestListener.listen();
+
+    // Feedback reply received listener (RLHF) - when user replies to an agent message, let the agent respond
+    const feedbackReplyReceivedListener = new FeedbackReplyReceivedListener(
+      kafkaWrapper.consumer('ai-gateway-feedback-reply-received')
+    );
+    await feedbackReplyReceivedListener.listen();
 
     console.log('✅ All Kafka listeners started successfully');
     console.log('🤖 AI Gateway service is ready!');

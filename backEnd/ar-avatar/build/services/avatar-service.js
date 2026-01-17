@@ -55,9 +55,39 @@ class AvatarService {
                         console.log(`[AvatarService] Downloaded: ${mbDownloaded} MB`);
                     }
                 });
+                // Step 3b: Download and store animation GLBs (if available)
+                const uploadedAnimationUrls = [];
+                const animationClips = (generatedModel.animationClips && generatedModel.animationClips.length > 0)
+                    ? generatedModel.animationClips.filter(c => !!c.url)
+                    : (generatedModel.animationUrls || []).map((url, i) => ({ name: `clip${i}`, url }));
+                if (animationClips.length > 0) {
+                    console.log(`[AvatarService] Uploading ${animationClips.length} animation GLBs to Azure...`);
+                    for (let i = 0; i < animationClips.length; i++) {
+                        const clip = animationClips[i];
+                        try {
+                            const animUploadResult = yield storage_service_1.storageService.downloadAndStore(clip.url, 
+                            // IMPORTANT: embed the canonical animation name in the blob key for reliable runtime mapping in Unity.
+                            // Unity will parse this from the URL and rename the imported AnimationClip accordingly.
+                            `${agentId}_anim_${clip.name}_${Date.now()}.${generatedModel.format}`, (bytesDownloaded, totalBytes) => {
+                                if (totalBytes) {
+                                    const progress = Math.round((bytesDownloaded / totalBytes) * 100);
+                                    console.log(`[AvatarService] Animation ${clip.name} (${i + 1}/${animationClips.length}) upload: ${progress}%`);
+                                }
+                            });
+                            uploadedAnimationUrls.push(animUploadResult.url || storage_service_1.storageService.generateCDNUrl(animUploadResult.key));
+                            console.log(`[AvatarService] ✅ Uploaded animation ${clip.name} (${i + 1}/${animationClips.length})`);
+                        }
+                        catch (error) {
+                            console.warn(`[AvatarService] Failed to upload animation ${clip.name}: ${error.message}`);
+                            // Continue with other animations
+                        }
+                    }
+                    console.log(`[AvatarService] ✅ Uploaded ${uploadedAnimationUrls.length}/${animationClips.length} animations to Azure`);
+                }
                 // Step 4: Update avatar record
                 // Use the URL from uploadResult (already includes CDN URL if configured)
                 avatar.modelUrl = uploadResult.url || storage_service_1.storageService.generateCDNUrl(uploadResult.key);
+                avatar.animationUrls = uploadedAnimationUrls.length > 0 ? uploadedAnimationUrls : [];
                 avatar.format = generatedModel.format;
                 avatar.modelType = this.determineModelType(description);
                 avatar.provider = generatedModel.modelId.split('_')[0]; // Extract provider from modelId
@@ -75,7 +105,9 @@ class AvatarService {
                 avatar.animations = {
                     idle: 'idle',
                     talking: 'talking',
-                    gestures: ['wave', 'nod', 'point'],
+                    // For now, keep canonical movement set small and explicit.
+                    // GestureController can map custom gestures later.
+                    gestures: ['thinking', 'walking'],
                 };
                 yield avatar.save();
                 console.log(`[AvatarService] Avatar generated successfully for agent ${agentId}`);
@@ -119,6 +151,7 @@ class AvatarService {
                 error: avatar.generationError,
                 progress,
                 modelUrl: avatar.modelUrl,
+                animationUrls: avatar.animationUrls || [],
                 format: avatar.format,
                 modelType: avatar.modelType,
                 estimatedTimeRemaining,
