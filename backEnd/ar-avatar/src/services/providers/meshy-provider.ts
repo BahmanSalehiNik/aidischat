@@ -154,7 +154,7 @@ export class MeshyProvider extends BaseModelProvider {
       }
 
       // Step 7: Add animations to the rigged model
-      // For lightweight mobile AR: Generate minimal set (idle, thinking, walk)
+      // For lightweight mobile AR: Generate a minimal set (idle + talking/thinking variants)
       // See: docs/MESHY_RIGGING_ANIMATION.md
       let animatedModelUrl = riggedModelUrl;
       let animationUrls: string[] = [];
@@ -162,7 +162,7 @@ export class MeshyProvider extends BaseModelProvider {
       if (rigTaskId) {
         try {
           console.log(`[MeshyProvider] Adding animations to rigged model...`);
-          console.log(`[MeshyProvider] Generating minimal animation set for mobile AR (idle, thinking, talking, walking)`);
+          console.log(`[MeshyProvider] Generating minimal animation set for mobile AR (idle + 2x thinking + 2x talking)`);
           
           // Generate multiple animations (each returns separate GLB)
           // Recommended minimal set:
@@ -173,15 +173,43 @@ export class MeshyProvider extends BaseModelProvider {
           //
           // NOTE: Meshy action IDs can vary by library version. If a specific action_id fails,
           // Meshy will return an error and we will continue with remaining animations.
-          const thinkingActionId = parseInt(process.env.MESHY_THINKING_ACTION_ID || '36', 10);
-          const talkingActionId = parseInt(process.env.MESHY_TALKING_ACTION_ID || '3', 10);
-          const walkingActionId = parseInt(process.env.MESHY_WALKING_ACTION_ID || '1', 10);
+          // Meshy animation selection is by action_id (from Meshy Animation Library).
+          // The library can change over time; keep these configurable.
+          //
+          // Defaults chosen based on our internal research docs:
+          // - idle: 0
+          // - thinking: 5, 25 (gesture-style “thinking” variants)
+          // - talking: 3, 25 (talk + gesture fallback; replace via env if you find better “talking” IDs)
+          //
+          // Env overrides (CSV):
+          // - MESHY_THINKING_ACTION_IDS="5,25"
+          // - MESHY_TALKING_ACTION_IDS="3,25"
+          const parseActionIds = (csv: string, fallback: number[]): number[] => {
+            const raw = (csv || '').split(',').map(s => s.trim()).filter(Boolean);
+            const ids = raw
+              .map(v => parseInt(v, 10))
+              .filter(n => Number.isFinite(n) && n >= 0);
+            // de-dupe but preserve order
+            const seen = new Set<number>();
+            const out: number[] = [];
+            for (const id of ids) {
+              if (!seen.has(id)) {
+                seen.add(id);
+                out.push(id);
+              }
+            }
+            return out.length > 0 ? out : fallback;
+          };
+
+          const thinkingActionIds = parseActionIds(process.env.MESHY_THINKING_ACTION_IDS || '', [5, 25]).slice(0, 2);
+          const talkingActionIds = parseActionIds(process.env.MESHY_TALKING_ACTION_IDS || '', [3, 25]).slice(0, 2);
 
           const animationSet = [
-            { name: 'idle', action_id: 0 }, // Idle
-            { name: 'thinking', action_id: thinkingActionId }, // Thinking / gesture-style
-            { name: 'talking', action_id: talkingActionId }, // Talking (if available)
-            { name: 'walking', action_id: walkingActionId }, // Walking
+            { name: 'idle', action_id: 0 }, // 1x Idle
+            { name: 'thinking_1', action_id: thinkingActionIds[0] }, // 2x Thinking variants
+            { name: 'thinking_2', action_id: thinkingActionIds[1] ?? thinkingActionIds[0] },
+            { name: 'talking_1', action_id: talkingActionIds[0] }, // 2x Talking variants
+            { name: 'talking_2', action_id: talkingActionIds[1] ?? talkingActionIds[0] },
           ];
           
           const animationResults = await this.addMultipleAnimations(rigTaskId, animationSet);

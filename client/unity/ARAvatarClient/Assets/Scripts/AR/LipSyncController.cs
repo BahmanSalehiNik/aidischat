@@ -112,6 +112,9 @@ namespace AIChatAR.AR
                 return;
             }
 
+            // Helpful diagnostics: dump the blendshape names on the chosen renderer.
+            BlendshapeDebugUtil.DumpRendererBlendshapes(faceMeshRenderer, "LipSyncController selected faceMeshRenderer");
+
             // Map viseme IDs to blendshape indices
             for (int visemeId = 0; visemeId < visemeBlendshapeNames.Length; visemeId++)
             {

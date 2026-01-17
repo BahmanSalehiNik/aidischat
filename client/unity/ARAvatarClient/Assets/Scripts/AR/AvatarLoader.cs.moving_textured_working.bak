@@ -471,8 +471,6 @@ namespace AIChatAR.AR
             Shader safeShader = Shader.Find("Unlit/Color");
             if (safeShader == null) safeShader = Shader.Find("Mobile/Diffuse");
             if (safeShader == null) safeShader = Shader.Find("Standard");
-            if (safeShader == null) safeShader = Shader.Find("Sprites/Default");
-            if (safeShader == null) safeShader = Shader.Find("UI/Default");
 
             // --- CLEANUP & SETUP (PURPLE) ---
             try
@@ -613,11 +611,6 @@ namespace AIChatAR.AR
                     // Use the scene root created by glTFast (may be the parent itself or a child "Scene")
                     var sceneRoot = instantiator.SceneTransform != null ? instantiator.SceneTransform.gameObject : loadedAvatar;
 
-                    // Dump blendshape names to help identify viseme/emotion targets on Meshy models.
-                    // This is safe even if the model has no blendshapes (it will log a warning/summary).
-                    BlendshapeDebugUtil.DumpAllBlendshapes(sceneRoot, "After GLB instantiate (AvatarLoader)");
-                    BlendshapeDebugUtil.DumpRigHints(sceneRoot, "After GLB instantiate (AvatarLoader)");
-
                     // If we intentionally loaded an animation GLB (e.g. idle), auto-play its embedded clip
                     // using Unity legacy Animation component (not Animator).
                     if (autoPlayLegacyAnimationOnNextLoad)
@@ -635,13 +628,10 @@ namespace AIChatAR.AR
                         foreach (var r in renderers)
                         {
 
-                            // Force a visible material only if we have a valid shader on this device/build.
-                            // Some Android builds strip unused shaders, so Shader.Find can return null.
 
-                                Material debugMat = new Material(safeShader);
-                                debugMat.color = new Color(1f, 0.5f, 0f); // ORANGE
-                                r.material = debugMat;
-
+                        Material debugMat = new Material(safeShader);
+                        debugMat.color = new Color(1f, 0.5f, 0f); // ORANGE
+                        r.material = debugMat;
 
                             totalBounds.Encapsulate(r.bounds);
                         }

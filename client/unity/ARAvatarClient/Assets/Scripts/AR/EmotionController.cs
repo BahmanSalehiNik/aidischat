@@ -52,6 +52,9 @@ namespace AIChatAR.AR
             Mesh mesh = faceMeshRenderer.sharedMesh;
             if (mesh == null) return;
 
+            // Helpful diagnostics: dump the blendshape names on the chosen renderer.
+            BlendshapeDebugUtil.DumpRendererBlendshapes(faceMeshRenderer, "EmotionController selected faceMeshRenderer");
+
             // Map emotions to blendshape indices
             string[] emotions = { "happy", "sad", "angry", "excited", "neutral" };
             string[] blendshapeNames = { happyBlendshape, sadBlendshape, angryBlendshape, excitedBlendshape, neutralBlendshape };

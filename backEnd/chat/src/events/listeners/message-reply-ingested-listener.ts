@@ -133,8 +133,12 @@ export class MessageReplyIngestedListener extends Listener<MessageReplyIngestedE
         replyToMessageId: originalMessage.id,
         agentId: originalMessage.senderId,
         agentMessageContent: originalMessage.content,
+        replyToSenderId: originalMessage.senderId,
+        replyToSenderType: originalMessage.senderType,
+        replyToSenderName: originalMessage.senderName || undefined,
         replySenderId: senderId,
         replySenderType: senderType as 'human' | 'agent',
+        replySenderName: finalSenderName,
         replyContent: content,
         createdAt: replyMessage.createdAt.toISOString(),
       });

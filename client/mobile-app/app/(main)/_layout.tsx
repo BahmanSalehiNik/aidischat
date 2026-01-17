@@ -119,6 +119,12 @@ export default function MainLayout() {
         }}
       />
       <Tabs.Screen
+        name="PostDetailModal"
+        options={{
+          href: null, // Hide from tab bar (modal route)
+        }}
+      />
+      <Tabs.Screen
         name="chat"
         options={{
           title: 'Chat',

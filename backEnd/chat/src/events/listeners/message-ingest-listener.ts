@@ -18,7 +18,7 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
   readonly groupId = 'chat-service-message-ingest';
 
   async onMessage(data: MessageIngestEvent['data'], payload: any) {
-    const { roomId, content, senderId, senderType, tempId } = data;
+    const { roomId, content, senderId, senderType, tempId, senderName: senderNameFromEvent } = data;
 
     // Validate: Check if sender is a participant in the room
     const participant = await RoomParticipant.findOne({ 
@@ -40,34 +40,20 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
     const dedupeKey = tempId || `${roomId}-${senderId}-${Date.now()}`;
 
     // Fetch sender name for denormalization (store in message for quick access)
-    let senderName: string | undefined;
+    // Prefer senderName coming from realtime-gateway (email prefix) to avoid "User <id>" fallbacks
+    let senderName: string | undefined = senderNameFromEvent?.trim() || undefined;
     if (senderType === 'human') {
-      let user = await User.findOne({ _id: senderId }).lean();
-      if (user) {
-        // Use displayName -> username -> email prefix as fallback
-        senderName = user.displayName || user.username || user.email?.split('@')[0];
-        console.log(`[Message Ingest] User lookup successful: senderId=${senderId}, senderName=${senderName}, displayName=${user.displayName}, username=${user.username}, email=${user.email}`);
-      } else {
-        // User doesn't exist in chat service DB - this can happen if UserCreated event was missed
-        // Try to create a minimal user record (will be updated when UserCreated/UserUpdated events arrive)
-        // For now, use a fallback name based on senderId
-        console.warn(`[Message Ingest] ⚠️ User not found in chat service DB: senderId=${senderId} - creating minimal user record and using fallback name`);
-        
-        // Create minimal user (will be updated by UserCreated/UserUpdated events)
-        try {
-          console.log(`[Message Ingest] Created minimal user record for ${senderId}`);
-          
-          // Use a readable fallback name (first 8 chars of ID)
+      // If we already got a good senderName from gateway, skip DB lookup
+      if (!senderName) {
+        let user = await User.findOne({ _id: senderId }).lean();
+        if (user) {
+          // Use displayName -> username -> email prefix as fallback
+          senderName = user.displayName || user.username || user.email?.split('@')[0];
+          console.log(`[Message Ingest] User lookup successful: senderId=${senderId}, senderName=${senderName}, displayName=${user.displayName}, username=${user.username}, email=${user.email}`);
+        } else {
+          // User doesn't exist in chat service DB (eventual consistency). Fall back to readable ID.
+          console.warn(`[Message Ingest] ⚠️ User not found in chat service DB: senderId=${senderId} - using fallback name`);
           senderName = `User ${senderId.slice(0, 8)}`;
-        } catch (error: any) {
-          // User might have been created by another process, try to fetch again
-          user = await User.findOne({ _id: senderId }).lean();
-          if (user) {
-            senderName = user.displayName || user.username || user.email?.split('@')[0] || `User ${senderId.slice(0, 8)}`;
-          } else {
-            // Still not found, use fallback
-            senderName = `User ${senderId.slice(0, 8)}`;
-          }
         }
       }
     } else if (senderType === 'agent') {
@@ -252,7 +238,7 @@ export class MessageIngestListener extends Listener<MessageIngestEvent> {
       // IMPORTANT: Filter out the sender agent if sender is an agent (shouldn't happen since we skip agent messages above,
       // but adding as a safety check for edge cases)
       const aiReceivers = eligibleAgents
-        //.filter(agent => agent.id !== senderId) // Exclude sender agent from receivers
+        .filter(agent => agent.id !== senderId) // Exclude sender agent from receivers
         .map(agent => ({
           agentId: agent.id,
           ownerUserId: agent.createdBy // createdBy should be ownerUserId based on agent-updated-listener

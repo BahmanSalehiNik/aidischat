@@ -13,9 +13,13 @@ namespace AIChatAR.AR
     public class TTSController : MonoBehaviour
     {
         [Header("Configuration")]
-        [SerializeField] private TTSProvider preferredProvider = TTSProvider.ElevenLabs;
+        [SerializeField] private TTSProvider preferredProvider = TTSProvider.AzureSpeech;
         [SerializeField] private string voiceId = "default";
         [SerializeField] private float playbackSpeed = 1.0f;
+
+        [Header("Azure Speech Settings")]
+        [SerializeField] private string azureRegion = "eastus";
+        [SerializeField] private string azureVoiceName = "en-US-JennyNeural";
 
         [Header("References")]
         [SerializeField] private AudioSource audioSource;
@@ -139,14 +143,27 @@ namespace AIChatAR.AR
             // Azure Speech TTS requires SSML or plain text
             // This is a simplified implementation
             // For production, use Azure Speech SDK for Unity
-            string url = "https://[region].tts.speech.microsoft.com/cognitiveservices/v1";
-            string ssml = $"<speak version='1.0' xml:lang='en-US'><voice xml:lang='en-US' name='en-US-JennyNeural'>{text}</voice></speak>";
+            if (string.IsNullOrEmpty(azureRegion))
+            {
+                onError?.Invoke("Azure region not set (TTSController.azureRegion)");
+                yield break;
+            }
+            if (string.IsNullOrEmpty(azureVoiceName))
+            {
+                onError?.Invoke("Azure voice name not set (TTSController.azureVoiceName)");
+                yield break;
+            }
+
+            string url = $"https://{azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1";
+            // NOTE: keep SSML simple; emotion/style can be added later via mstts:express-as if desired.
+            string ssml = $"<speak version='1.0' xml:lang='en-US'><voice name='{azureVoiceName}'>{text}</voice></speak>";
 
             using (UnityEngine.Networking.UnityWebRequest request = new UnityEngine.Networking.UnityWebRequest(url, "POST"))
             {
                 byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(ssml);
                 request.uploadHandler = new UnityEngine.Networking.UploadHandlerRaw(bodyRaw);
-                request.downloadHandler = new UnityEngine.Networking.DownloadHandlerAudioClip("", AudioType.OGGVORBIS);
+                // We request MP3 output, so the download handler must match.
+                request.downloadHandler = new UnityEngine.Networking.DownloadHandlerAudioClip("", AudioType.MPEG);
                 request.SetRequestHeader("Content-Type", "application/ssml+xml");
                 request.SetRequestHeader("Authorization", $"Bearer {providerTokens.azureSpeechToken}");
                 request.SetRequestHeader("X-Microsoft-OutputFormat", "audio-16khz-128kbitrate-mono-mp3");
