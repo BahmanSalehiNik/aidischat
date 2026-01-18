@@ -5,24 +5,12 @@ import { AgentDraftPostCreatedPublisher, AgentDraftCommentCreatedPublisher, Agen
 import { kafkaWrapper } from '../../../kafka-client';
 import { v4 as uuidv4 } from 'uuid';
 import { Visibility } from '@aichatwar/shared';
-import { MediaHandler } from '../../../utils/mediaHandler';
+import { importImageFromUrl } from '../../../utils/mediaServiceClient';
 
 export class AgentFeedAnswerReceivedListener extends Listener<AgentFeedAnswerReceivedEvent> {
   readonly topic = Subjects.AgentFeedAnswerReceived;
   readonly groupId = 'agent-manager-agent-feed-answer-received';
   protected fromBeginning: boolean = true;
-  private mediaHandler: MediaHandler | null = null;
-
-  constructor(consumer: any) {
-    super(consumer);
-    // Initialize media handler (will use env vars for provider configuration)
-    // Only initialize if storage credentials are available
-    try {
-      this.mediaHandler = new MediaHandler();
-    } catch (error: any) {
-      console.warn(`[AgentFeedAnswerReceivedListener] Media handler initialization failed: ${error.message}. Media uploads will be skipped.`);
-    }
-  }
 
   async onMessage(data: AgentFeedAnswerReceivedEvent['data'], msg: EachMessagePayload): Promise<void> {
     const { agentId, ownerUserId, scanId, correlationId, response, metadata, timestamp } = data;
@@ -36,30 +24,40 @@ export class AgentFeedAnswerReceivedListener extends Listener<AgentFeedAnswerRec
       if (response.posts && Array.isArray(response.posts)) {
         for (const post of response.posts) {
           try {
-            // Upload media URLs to storage if provided
-            let mediaUrls: string[] = [];
-            if (post.mediaUrls && post.mediaUrls.length > 0 && this.mediaHandler) {
-              try {
-                const uploadResults = await this.mediaHandler.uploadMultipleMediaFromUrls(
-                  post.mediaUrls,
-                  agentId
-                );
-                mediaUrls = uploadResults.map(result => result.url);
-                console.log(`[AgentFeedAnswerReceivedListener] Uploaded ${uploadResults.length} media files for post draft`);
-              } catch (mediaError: any) {
-                console.error(`[AgentFeedAnswerReceivedListener] Error uploading media, continuing without media:`, mediaError.message);
-                // Continue without media if upload fails
-              }
-            } else if (post.mediaUrls && post.mediaUrls.length > 0) {
-              console.warn(`[AgentFeedAnswerReceivedListener] Media handler not available, storing original URLs:`, post.mediaUrls);
-              mediaUrls = post.mediaUrls; // Fallback to original URLs
+            // Ensure every agent draft post gets at least one image
+            const sourceImageUrls: string[] =
+              post.mediaUrls && Array.isArray(post.mediaUrls) && post.mediaUrls.length > 0
+                ? post.mediaUrls
+                : [`https://picsum.photos/seed/${encodeURIComponent(`${agentId}-${scanId}`)}/1024/768`];
+
+            // Convert public image URL(s) into Media IDs in media service (uploaded to storage + registered)
+            const mediaIds: string[] = [];
+            const mediaUrlsForEvent: string[] = [];
+
+            // Only take 1 for now to keep drafts lightweight
+            const firstUrl = sourceImageUrls[0];
+            try {
+              const imported = await importImageFromUrl({
+                userId: ownerUserId, // owner can review/delete
+                agentId,
+                sourceUrl: firstUrl,
+                container: 'posts',
+                expiresSeconds: 900,
+              });
+              mediaIds.push(imported.id);
+              if (imported.downloadUrl) mediaUrlsForEvent.push(imported.downloadUrl);
+              else if (imported.url) mediaUrlsForEvent.push(imported.url);
+            } catch (mediaError: any) {
+              // As a fallback, keep the external URL (draft will still have an image preview)
+              console.error(`[AgentFeedAnswerReceivedListener] Error importing media, falling back to external URL:`, mediaError.message);
+              mediaUrlsForEvent.push(firstUrl);
             }
 
             const draft = await draftHandler.createPostDraft({
               agentId,
               ownerUserId,
               content: post.content,
-              mediaIds: mediaUrls, // Store uploaded URLs (will be converted to media IDs on approval)
+              mediaIds: mediaIds.length > 0 ? mediaIds : mediaUrlsForEvent, // prefer real media IDs, fallback to URL strings
               visibility: (post.visibility as Visibility) || Visibility.Public,
               metadata: {
                 suggestedBy: 'ai_gateway',
@@ -73,7 +71,7 @@ export class AgentFeedAnswerReceivedListener extends Listener<AgentFeedAnswerRec
               agentId,
               ownerUserId,
               content: draft.content,
-              mediaUrls: mediaUrls, // Include uploaded URLs in event
+              mediaUrls: mediaUrlsForEvent, // best-effort preview URL(s)
               visibility: draft.visibility,
               status: 'pending',
               expiresAt: draft.expiresAt.toISOString(),

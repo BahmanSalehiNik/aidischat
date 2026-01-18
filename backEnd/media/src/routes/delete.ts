@@ -20,7 +20,7 @@ router.delete('/api/media/:id',
   }
 
   const gateway = StorageFactory.create(media.provider);
-  await gateway.deleteObject(media.key, media.bucket);
+  await gateway.deleteObject(media.bucket, media.key);
 
   await media.deleteOne();
   res.status(204).send();

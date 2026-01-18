@@ -15,24 +15,24 @@ class AwsStorageGateway implements StorageGateway {
     });
   }
 
-  async generateUploadUrl(key: string, contentType: string, bucket: string): Promise<string> {
+  async generateUploadUrl(bucket: string, key: string, contentType: string, expiresSeconds = 60): Promise<string> {
     const command = new PutObjectCommand({
       Bucket: bucket,
       Key: key,
       ContentType: contentType,
     });
-    return getSignedUrl(this.s3, command, { expiresIn: 60 }); // 1 min
+    return getSignedUrl(this.s3, command, { expiresIn: expiresSeconds }); // default 1 min
   }
 
-  async generateDownloadUrl(key: string, bucket: string): Promise<string> {
+  async generateDownloadUrl(bucket: string, key: string, expiresSeconds = 900): Promise<string> {
     const command = new GetObjectCommand({
       Bucket: bucket,
       Key: key,
     });
-    return getSignedUrl(this.s3, command, { expiresIn: 900 }); // 15 min
+    return getSignedUrl(this.s3, command, { expiresIn: expiresSeconds }); // default 15 min
   }
 
-  async deleteObject(key: string, bucket: string): Promise<void> {
+  async deleteObject(bucket: string, key: string): Promise<void> {
     const command = new DeleteObjectCommand({
       Bucket: bucket,
       Key: key,

@@ -10,8 +10,10 @@ import {
   AgentDraftCommentApprovedPublisher,
   AgentDraftReactionApprovedPublisher,
   AgentDraftRejectedPublisher,
+  AgentDraftUpdatedPublisher,
 } from '../events/publishers/agentManagerPublishers';
 import { kafkaWrapper } from '../kafka-client';
+import { getInternalMedia } from '../utils/mediaServiceClient';
 
 const router = express.Router();
 
@@ -69,7 +71,36 @@ router.get(
     // Filter by ownership
     const ownedDrafts = drafts.filter((d: any) => d.ownerUserId === userId);
 
-    res.send({ drafts: ownedDrafts });
+    // Hydrate media for post drafts (so clients can render immediately)
+    for (const d of ownedDrafts) {
+      if (d.draftType !== 'post') continue;
+      if (!d.mediaIds || !Array.isArray(d.mediaIds) || d.mediaIds.length === 0) continue;
+
+      const hydrated: any[] = [];
+      for (const mediaIdOrUrl of d.mediaIds) {
+        // Backward compatible: allow raw URLs
+        if (typeof mediaIdOrUrl === 'string' && mediaIdOrUrl.startsWith('http')) {
+          hydrated.push({ id: mediaIdOrUrl, url: mediaIdOrUrl, type: 'image' });
+          continue;
+        }
+        try {
+          const media = await getInternalMedia(String(mediaIdOrUrl), 900);
+          hydrated.push({ id: String(mediaIdOrUrl), url: media.downloadUrl || media.url, type: media.type || 'image' });
+        } catch {
+          // fallback: pass through
+          hydrated.push({ id: String(mediaIdOrUrl), url: String(mediaIdOrUrl), type: 'image' });
+        }
+      }
+      d.media = hydrated;
+    }
+
+    // Ensure clients always get a stable `id` field even when using `.lean()` (which returns `_id`)
+    const normalized = ownedDrafts.map((d: any) => ({
+      ...d,
+      id: String(d.id ?? d._id),
+    }));
+
+    res.send({ drafts: normalized });
   }
 );
 
@@ -113,7 +144,31 @@ router.get(
       throw new NotAuthorizedError(['Unauthorized: Only owner can view drafts']);
     }
 
-    res.send({ draft: { ...draft, draftType: type } });
+    // Hydrate media for post drafts
+    if (type === 'post' && draft.mediaIds && Array.isArray(draft.mediaIds) && draft.mediaIds.length > 0) {
+      const hydrated: any[] = [];
+      for (const mediaIdOrUrl of draft.mediaIds) {
+        if (typeof mediaIdOrUrl === 'string' && mediaIdOrUrl.startsWith('http')) {
+          hydrated.push({ id: mediaIdOrUrl, url: mediaIdOrUrl, type: 'image' });
+          continue;
+        }
+        try {
+          const media = await getInternalMedia(String(mediaIdOrUrl), 900);
+          hydrated.push({ id: String(mediaIdOrUrl), url: media.downloadUrl || media.url, type: media.type || 'image' });
+        } catch {
+          hydrated.push({ id: String(mediaIdOrUrl), url: String(mediaIdOrUrl), type: 'image' });
+        }
+      }
+      (draft as any).media = hydrated;
+    }
+
+    res.send({
+      draft: {
+        ...draft,
+        id: String((draft as any).id ?? (draft as any)._id),
+        draftType: type,
+      },
+    });
   }
 );
 
@@ -307,6 +362,67 @@ router.post(
     }
 
     res.send({ message: 'Draft rejected' });
+  }
+);
+
+/**
+ * POST /api/agent-manager/drafts/:draftId/revise
+ * Request a revision from the AI agent with owner feedback (post drafts only)
+ */
+router.post(
+  '/api/agent-manager/drafts/:draftId/revise',
+  loginRequired,
+  extractJWTPayload,
+  [
+    param('draftId').notEmpty().withMessage('Draft ID is required'),
+    query('type').notEmpty().isIn(['post']).withMessage('Draft type must be post'),
+    body('feedback').notEmpty().isString().withMessage('feedback is required'),
+  ],
+  validateRequest,
+  async (req: Request, res: Response) => {
+    const { draftId } = req.params;
+    const userId = req.jwtPayload!.id;
+    const { feedback } = req.body;
+
+    const draft = await AgentDraftPost.findById(draftId);
+    if (!draft) throw new NotFoundError();
+
+    if (draft.ownerUserId !== userId) {
+      throw new NotAuthorizedError(['Unauthorized: Only owner can revise drafts']);
+    }
+
+    if (draft.status !== 'pending') {
+      throw new BadRequestError('Can only revise pending drafts');
+    }
+
+    // Store revision metadata (best-effort)
+    const existingMeta: any = (draft as any).metadata || {};
+    (draft as any).metadata = {
+      ...existingMeta,
+      revision: {
+        requestedAt: new Date().toISOString(),
+        feedback,
+      },
+    };
+    await draft.save();
+
+    // Use existing AgentDraftUpdated event as the "revision request" trigger to avoid requiring a shared-package bump.
+    await new AgentDraftUpdatedPublisher(kafkaWrapper.producer).publish({
+      draftId: draft.id,
+      agentId: draft.agentId,
+      changes: {
+        revisionRequest: {
+          feedback,
+          requestedBy: draft.ownerUserId,
+          requestedAt: new Date().toISOString(),
+        },
+        currentContent: draft.content,
+        currentMediaIds: draft.mediaIds,
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    res.send({ message: 'Revision requested' });
   }
 );
 

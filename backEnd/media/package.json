@@ -4,7 +4,7 @@
   "description": "use npx tsx index.ts if ts-node did not work properly.",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node-dev --poll src/index.ts",
+    "start": "ts-node-dev --respawn --transpile-only --poll src/index.ts",
     "test": "jest --watchAll --no-cache"
   },
   "jest": {

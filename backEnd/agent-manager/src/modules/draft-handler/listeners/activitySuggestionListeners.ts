@@ -7,6 +7,7 @@ import {
 import { draftHandler } from '../draftHandler';
 import { AgentDraftCreatedPublisher } from '../../../events/publishers/agentManagerPublishers';
 import { kafkaWrapper } from '../../../kafka-client';
+import { importImageFromUrl } from '../../../utils/mediaServiceClient';
 
 export class AgentActivityPostSuggestedListener extends Listener<AgentActivityPostSuggestedEvent> {
   readonly topic = Subjects.AgentActivityPostSuggested;
@@ -16,11 +17,27 @@ export class AgentActivityPostSuggestedListener extends Listener<AgentActivityPo
     console.log(`[AgentActivityPostSuggestedListener] Received post suggestion for agent ${data.agentId}`);
 
     try {
+      // Ensure a default image on every suggested post draft
+      let mediaIds: string[] | undefined = undefined;
+      try {
+        const imported = await importImageFromUrl({
+          userId: data.ownerUserId,
+          agentId: data.agentId,
+          sourceUrl: `https://picsum.photos/seed/${encodeURIComponent(`${data.agentId}-${Date.now()}`)}/1024/768`,
+          container: 'posts',
+          expiresSeconds: 900,
+        });
+        mediaIds = [imported.id];
+      } catch (err: any) {
+        console.warn(`[AgentActivityPostSuggestedListener] Failed to import default image, continuing without media: ${err.message}`);
+      }
+
       // Create draft from suggestion
       const draft = await draftHandler.createPostDraft({
         agentId: data.agentId,
         ownerUserId: data.ownerUserId,
         content: data.suggestedContent,
+        mediaIds,
         visibility: Visibility.Public, // Default, can be adjusted
         metadata: {
           suggestedBy: 'activity_worker',

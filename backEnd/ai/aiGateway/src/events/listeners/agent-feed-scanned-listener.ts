@@ -1,5 +1,5 @@
 // src/events/listeners/agent-feed-scanned-listener.ts
-import { Listener, Subjects, AgentFeedScannedEvent, EachMessagePayload } from '@aichatwar/shared';
+import { Listener, Subjects, AgentFeedScannedEvent, AgentDraftUpdatedEvent, EachMessagePayload } from '@aichatwar/shared';
 import { AgentProfile, AgentProfileStatus } from '../../models/agent-profile';
 import { ProviderFactory } from '../../providers/provider-factory';
 import { PromptBuilder, CharacterAttributes } from '../../prompt-engineering';
@@ -7,6 +7,7 @@ import { AgentFeedDigestedPublisher, AgentFeedAnswerReceivedPublisher } from '..
 import { kafkaWrapper } from '../../kafka-client';
 import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
+import { Publisher } from '@aichatwar/shared';
 
 // In-memory storage for feed analysis thread IDs (TODO: Move to database)
 // Key: agentId, Value: threadId
@@ -16,6 +17,31 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
   readonly topic = Subjects.AgentFeedScanned;
   readonly groupId = 'ai-gateway-agent-feed-scanned';
   protected fromBeginning: boolean = true;
+
+  /**
+   * Best-effort JSON extraction for provider outputs that sometimes include markdown fences,
+   * commentary, or minor JSON issues (like trailing commas).
+   */
+  private extractAndParseJson(raw: string): any {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) throw new Error('Empty response');
+
+    // 1) Strip ```json / ``` fences if present
+    const fenced = trimmed.match(/```json\s*([\s\S]*?)\s*```/i) || trimmed.match(/```\s*([\s\S]*?)\s*```/i);
+    let candidate = (fenced ? fenced[1] : trimmed).trim();
+
+    // 2) If there's extra text, try to take the first {...} block
+    const firstBrace = candidate.indexOf('{');
+    const lastBrace = candidate.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      candidate = candidate.slice(firstBrace, lastBrace + 1);
+    }
+
+    // 3) Remove common invalid JSON trailing commas: { "a": 1, } or [1,]
+    candidate = candidate.replace(/,\s*([}\]])/g, '$1');
+
+    return JSON.parse(candidate);
+  }
 
   async onMessage(data: AgentFeedScannedEvent['data'], msg: EachMessagePayload): Promise<void> {
     const { agentId, ownerUserId, scanId, feedData, scanTimestamp, scanInterval } = data;
@@ -166,10 +192,7 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
       // Parse JSON response
       let parsedResponse: any;
       try {
-        // Try to extract JSON from response (might be wrapped in markdown code blocks)
-        const jsonMatch = response.content.match(/```json\s*([\s\S]*?)\s*```/) || response.content.match(/```\s*([\s\S]*?)\s*```/);
-        const jsonString = jsonMatch ? jsonMatch[1] : response.content;
-        parsedResponse = JSON.parse(jsonString.trim());
+        parsedResponse = this.extractAndParseJson(response.content);
       } catch (parseError: any) {
         console.error(`[AgentFeedScannedListener] Failed to parse JSON response for agent ${agentId}:`, {
           error: parseError.message,
@@ -554,6 +577,150 @@ Return your response as JSON in this exact format:
       return process.env.LOCAL_LLM_ENDPOINT;
     }
     return undefined;
+  }
+}
+
+class AgentDraftUpdatedPublisher extends Publisher<AgentDraftUpdatedEvent> {
+  readonly topic = Subjects.AgentDraftUpdated;
+}
+
+/**
+ * Uses AgentDraftUpdated as a "revision request" trigger:
+ * - agent-manager publishes AgentDraftUpdated with changes.revisionRequest
+ * - ai-gateway generates revised content
+ * - ai-gateway publishes AgentDraftUpdated with changes.content + changes.revisionApplied
+ */
+export class AgentDraftRevisionRequestListener extends Listener<AgentDraftUpdatedEvent> {
+  readonly topic = Subjects.AgentDraftUpdated;
+  // v2: previous group acknowledged revision requests even when provider errored (threadId missing).
+  // Bump groupId + read from beginning so those requests can be retried.
+  readonly groupId = 'ai-gateway-agent-draft-updated-revision-v2';
+  protected fromBeginning: boolean = true;
+
+  // In-memory storage for revision thread IDs (agentId -> threadId)
+  private static revisionThreads = new Map<string, string>();
+
+  private getApiKeyFromEnv(modelProvider: string): string | undefined {
+    if (modelProvider === 'openai') return process.env.OPENAI_API_KEY;
+    if (modelProvider === 'anthropic') return process.env.ANTHROPIC_API_KEY;
+    if (modelProvider === 'cohere') return process.env.COHERE_API_KEY;
+    return undefined;
+  }
+
+  private getEndpointFromEnv(modelProvider: string): string | undefined {
+    if (modelProvider === 'openai') return process.env.OPENAI_ENDPOINT;
+    if (modelProvider === 'anthropic') return process.env.ANTHROPIC_ENDPOINT;
+    if (modelProvider === 'cohere') return process.env.COHERE_ENDPOINT;
+    return undefined;
+  }
+
+  private async getOrCreateRevisionThread(agentId: string, assistantId: string, apiKey?: string): Promise<string | undefined> {
+    try {
+      const existing = AgentDraftRevisionRequestListener.revisionThreads.get(agentId);
+      if (existing) {
+        return existing;
+      }
+
+      if (!apiKey) apiKey = this.getApiKeyFromEnv('openai');
+      if (!apiKey) {
+        throw new Error('OpenAI API key is required to create revision thread');
+      }
+
+      const openaiClient = new OpenAI({ apiKey });
+      const thread = await openaiClient.beta.threads.create();
+      AgentDraftRevisionRequestListener.revisionThreads.set(agentId, thread.id);
+      return thread.id;
+    } catch (err) {
+      console.error(`[AgentDraftRevisionRequestListener] Failed to get/create revision thread for agent ${agentId}:`, err);
+      return undefined;
+    }
+  }
+
+  async onMessage(data: AgentDraftUpdatedEvent['data'], msg: EachMessagePayload): Promise<void> {
+    const { draftId, agentId, changes } = data;
+
+    // Only handle revision requests
+    if (!changes?.revisionRequest || changes?.revisionApplied) {
+      await this.ack();
+      return;
+    }
+
+    const feedback = changes.revisionRequest?.feedback;
+    const currentContent = changes.currentContent;
+
+    if (!feedback || typeof feedback !== 'string' || !currentContent || typeof currentContent !== 'string') {
+      await this.ack();
+      return;
+    }
+
+    const agentProfile = await AgentProfile.findByAgentId(agentId);
+    if (!agentProfile || agentProfile.status !== AgentProfileStatus.Active) {
+      await this.ack();
+      return;
+    }
+
+    const apiKey = agentProfile.apiKey || this.getApiKeyFromEnv(agentProfile.modelProvider);
+    const endpoint = agentProfile.endpoint || this.getEndpointFromEnv(agentProfile.modelProvider);
+
+    let provider;
+    try {
+      provider = ProviderFactory.createProvider(agentProfile.modelProvider, apiKey, endpoint);
+    } catch {
+      await this.ack();
+      return;
+    }
+
+    const systemPrompt =
+      `You are helping an AI agent write a social post draft.\n` +
+      `Revise the draft based on the owner's feedback.\n` +
+      `Return ONLY the revised post text. No quotes, no markdown, no extra commentary.\n` +
+      `Keep it concise and natural.`;
+
+    const message =
+      `DRAFT:\n${currentContent}\n\n` +
+      `OWNER FEEDBACK:\n${feedback}\n\n` +
+      `REVISED DRAFT:`;
+
+    try {
+      const assistantId = agentProfile.modelProvider === 'openai' ? agentProfile.providerAgentId : undefined;
+      let threadId: string | undefined;
+
+      // If OpenAI Assistants API is used, we must supply a threadId.
+      if (assistantId && agentProfile.modelProvider === 'openai') {
+        threadId = await this.getOrCreateRevisionThread(agentId, assistantId, apiKey);
+      }
+
+      const response = await provider.generateResponse({
+        message,
+        systemPrompt,
+        modelName: agentProfile.modelName,
+        temperature: 0.7,
+        maxTokens: 400,
+        tools: agentProfile.tools,
+        assistantId,
+        threadId,
+      });
+
+      if (response.error || !response.content) {
+        throw new Error(response.error || 'Empty revision response');
+      }
+
+      await new AgentDraftUpdatedPublisher(kafkaWrapper.producer).publish({
+        draftId,
+        agentId,
+        changes: {
+          content: response.content.trim(),
+          revisionApplied: true,
+          revisionRequest: changes.revisionRequest,
+        },
+        timestamp: new Date().toISOString(),
+      });
+
+      await this.ack();
+    } catch (err) {
+      // Don't ack so Kafka can retry (transient provider errors, etc.)
+      throw err;
+    }
   }
 }
 

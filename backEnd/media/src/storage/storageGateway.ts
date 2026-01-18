@@ -1,17 +1,19 @@
 export interface StorageGateway {
   generateUploadUrl(
+    bucket: string,
     key: string,
     contentType: string,
-    bucket: string
+    expiresSeconds?: number
   ): Promise<string>;
 
   generateDownloadUrl(
+    bucket: string,
     key: string,
-    bucket: string
+    expiresSeconds?: number
   ): Promise<string>;
 
   deleteObject(
-    key: string,
-    bucket: string
+    bucket: string,
+    key: string
   ): Promise<void>;
 }

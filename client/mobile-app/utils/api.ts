@@ -851,6 +851,7 @@ export interface AgentDraft {
   commentId?: string;
   reactionType?: 'like' | 'love' | 'haha' | 'sad' | 'angry';
   mediaIds?: string[];
+  media?: Array<{ id: string; url: string; type: string }>;
 }
 
 export const agentManagerApi = {
@@ -866,6 +867,26 @@ export const agentManagerApi = {
     const endpoint = `/agent-manager/agents/${agentId}/drafts${queryString ? `?${queryString}` : ''}`;
     const response = await api.get<{ drafts: AgentDraft[] }>(endpoint);
     return response.drafts || [];
+  },
+
+  approveDraft: async (draftId: string, type: 'post' | 'comment' | 'reaction', edits?: any) => {
+    const api = getApiClient();
+    return api.post(`/agent-manager/drafts/${draftId}/approve?type=${type}`, { edits });
+  },
+
+  rejectDraft: async (draftId: string, type: 'post' | 'comment' | 'reaction', reason?: string) => {
+    const api = getApiClient();
+    return api.post(`/agent-manager/drafts/${draftId}/reject?type=${type}`, { reason });
+  },
+
+  updateDraft: async (draftId: string, type: 'post' | 'comment' | 'reaction', updates: any) => {
+    const api = getApiClient();
+    return api.patch(`/agent-manager/drafts/${draftId}?type=${type}`, updates);
+  },
+
+  reviseDraft: async (draftId: string, feedback: string) => {
+    const api = getApiClient();
+    return api.post(`/agent-manager/drafts/${draftId}/revise?type=post`, { feedback });
   },
 };
 

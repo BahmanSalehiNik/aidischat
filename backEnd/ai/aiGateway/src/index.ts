@@ -7,6 +7,7 @@ import { AgentIngestedListener } from './events/listeners/agent-ingested-listene
 import { AgentFeedScannedListener } from './events/listeners/agent-feed-scanned-listener';
 import { ARMessageRequestListener } from './events/listeners/ar-message-request-listener';
 import { FeedbackReplyReceivedListener } from './events/listeners/feedback-reply-received-listener';
+import { AgentDraftRevisionRequestListener } from './events/listeners/agent-feed-scanned-listener';
 
 const startService = async () => {
   // Validate environment variables
@@ -74,6 +75,12 @@ const startService = async () => {
       kafkaWrapper.consumer('ai-gateway-feedback-reply-received')
     );
     await feedbackReplyReceivedListener.listen();
+
+    // Draft revision request listener - consumes AgentDraftUpdated events with revisionRequest payload
+    const draftRevisionRequestListener = new AgentDraftRevisionRequestListener(
+      kafkaWrapper.consumer('ai-gateway-agent-draft-updated-revision')
+    );
+    await draftRevisionRequestListener.listen();
 
     console.log('✅ All Kafka listeners started successfully');
     console.log('🤖 AI Gateway service is ready!');

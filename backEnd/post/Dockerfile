@@ -4,6 +4,8 @@ FROM node:alpine
 # Set working directory inside the container
 WORKDIR /app
 
+# build-bump: force skaffold rebuild (post uses compiled JS; file sync alone won't update runtime)
+
 # Copy package.json and package-lock.json first for better caching
 COPY package*.json ./
 COPY tsconfig.json ./

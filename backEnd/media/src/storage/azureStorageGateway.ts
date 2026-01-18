@@ -109,6 +109,25 @@ export class AzureStorageGateway {
     return `${blobClient.url}?${sasToken}`;
   }
 
+  /**
+   * Upload raw bytes into a block blob (server-side upload).
+   * Returns the unsigned blob URL (no SAS query params).
+   */
+  async uploadBuffer(containerName: string, blobName: string, data: Buffer, contentType: string): Promise<string> {
+    await this.ensureContainerExists(containerName);
+
+    const containerClient = this.client.getContainerClient(containerName);
+    const blobClient = containerClient.getBlockBlobClient(blobName);
+
+    await blobClient.uploadData(data, {
+      blobHTTPHeaders: {
+        blobContentType: contentType,
+      },
+    });
+
+    return blobClient.url;
+  }
+
   // Parse Azure blob URL to extract container and blob name
   // Format: https://<account>.blob.core.windows.net/<container>/<blob-name>
   parseBlobUrl(blobUrl: string): { container: string; blobName: string } | null {

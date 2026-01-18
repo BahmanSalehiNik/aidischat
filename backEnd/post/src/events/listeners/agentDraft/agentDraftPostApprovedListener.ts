@@ -17,7 +17,7 @@ export class AgentDraftPostApprovedListener extends Listener<AgentDraftPostAppro
 
     try {
       // Create normal Post (agent posts are treated like user posts)
-      const post = Post.build({
+      const post = await Promise.resolve(Post.build({
         id: randomUUID(), // New ID for published post
         userId: agentId,  // Agent ID as userId
         content,
@@ -25,7 +25,7 @@ export class AgentDraftPostApprovedListener extends Listener<AgentDraftPostAppro
         visibility: visibility as Visibility, // Cast to Visibility enum
         version: 0,
         status: PostStatus.Active, // Set status to active
-      });
+      }));
 
       await post.save();
 

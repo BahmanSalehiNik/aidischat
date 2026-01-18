@@ -1,22 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl, Alert, TextInput, Modal } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { agentManagerApi } from '../../utils/api';
-
-interface AgentDraft {
-  id: string;
-  draftType: 'post' | 'comment' | 'reaction';
-  content?: string;
-  status: 'pending' | 'approved' | 'rejected' | 'expired';
-  createdAt: string;
-  expiresAt: string;
-  visibility?: 'public' | 'friends' | 'private';
-  postId?: string;
-  commentId?: string;
-  reactionType?: 'like' | 'love' | 'haha' | 'sad' | 'angry';
-}
+import { useFocusEffect } from '@react-navigation/native';
+import { Image as ExpoImage } from 'expo-image';
+import { agentManagerApi, AgentDraft } from '../../utils/api';
 
 export default function AgentDraftsScreen() {
   const router = useRouter();
@@ -25,14 +14,15 @@ export default function AgentDraftsScreen() {
   const [drafts, setDrafts] = useState<AgentDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [busyDraftId, setBusyDraftId] = useState<string | null>(null);
+  const [reviseModalVisible, setReviseModalVisible] = useState(false);
+  const [reviseDraft, setReviseDraft] = useState<AgentDraft | null>(null);
+  const [reviseText, setReviseText] = useState('');
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [draftToReject, setDraftToReject] = useState<AgentDraft | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
-  useEffect(() => {
-    if (params.agentId) {
-      loadDrafts();
-    }
-  }, [params.agentId]);
-
-  const loadDrafts = async () => {
+  const loadDrafts = useCallback(async () => {
     try {
       setLoading(true);
       const data = await agentManagerApi.getDrafts(params.agentId!, { type: 'post' });
@@ -44,11 +34,85 @@ export default function AgentDraftsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [params.agentId]);
+
+  useEffect(() => {
+    if (params.agentId) loadDrafts();
+  }, [params.agentId, loadDrafts]);
+
+  // Refresh drafts whenever the user navigates back to this screen
+  useFocusEffect(
+    useCallback(() => {
+      if (params.agentId) loadDrafts();
+    }, [params.agentId, loadDrafts])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
     loadDrafts();
+  };
+
+  const approveDraft = async (draft: AgentDraft) => {
+    try {
+      setBusyDraftId(draft.id);
+      await agentManagerApi.approveDraft(draft.id, 'post');
+      Alert.alert('Approved', 'Draft approved and queued for publishing.');
+      loadDrafts();
+    } catch (e: any) {
+      console.error('approveDraft error:', e);
+      Alert.alert('Error', e?.message || 'Failed to approve draft');
+    } finally {
+      setBusyDraftId(null);
+    }
+  };
+
+  const openReject = async (draft: AgentDraft) => {
+    setDraftToReject(draft);
+    setRejectReason('');
+    setRejectModalVisible(true);
+  };
+
+  const openRevise = (draft: AgentDraft) => {
+    setReviseDraft(draft);
+    setReviseText('');
+    setReviseModalVisible(true);
+  };
+
+  const submitRevise = async () => {
+    if (!reviseDraft) return;
+    if (!reviseText.trim()) {
+      Alert.alert('Feedback required', 'Please add a short feedback message for the agent.');
+      return;
+    }
+
+    try {
+      setBusyDraftId(reviseDraft.id);
+      await agentManagerApi.reviseDraft(reviseDraft.id, reviseText.trim());
+      setReviseModalVisible(false);
+      Alert.alert('Sent', 'Revision requested. The draft will update when the agent responds.');
+      loadDrafts();
+    } catch (e: any) {
+      console.error('submitRevise error:', e);
+      Alert.alert('Error', e?.message || 'Failed to send feedback');
+    } finally {
+      setBusyDraftId(null);
+    }
+  };
+
+  const submitReject = async () => {
+    if (!draftToReject) return;
+    try {
+      setBusyDraftId(draftToReject.id);
+      await agentManagerApi.rejectDraft(draftToReject.id, 'post', rejectReason.trim() || undefined);
+      setRejectModalVisible(false);
+      Alert.alert('Rejected', 'Draft rejected.');
+      loadDrafts();
+    } catch (e: any) {
+      console.error('submitReject error:', e);
+      Alert.alert('Error', e?.message || 'Failed to reject draft');
+    } finally {
+      setBusyDraftId(null);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -151,8 +215,68 @@ export default function AgentDraftsScreen() {
                       {draft.content}
                     </Text>
                   )}
+
+                  {draft.media && draft.media.length > 0 && draft.media[0]?.url ? (
+                    <View style={{ marginTop: 12 }}>
+                      <ExpoImage
+                        source={{ uri: draft.media[0].url }}
+                        style={{ width: '100%', height: 200, borderRadius: 12, backgroundColor: '#E5E5EA' }}
+                        contentFit="cover"
+                      />
+                    </View>
+                  ) : null}
                 </View>
               </View>
+              {draft.status === 'pending' && (
+                <View style={{ flexDirection: 'row', marginTop: 12 }}>
+                  <TouchableOpacity
+                    onPress={() => approveDraft(draft)}
+                    disabled={busyDraftId === draft.id}
+                    style={{
+                      flex: 1,
+                      backgroundColor: '#34C759',
+                      paddingVertical: 10,
+                      borderRadius: 10,
+                      alignItems: 'center',
+                      opacity: busyDraftId === draft.id ? 0.6 : 1,
+                      marginRight: 10,
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>{busyDraftId === draft.id ? 'Working…' : 'Approve'}</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => openRevise(draft)}
+                    disabled={busyDraftId === draft.id}
+                    style={{
+                      flex: 1,
+                      backgroundColor: '#007AFF',
+                      paddingVertical: 10,
+                      borderRadius: 10,
+                      alignItems: 'center',
+                      opacity: busyDraftId === draft.id ? 0.6 : 1,
+                      marginRight: 10,
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Revise</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => openReject(draft)}
+                    disabled={busyDraftId === draft.id}
+                    style={{
+                      flex: 1,
+                      backgroundColor: '#FF3B30',
+                      paddingVertical: 10,
+                      borderRadius: 10,
+                      alignItems: 'center',
+                      opacity: busyDraftId === draft.id ? 0.6 : 1,
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Reject</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
                 <Text style={{ fontSize: 12, color: '#8E8E93' }}>
                   Created: {formatDate(draft.createdAt)}
@@ -165,6 +289,72 @@ export default function AgentDraftsScreen() {
           ))}
         </ScrollView>
       )}
+
+      <Modal visible={reviseModalVisible} transparent animationType="fade" onRequestClose={() => setReviseModalVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 16 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', marginBottom: 8 }}>Revise draft</Text>
+            <Text style={{ fontSize: 13, color: '#8E8E93', marginBottom: 12 }}>
+              Tell your agent what to change (tone, length, add/remove details, etc).
+            </Text>
+            <TextInput
+              value={reviseText}
+              onChangeText={setReviseText}
+              placeholder="e.g. Make it shorter and more friendly. Mention the photo."
+              multiline
+              style={{
+                minHeight: 110,
+                borderWidth: 1,
+                borderColor: '#E5E5EA',
+                borderRadius: 10,
+                padding: 10,
+                textAlignVertical: 'top',
+              }}
+            />
+            <View style={{ flexDirection: 'row', marginTop: 12 }}>
+              <TouchableOpacity onPress={() => setReviseModalVisible(false)} style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#F2F2F7', alignItems: 'center', marginRight: 10 }}>
+                <Text style={{ fontWeight: '700' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={submitRevise} style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#007AFF', alignItems: 'center' }}>
+                <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={rejectModalVisible} transparent animationType="fade" onRequestClose={() => setRejectModalVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 16 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', marginBottom: 8 }}>Reject draft</Text>
+            <Text style={{ fontSize: 13, color: '#8E8E93', marginBottom: 12 }}>
+              Optional: add a reason (helps the agent improve next time).
+            </Text>
+            <TextInput
+              value={rejectReason}
+              onChangeText={setRejectReason}
+              placeholder="e.g. Too long / wrong tone / not relevant"
+              multiline
+              style={{
+                minHeight: 90,
+                borderWidth: 1,
+                borderColor: '#E5E5EA',
+                borderRadius: 10,
+                padding: 10,
+                textAlignVertical: 'top',
+              }}
+            />
+            <View style={{ flexDirection: 'row', marginTop: 12 }}>
+              <TouchableOpacity onPress={() => setRejectModalVisible(false)} style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#F2F2F7', alignItems: 'center', marginRight: 10 }}>
+                <Text style={{ fontWeight: '700' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={submitReject} style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#FF3B30', alignItems: 'center' }}>
+                <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Reject</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

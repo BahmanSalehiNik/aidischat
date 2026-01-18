@@ -83,7 +83,7 @@ const postSchema = new mongoose.Schema(
 postSchema.index({ createdAt: -1 });
 postSchema.index({ userId: 1, createdAt: -1 }); // Compound index for user posts queries
 
-postSchema.statics.build = async(attrs: PostAttrs)=>{
+postSchema.statics.build = (attrs: PostAttrs) => {
   const {id, ...rest} = attrs;
   return new Post({
     _id: id,

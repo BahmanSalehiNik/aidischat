@@ -4,6 +4,8 @@ FROM node:alpine
 # Set working directory inside the container
 WORKDIR /app
 
+# build-bump: force image rebuild when Meshy refine/texture behavior changes
+
 # Copy package.json and package-lock.json first for better caching
 COPY package*.json ./
 COPY tsconfig.json ./
