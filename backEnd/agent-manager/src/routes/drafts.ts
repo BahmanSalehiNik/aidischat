@@ -84,11 +84,15 @@ router.get(
           continue;
         }
         try {
-          const media = await getInternalMedia(String(mediaIdOrUrl), 900);
-          hydrated.push({ id: String(mediaIdOrUrl), url: media.downloadUrl || media.url, type: media.type || 'image' });
+          // Use a longer-lived URL so images keep working while reviewing drafts.
+          const media = await getInternalMedia(String(mediaIdOrUrl), 7200);
+          const url = media?.downloadUrl || media?.url;
+          if (typeof url === 'string' && url.startsWith('http')) {
+            hydrated.push({ id: String(mediaIdOrUrl), url, type: media.type || 'image' });
+          }
         } catch {
-          // fallback: pass through
-          hydrated.push({ id: String(mediaIdOrUrl), url: String(mediaIdOrUrl), type: 'image' });
+          // If we can't hydrate, don't emit a fake/broken URL (e.g. a UUID string).
+          // Client will render "No image" instead of a broken preview.
         }
       }
       d.media = hydrated;
@@ -153,10 +157,13 @@ router.get(
           continue;
         }
         try {
-          const media = await getInternalMedia(String(mediaIdOrUrl), 900);
-          hydrated.push({ id: String(mediaIdOrUrl), url: media.downloadUrl || media.url, type: media.type || 'image' });
+          const media = await getInternalMedia(String(mediaIdOrUrl), 7200);
+          const url = media?.downloadUrl || media?.url;
+          if (typeof url === 'string' && url.startsWith('http')) {
+            hydrated.push({ id: String(mediaIdOrUrl), url, type: media.type || 'image' });
+          }
         } catch {
-          hydrated.push({ id: String(mediaIdOrUrl), url: String(mediaIdOrUrl), type: 'image' });
+          // same reasoning as list endpoint: avoid emitting invalid URLs
         }
       }
       (draft as any).media = hydrated;

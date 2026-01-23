@@ -23,9 +23,16 @@ function requireInternalToken(req: Request, res: Response, next: any) {
 }
 
 async function downloadToBuffer(sourceUrl: string, maxBytes: number): Promise<{ data: Buffer; contentType: string }> {
-  const resp = await fetch(sourceUrl, { redirect: 'follow' as any });
+  const resp = await fetch(sourceUrl, {
+    redirect: 'follow' as any,
+    headers: {
+      // Some hosts (incl. Wikimedia/CDNs) may block default Node/undici user agents.
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'image/*,*/*;q=0.8',
+    },
+  });
   if (!resp.ok) {
-    throw new Error(`Failed to download sourceUrl: ${resp.status} ${resp.statusText}`);
+    throw new Error(`Failed to download sourceUrl (${sourceUrl}): ${resp.status} ${resp.statusText}`);
   }
 
   const contentLengthHeader = resp.headers.get('content-length');
@@ -63,7 +70,22 @@ router.post('/api/media/internal/import', requireInternalToken, async (req: Requ
 
   const targetContainer: string = container && typeof container === 'string' ? container : StorageContainer.Posts;
   const maxBytes = 8 * 1024 * 1024; // 8MB
-  const { data, contentType } = await downloadToBuffer(sourceUrl, maxBytes);
+  let data: Buffer;
+  let contentType: string;
+  try {
+    const downloaded = await downloadToBuffer(sourceUrl, maxBytes);
+    data = downloaded.data;
+    contentType = downloaded.contentType;
+  } catch (err: any) {
+    return res.status(400).send({ error: err?.message || 'Failed to download sourceUrl' });
+  }
+
+  // Only accept common raster images for this endpoint (prevents storing HTML/SVG as "images")
+  const ct = (contentType || '').toLowerCase();
+  const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowed.some((a) => ct.startsWith(a))) {
+    return res.status(415).send({ error: `Unsupported image content-type for import (must be jpg/png/webp/gif): ${contentType || 'unknown'}` });
+  }
 
   const azureGateway = new AzureStorageGateway(
     process.env.AZURE_STORAGE_ACCOUNT!,

@@ -1,0 +1,37 @@
+     {
+       "container": "profile-images",      // or posts media container
+       "contentType": "image/jpeg",
+       "filename": "avatar.jpg"            // optional, we extract extension
+     }
+     ```
+   - This route (`backEnd/media/src/routes/upload.ts`) requires auth (`extractJWTPayload + loginRequired`), chooses a namespaced blob key (`users/<userId>/<uuid>`), and calls `AzureStorageGateway.generateUploadUrl()`.
+   - Response is `{ uploadUrl, provider: 'azure', container, key }`. Upload URL stays valid ~60s.
+
+2. **Client uploads directly to Azure**  
+   - Use the returned `uploadUrl` in a `PUT` request (typically via fetch/axios or Expo’s upload API).  
+   - Since it’s a SAS URL, it includes temporary credentials so the app never sees the storage key.
+
+3. **Register the media with the media service**  
+   - After the upload succeeds, call `POST /api/media` with:
+     ```json
+     {
+       "provider": "azure",
+       "bucket": "<container>",
+       "key": "users/<userId>/<uuid>.jpg",
+       "url": "https://<account>.blob.core.windows.net/<container>/users/...jpg",
+       "type": "image",
+       "size": 123456,
+       "relatedResource": { ... } // optional metadata (e.g., { type: 'profilePhoto' })
+     }
+     ```
+   - Route: `backEnd/media/src/routes/create.ts`. This persists a `Media` document tied to the user for auditing/cleanup.
+
+4. **Use the media record in profile/post services**
+   - For a **profile photo**, the user service (or profile update endpoint) can accept the media ID or blob URL and store it in the profile document. Since the media service already validated ownership, it’s safe to reference.
+   - For a **post**, when calling `POST /api/post`, include `mediaIds: [mediaId]` so downstream services know which blobs belong to the post. Feed/chat services simply read the stored URLs and show the images—no extra download step is required because the Azure URL can be made public or served via another signed URL from `/api/media/:id/download`.
+
+5. **Optional download/cleanup**  
+   - If you need a temporary read link later (e.g., private blobs), the media service can generate a SAS download link via `AzureStorageGateway.generateDownloadUrl`.
+   - Deleting a post/profile picture should hit a media delete route, which calls `AzureStorageGateway.deleteObject`.
+
+So the critical steps are: **(a)** request SAS upload from `/api/media/upload`, **(b)** upload file straight to Azure, **(c)** register the blob via `/api/media`, then **(d)** reference that media record when updating profile or creating posts. No changes are required to retain Azure as the provider—that path is already enforced by the media service startup checks (`AZURE_STORAGE_ACCOUNT` + `AZURE_STORAGE_KEY`).

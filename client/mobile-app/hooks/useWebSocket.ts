@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { WS_URL } from '@env';
 import { useChatStore, Message } from '../store/chatStore';
 import { useAuthStore } from '../store/authStore';
+import { getResolvedWsUrl } from '../utils/network';
 
 const RECONNECT_DELAY = 2000;
 const MAX_RECONNECT_DELAY = 30000;
@@ -20,7 +21,7 @@ export const useWebSocket = (roomId: string | null) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
-  const wsUrl = WS_URL || 'ws://localhost:3000';
+  const wsUrl = getResolvedWsUrl(WS_URL);
 
   const connect = useCallback(() => {
     if (!token || !normalizedRoomId) {

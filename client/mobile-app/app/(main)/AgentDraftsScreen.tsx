@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl, Alert, TextInput, Modal } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,30 +21,48 @@ export default function AgentDraftsScreen() {
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [draftToReject, setDraftToReject] = useState<AgentDraft | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const isFetchingRef = useRef(false);
+  const [imageFailedByDraftId, setImageFailedByDraftId] = useState<Record<string, boolean>>({});
+  const [imageErrorByDraftId, setImageErrorByDraftId] = useState<Record<string, string>>({});
 
-  const loadDrafts = useCallback(async () => {
+  const loadDrafts = useCallback(async (opts?: { silent?: boolean }) => {
+    if (isFetchingRef.current) return;
     try {
-      setLoading(true);
+      isFetchingRef.current = true;
+      if (!opts?.silent) setLoading(true);
       const data = await agentManagerApi.getDrafts(params.agentId!, { type: 'post' });
       setDrafts(data);
     } catch (error: any) {
       console.error('Error loading drafts:', error);
       Alert.alert('Error', 'Failed to load drafts');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
       setRefreshing(false);
+      isFetchingRef.current = false;
     }
   }, [params.agentId]);
 
   useEffect(() => {
-    if (params.agentId) loadDrafts();
+    if (params.agentId) loadDrafts({ silent: false });
   }, [params.agentId, loadDrafts]);
 
   // Refresh drafts whenever the user navigates back to this screen
   useFocusEffect(
     useCallback(() => {
-      if (params.agentId) loadDrafts();
-    }, [params.agentId, loadDrafts])
+      if (!params.agentId) return;
+      // Initial load when focused
+      loadDrafts({ silent: false });
+
+      // While the screen is focused, poll for newly created drafts so the user
+      // doesn't have to manually reload the page.
+      const intervalId = setInterval(() => {
+        // Don't spam refresh while user is approving/rejecting/revising
+        if (busyDraftId) return;
+        loadDrafts({ silent: true });
+      }, 6000);
+
+      return () => clearInterval(intervalId);
+    }, [params.agentId, loadDrafts, busyDraftId])
   );
 
   const onRefresh = () => {
@@ -222,9 +240,38 @@ export default function AgentDraftsScreen() {
                         source={{ uri: draft.media[0].url }}
                         style={{ width: '100%', height: 200, borderRadius: 12, backgroundColor: '#E5E5EA' }}
                         contentFit="cover"
+                        onError={(e) => {
+                          const url = draft.media?.[0]?.url ? String(draft.media[0].url) : '(missing)';
+                          console.log('[AgentDraftsScreen] Draft image failed to load', { draftId: draft.id, url, error: e });
+                          setImageFailedByDraftId((prev) => ({ ...prev, [draft.id]: true }));
+                          try {
+                            setImageErrorByDraftId((prev) => ({ ...prev, [draft.id]: JSON.stringify(e) }));
+                          } catch {
+                            setImageErrorByDraftId((prev) => ({ ...prev, [draft.id]: String(e) }));
+                          }
+                        }}
                       />
+                      {imageFailedByDraftId[draft.id] ? (
+                        <View style={{ marginTop: 8 }}>
+                          <Text style={{ fontSize: 12, color: '#8E8E93' }}>
+                            Image failed to load ({(() => { try { return new URL(draft.media?.[0]?.url || '').host || 'unknown host'; } catch { return 'invalid url'; } })()}).
+                          </Text>
+                          <Text style={{ marginTop: 4, fontSize: 11, color: '#8E8E93' }}>
+                            URL: {draft.media?.[0]?.url ? String(draft.media[0].url) : '(missing)'}
+                          </Text>
+                          {imageErrorByDraftId[draft.id] ? (
+                            <Text style={{ marginTop: 4, fontSize: 11, color: '#8E8E93' }}>
+                              Error: {imageErrorByDraftId[draft.id]}
+                            </Text>
+                          ) : null}
+                        </View>
+                      ) : null}
                     </View>
-                  ) : null}
+                  ) : (
+                    <Text style={{ marginTop: 12, fontSize: 12, color: '#8E8E93' }}>
+                      No image attached.
+                    </Text>
+                  )}
                 </View>
               </View>
               {draft.status === 'pending' && (

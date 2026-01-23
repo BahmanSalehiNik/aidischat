@@ -22,6 +22,7 @@ export class OpenAIProvider extends BaseAiProvider {
       assistantId: request.assistantId,
       threadId: request.threadId,
       messageLength: request.message.length,
+      imageCount: request.imageUrls?.length || 0,
     });
 
     try {
@@ -33,14 +34,23 @@ export class OpenAIProvider extends BaseAiProvider {
       } else {
         console.log(`[OpenAI Provider] ⚠️ Using Chat Completions API path (no assistantId, fallback mode)`);
         // Fallback to Chat Completions API
+        const userContent: any =
+          request.imageUrls && request.imageUrls.length > 0
+            ? [
+                { type: 'text', text: request.message },
+                ...request.imageUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
+              ]
+            : request.message;
+
         const completion = await this.client.chat.completions.create({
           model: request.modelName,
           messages: [
             { role: 'system', content: request.systemPrompt || 'You are a helpful assistant.' },
-            { role: 'user', content: request.message },
+            { role: 'user', content: userContent },
           ],
           temperature: request.temperature ?? 0.7,
           max_tokens: request.maxTokens,
+          response_format: request.responseFormat === 'json_object' ? ({ type: 'json_object' } as any) : undefined,
         });
 
         const content = completion.choices[0]?.message?.content || '';
@@ -96,9 +106,17 @@ export class OpenAIProvider extends BaseAiProvider {
       console.log(`[OpenAI Provider] Using existing thread: ${threadId}`);
 
       // Step 2: Add message to thread
+      const threadMessageContent: any =
+        request.imageUrls && request.imageUrls.length > 0
+          ? [
+              { type: 'text', text: request.message },
+              ...request.imageUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
+            ]
+          : request.message;
+
       await this.client.beta.threads.messages.create(threadId, {
         role: 'user',
-        content: request.message,
+        content: threadMessageContent,
       });
       console.log(`[OpenAI Provider] Added message to thread ${threadId}`);
 
@@ -383,11 +401,19 @@ export class OpenAIProvider extends BaseAiProvider {
     request: AiProviderRequest,
     onChunk: (chunk: string) => Promise<void>
   ): Promise<void> {
+    const userContent: any =
+      request.imageUrls && request.imageUrls.length > 0
+        ? [
+            { type: 'text', text: request.message },
+            ...request.imageUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
+          ]
+        : request.message;
+
     const stream = await this.client.chat.completions.create({
       model: request.modelName,
       messages: [
         { role: 'system', content: request.systemPrompt || 'You are a helpful assistant.' },
-        { role: 'user', content: request.message },
+        { role: 'user', content: userContent },
       ],
       temperature: request.temperature ?? 0.7,
       max_tokens: request.maxTokens,
@@ -411,9 +437,17 @@ export class OpenAIProvider extends BaseAiProvider {
     }
 
     // Add message to thread
+    const threadMessageContent: any =
+      request.imageUrls && request.imageUrls.length > 0
+        ? [
+            { type: 'text', text: request.message },
+            ...request.imageUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
+          ]
+        : request.message;
+
     await this.client.beta.threads.messages.create(request.threadId, {
       role: 'user',
-      content: request.message,
+      content: threadMessageContent,
     });
 
     // Create run with stream

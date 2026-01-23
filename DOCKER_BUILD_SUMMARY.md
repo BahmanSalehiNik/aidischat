@@ -78,4 +78,24 @@ cd backEnd/ai-chat-host
 docker build -t bahmansalehinic4/ai-chat-host:latest .
 docker push bahmansalehinic4/ai-chat-host:latest
 ```
-
+curl -X POST https://api.readyplayer.me/v1/avatars \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "X-App-Key: YOUR_APP_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "gender": "female",
+    "bodyType": "average",
+    "faceShape": "oval",
+    "hair": {
+      "style": "medium",
+      "color": "golden blonde"
+    },
+    "eyes": {
+      "color": "sky blue"
+    },
+    "skinTone": "#FFDBB3",
+    "outfit": {
+      "top": "elegant white robe adorned with golden accents"
+    }
+  }' \
+  -v

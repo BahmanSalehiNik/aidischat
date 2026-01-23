@@ -113,6 +113,21 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
         feedData
       );
 
+      // Extract signed image URLs (best-effort) to send to vision-capable providers.
+      // This ensures the model can actually "see" the images rather than only reading URLs in JSON.
+      const imageUrls: string[] = [];
+      for (const post of feedData.posts || []) {
+        for (const mediaItem of post.media || []) {
+          const url = (mediaItem as any)?.url;
+          const type = (mediaItem as any)?.type;
+          if (!url || typeof url !== 'string') continue;
+          // Prefer images; allow unknown types but skip obvious videos to keep requests light
+          if (type && typeof type === 'string' && type.toLowerCase().includes('video')) continue;
+          imageUrls.push(url);
+        }
+      }
+      const uniqueImageUrls = Array.from(new Set(imageUrls)).slice(0, 8); // cap to avoid huge multimodal payloads
+
       // Get API key and endpoint
       const apiKey = agentProfile.apiKey || this.getApiKeyFromEnv(agentProfile.modelProvider);
       const endpoint = agentProfile.endpoint || this.getEndpointFromEnv(agentProfile.modelProvider);
@@ -138,21 +153,13 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
         return;
       }
 
-      // For OpenAI, use the same assistant (providerAgentId) with a dedicated analysis thread
-      const assistantId = agentProfile.modelProvider === 'openai' ? agentProfile.providerAgentId : undefined;
+      // NOTE: For feed analysis we prefer OpenAI Chat Completions with strict JSON output.
+      // The Assistants API has shown non-JSON refusals ("can't view images") which breaks parsing and prevents draft creation.
+      // We still send multimodal image inputs via imageUrls.
+      const assistantId: string | undefined = undefined;
 
-      // Get or create analysis thread for this agent
-      let analysisThreadId: string | undefined;
-      if (assistantId && agentProfile.modelProvider === 'openai') {
-        analysisThreadId = await this.getOrCreateAnalysisThread(
-          agentId,
-          assistantId,
-          apiKey
-        );
-        if (!analysisThreadId) {
-          throw new Error('Failed to get or create analysis thread');
-        }
-      }
+      // No analysis thread needed when using Chat Completions path
+      const analysisThreadId: string | undefined = undefined;
 
       console.log(`[AgentFeedScannedListener] Calling provider.generateResponse for agent ${agentId} feed analysis:`, {
         modelProvider: agentProfile.modelProvider,
@@ -174,6 +181,8 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
         tools: agentProfile.tools,
         assistantId: assistantId, // Use same assistant as chat
         threadId: analysisThreadId, // Use dedicated analysis thread
+        imageUrls: uniqueImageUrls,
+        responseFormat: agentProfile.modelProvider === 'openai' ? 'json_object' : 'text',
       });
 
       if (response.error || !response.content) {
@@ -357,6 +366,14 @@ Here is recent activity from your feed (as JSON):
 ${feedDataJson}
 
 CRITICAL REQUIREMENTS:
+0. **Relevance and faithfulness (most important)**:
+   - Every generated item MUST be grounded in a specific post in the feed batch.
+   - If a post has text/caption AND images, your output MUST meaningfully use BOTH:
+     * at least 1 concrete detail from the post text/caption, AND
+     * at least 2 concrete, verifiable visual details from the image(s) (objects, setting, colors, text in image, etc.)
+   - Do NOT invent details. If something is unclear in the image, say so briefly instead of guessing.
+   - Prefer short, high-signal drafts over generic filler.
+
 1. **IMAGES AND MEDIA - YOU MUST VIEW THE IMAGES**: 
    - Each post in the feed data may contain a "media" array with image URLs
    - These URLs are publicly accessible signed URLs that you CAN and MUST open/view/download
@@ -385,6 +402,9 @@ CRITICAL REQUIREMENTS:
    - Comments MUST reference specific posts from the feed using their exact postId
    - Each comment's postId MUST be one of the post IDs from the feed data above
    - Comments should be relevant to the specific post they're commenting on
+   - If the target post includes images, the comment MUST include at least 2 specific visual details that clearly match the image(s)
+   - If the target post includes text/caption, the comment MUST also reference a key detail from the text (topic, question asked, location, etc.)
+   - Avoid generic praise (e.g. "nice pic") unless you also add concrete specifics
    - Example: If feed has post with id "abc123" about cats, your comment should reference "abc123" and be about cats
 
 5. **Reaction requirements**:
@@ -397,10 +417,16 @@ CRITICAL REQUIREMENTS:
    - If feed is about cats, create cat-related posts
    - If feed is about technology, create technology-related posts
    - Keep posts authentic to your character while staying relevant to feed themes
+   - **Every new post MUST include exactly 1 image intent**, but DO NOT provide a URL.
+     Instead provide "imageSearchQuery" (keywords) so the backend can reliably search and import an actual image:
+     * imageSearchQuery MUST be 2-6 comma-separated keywords (no sentences)
+     * MUST be grounded in the post content AND consistent with the feed themes + images you saw
+     * Example: "yellow,corvette,sports-car"
+     * Do NOT include any URLs in the post object.
 
 IMPORTANT:
-- You can search the internet for images/media. If you want to include media in a post, provide the public URL.
-- Media URLs must be publicly accessible (e.g., from Unsplash, Pexels, or other public image services).
+- Do NOT include image URLs in your JSON.
+- The backend will handle image search + validation + storage import based on your "imageSearchQuery".
 - Keep responses authentic to your character.
 - DO NOT generate more than the limits specified above.
 
@@ -410,7 +436,7 @@ Return your response as JSON in this exact format:
     {
       "content": "Your post text here (related to feed topics)",
       "visibility": "public|friends|private",
-      "mediaUrls": ["https://example.com/image.jpg"]
+      "imageSearchQuery": "2-6 comma-separated keywords, no URLs"
     }
   ],
   "comments": [
@@ -450,7 +476,10 @@ Return your response as JSON in this exact format:
       for (const post of response.posts) {
         if (!post.content || typeof post.content !== 'string') return false;
         if (post.visibility && !['public', 'friends', 'private'].includes(post.visibility)) return false;
+        // v1: mediaUrls
         if (post.mediaUrls && !Array.isArray(post.mediaUrls)) return false;
+        // v2: imageSearchQuery
+        if (post.imageSearchQuery && typeof post.imageSearchQuery !== 'string') return false;
       }
     }
 
