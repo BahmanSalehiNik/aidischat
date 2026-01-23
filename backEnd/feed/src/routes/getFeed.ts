@@ -8,6 +8,7 @@ import { BlockList } from '../models/block-list';
 import { UserStatus } from '../models/user-status';
 import { ReadOnlyAzureStorageGateway } from '../storage/azureStorageGateway';
 import { trendingService } from '../modules/trending/trendingService';
+import { FeedReason } from '../models/feed/feed';
 
 const router = express.Router();
 
@@ -113,7 +114,7 @@ async function buildTrendingItems(
       .select('userId username avatarUrl')
       .lean(),
     User.find({ _id: { $in: trendingAuthorIds } })
-      .select('_id email')
+      .select('_id email isAgent ownerUserId displayName')
       .lean(),
   ]);
 
@@ -138,11 +139,14 @@ async function buildTrendingItems(
       const profile = profileMap.get(entry.authorId);
       const user = userMap.get(entry.authorId);
       let displayName: string | undefined = profile?.username;
+      if (!displayName && user?.isAgent && user?.displayName) {
+        displayName = user.displayName;
+      }
       if (!displayName && user?.email) {
         displayName = user.email.split('@')[0];
       }
       if (!displayName) {
-        displayName = `User ${entry.authorId.slice(0, 8)}`;
+        displayName = user?.isAgent ? `Agent ${entry.authorId.slice(0, 8)}` : `User ${entry.authorId.slice(0, 8)}`;
       }
 
       const mediaWithSignedUrls = await buildSignedMedia(entry.media);
@@ -190,6 +194,47 @@ router.get('/api/feeds',
   const userId = req.jwtPayload!.id;
   const limit = parseInt((req.query.limit as string) || '10', 10);
   const cursor = req.query.cursor as string | undefined;
+
+  // Backfill: ensure the owner sees posts made by their own agents.
+  // Without this, agent-authored posts may never appear in the owner's feed unless there's
+  // an explicit friendship/follow relationship.
+  try {
+    const ownedAgents = await User.find({ isAgent: true, ownerUserId: userId })
+      .select('_id')
+      .lean();
+    const ownedAgentIds = ownedAgents.map((a: any) => String(a._id));
+    if (ownedAgentIds.length > 0) {
+      const recentAgentPosts = await Post.find({ userId: { $in: ownedAgentIds } })
+        .select('_id userId createdAt originalCreation')
+        .sort({ createdAt: -1 })
+        .limit(Math.max(limit * 2, 20))
+        .lean();
+
+      const recentPostIds = recentAgentPosts.map((p: any) => String(p._id));
+      if (recentPostIds.length > 0) {
+        const existing = await Feed.find({ userId, postId: { $in: recentPostIds } })
+          .select('postId')
+          .lean();
+        const existingSet = new Set(existing.map((f: any) => String(f.postId)));
+
+        const toInsert = recentAgentPosts
+          .filter((p: any) => !existingSet.has(String(p._id)))
+          .map((p: any) => ({
+            userId,
+            postId: String(p._id),
+            sourceUserId: String(p.userId),
+            reason: FeedReason.Follow,
+            originalCreationTime: (p.createdAt || p.originalCreation || new Date()).toISOString(),
+          }));
+
+        if (toInsert.length > 0) {
+          await Feed.insertMany(toInsert, { ordered: false });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Feed] Failed to backfill owner-agent posts into feed:', err);
+  }
 
   // Check if cursor indicates we should fetch trending
   const isTrendingCursor = cursor === 'trending' || cursor === null || cursor === 'null';
@@ -295,7 +340,7 @@ router.get('/api/feeds',
       .select('userId username avatarUrl')
       .lean(),
     User.find({ _id: { $in: authorIds } })
-      .select('_id email')
+      .select('_id email isAgent ownerUserId displayName')
       .lean(),
   ]);
 
@@ -330,6 +375,9 @@ router.get('/api/feeds',
     const user = userMap.get(postUserId);
     
     let displayName: string | undefined = profile?.username;
+    if (!displayName && user?.isAgent && user?.displayName) {
+      displayName = user.displayName;
+    }
     if (!displayName && user?.email) {
       displayName = user.email.split('@')[0];
     }
@@ -337,7 +385,7 @@ router.get('/api/feeds',
       if (postUserId === userId) {
         displayName = 'You';
       } else if (postUserId) {
-        displayName = `User ${postUserId.slice(0, 8)}`;
+        displayName = user?.isAgent ? `Agent ${postUserId.slice(0, 8)}` : `User ${postUserId.slice(0, 8)}`;
       } else {
         displayName = 'User';
       }

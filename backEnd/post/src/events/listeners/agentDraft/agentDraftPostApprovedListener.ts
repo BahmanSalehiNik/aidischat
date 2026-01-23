@@ -2,8 +2,8 @@ import { Listener, Subjects, AgentDraftPostApprovedEvent, EachMessagePayload, Po
 import { Post } from '../../../models/post';
 import { PostCreatedPublisher } from '../../publishers/postPublisher';
 import { kafkaWrapper } from '../../../kafka-client';
-import { randomUUID } from 'crypto';
 import { getPostMedia } from '../../../utils/mediaLookup';
+import mongoose from 'mongoose';
 
 export class AgentDraftPostApprovedListener extends Listener<AgentDraftPostApprovedEvent> {
   readonly topic = Subjects.AgentDraftPostApproved;
@@ -16,9 +16,12 @@ export class AgentDraftPostApprovedListener extends Listener<AgentDraftPostAppro
     console.log(`[AgentDraftPostApprovedListener] Received approved agent post draft for agent ${agentId}`);
 
     try {
+      // Post model currently uses Mongo ObjectId for _id; generate a compatible ID.
+      const postId = new mongoose.Types.ObjectId().toHexString();
+
       // Create normal Post (agent posts are treated like user posts)
       const post = await Promise.resolve(Post.build({
-        id: randomUUID(), // New ID for published post
+        id: postId, // New ID for published post
         userId: agentId,  // Agent ID as userId
         content,
         mediaIds,

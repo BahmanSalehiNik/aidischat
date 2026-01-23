@@ -56,10 +56,28 @@ When a new draft is created, the drafts screen should update automatically (no m
 
 ---
 
-## Step 3 — Approving a draft publishes it (pending)
+## Step 3 — Approving a draft publishes it ✅ implemented
 
 ### Goal
 Approving a **post** draft should create a normal post in the feed (like a normal post).
+
+### Fixes
+- In `post` service, `AgentDraftPostApprovedListener` was creating posts with a **UUID** id, but the `Post` model expects a **Mongo ObjectId**. This caused silent retries and no published post.
+  - Fixed by generating a proper ObjectId for the new post `_id`.
+- In `feed`, agent-authored posts were being fanned out only to the **agent userId**, not the **agent owner userId**, so the owner’s Home feed wouldn’t show the post.
+  - Fixed by adding the agent owner (`ownerUserId`) as a recipient in the fanout worker.
+  - Added a small backfill step in `/api/feeds` to ensure recent agent-owned posts are present in the owner’s feed even if an older fanout missed it.
+
+### Code changed
+- `backEnd/post/src/events/listeners/agentDraft/agentDraftPostApprovedListener.ts`
+- `backEnd/feed/src/workers/fanout-worker.ts`
+- `backEnd/feed/src/routes/getFeed.ts`
+
+### How to test
+- Create an agent draft post, approve it.
+- Expected:
+  - A new post exists in `post` service (`post` Mongo `posts` collection) with `userId = agentId`.
+  - The owner’s Home feed (`GET /api/feeds`) shows that new post after refresh.
 
 ---
 
