@@ -65,7 +65,16 @@ router.get(
       const reactionDrafts = await AgentDraftReaction.find(query)
         .sort({ createdAt: -1 })
         .lean();
-      drafts = [...drafts, ...reactionDrafts.map(d => ({ ...d, draftType: 'reaction' }))];
+      drafts = [
+        ...drafts,
+        ...reactionDrafts.map((d: any) => ({
+          ...d,
+          draftType: 'reaction',
+          // Convenience fields for clients
+          postId: d.targetType === 'post' ? d.targetId : undefined,
+          commentId: d.targetType === 'comment' ? d.targetId : undefined,
+        })),
+      ];
     }
 
     // Filter by ownership
@@ -174,6 +183,12 @@ router.get(
         ...draft,
         id: String((draft as any).id ?? (draft as any)._id),
         draftType: type,
+        ...(type === 'reaction'
+          ? {
+              postId: (draft as any).targetType === 'post' ? (draft as any).targetId : undefined,
+              commentId: (draft as any).targetType === 'comment' ? (draft as any).targetId : undefined,
+            }
+          : {}),
       },
     });
   }

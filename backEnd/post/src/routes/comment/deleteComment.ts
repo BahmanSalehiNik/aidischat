@@ -9,8 +9,8 @@ const router = express.Router();
 
 router.delete(
   '/api/posts/:postId/comments/:commentId',
-  extractJWTPayload,
-  loginRequired,
+  extractJWTPayload as any,
+  loginRequired as any,
   async (req: Request, res: Response) => {
     // Check if post exists
     const post = await Post.findOne({ _id: req.params.postId, isDeleted: false });
@@ -45,8 +45,9 @@ router.delete(
       id: comment.id,
       postId: comment.postId,
       userId: comment.userId,
+      authorIsAgent: comment.authorIsAgent,
       deletedAt: comment.deletedAt.toISOString()
-    });
+    } as any);
 
     res.status(204).send();
   }

@@ -45,6 +45,8 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
 
   async onMessage(data: AgentFeedScannedEvent['data'], msg: EachMessagePayload): Promise<void> {
     const { agentId, ownerUserId, scanId, feedData, scanTimestamp, scanInterval } = data;
+    // Optional flag set by agent-manager (cap-aware): when false, AI Gateway should not generate comment suggestions.
+    const createComment: boolean = (data as any).createComment !== false;
     const correlationId = uuidv4();
     const startTime = Date.now();
 
@@ -110,8 +112,10 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
       const feedAnalysisPrompt = this.buildFeedAnalysisPrompt(
         agentProfile.systemPrompt,
         characterAttributes,
-        feedData
+        feedData,
+        createComment
       );
+      console.log(`[AgentFeedScannedListener] Prompt controls for scanId ${scanId}: createComment=${createComment}`);
 
       // Extract signed image URLs (best-effort) to send to vision-capable providers.
       // This ensures the model can actually "see" the images rather than only reading URLs in JSON.
@@ -217,6 +221,9 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
         await this.ack();
         return;
       }
+
+      // Normalize to our shared contract (models sometimes emit variants like reaction type "wow")
+      parsedResponse = this.normalizeFeedResponse(parsedResponse);
 
       // Validate response structure
       if (!this.validateFeedResponse(parsedResponse)) {
@@ -327,7 +334,8 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
   private buildFeedAnalysisPrompt(
     baseSystemPrompt: string,
     characterAttributes: CharacterAttributes | undefined,
-    feedData: AgentFeedScannedEvent['data']['feedData']
+    feedData: AgentFeedScannedEvent['data']['feedData'],
+    createComment: boolean
   ): string {
     // Build character context (same as chat messages)
     let systemPrompt = baseSystemPrompt;
@@ -355,7 +363,7 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
     const numPosts = feedData.posts.length;
     // Random between 1 and 2 posts
     const maxNewPosts = Math.floor(Math.random() * 2) + 1; // Random: 1 or 2
-    const maxComments = numPosts; // Max comments = number of posts in batch
+    const maxComments = createComment ? numPosts : 0; // Max comments = 0 when cap says don't create comments
     const maxReactions = numPosts; // Max reactions = number of posts in batch
 
     // Build the feed analysis prompt
@@ -399,6 +407,7 @@ CRITICAL REQUIREMENTS:
    - Generate 0-2 connection requests maximum
 
 4. **Comment requirements**:
+   - If the max comment limit above is 0, you MUST return an empty "comments" array (no comment suggestions)
    - Comments MUST reference specific posts from the feed using their exact postId
    - Each comment's postId MUST be one of the post IDs from the feed data above
    - Comments should be relevant to the specific post they're commenting on
@@ -408,8 +417,11 @@ CRITICAL REQUIREMENTS:
    - Example: If feed has post with id "abc123" about cats, your comment should reference "abc123" and be about cats
 
 5. **Reaction requirements**:
-   - Reactions MUST reference specific posts from the feed using their exact postId
-   - Each reaction's postId MUST be one of the post IDs from the feed data above
+   - Reactions MAY target either:
+     * a post (use exact postId from feedData.posts), OR
+     * a comment (use exact commentId from feedData.comments)
+   - If using postId, it MUST be one of the post IDs from the feed data above.
+   - If using commentId, it MUST be one of the comment IDs from the feed data above.
    - Choose reaction types that make sense for the content (like, love, haha, sad, angry)
 
 6. **Post requirements**:
@@ -447,7 +459,8 @@ Return your response as JSON in this exact format:
   ],
   "reactions": [
     {
-      "postId": "MUST-BE-EXACT-POST-ID-FROM-FEED-ABOVE",
+      "postId": "EXACT-POST-ID-FROM-FEED-ABOVE (optional if commentId provided)",
+      "commentId": "EXACT-COMMENT-ID-FROM-FEED-ABOVE (optional if postId provided)",
       "type": "like|love|haha|sad|angry"
     }
   ],
@@ -495,7 +508,8 @@ Return your response as JSON in this exact format:
     if (response.reactions) {
       if (!Array.isArray(response.reactions)) return false;
       for (const reaction of response.reactions) {
-        if (!reaction.type || !['like', 'love', 'haha', 'sad', 'angry'].includes(reaction.type)) return false;
+          const normalized = this.normalizeReactionType(reaction.type);
+          if (!normalized) return false;
         if (!reaction.postId && !reaction.commentId) return false;
       }
     }
@@ -509,6 +523,48 @@ Return your response as JSON in this exact format:
     }
 
     return true;
+  }
+
+  /**
+   * Normalize response object to be compatible with shared contracts.
+   * - Maps unsupported reaction types (e.g. "wow") into supported ones.
+   * - Drops invalid reaction entries that can't be normalized.
+   */
+  private normalizeFeedResponse(response: any): any {
+    if (!response || typeof response !== 'object') return response;
+
+    const out: any = { ...response };
+
+    if (Array.isArray(out.reactions)) {
+      out.reactions = out.reactions
+        .map((r: any) => {
+          const normalizedType = this.normalizeReactionType(r?.type);
+          if (!normalizedType) return null;
+
+          if (r?.type && r.type !== normalizedType) {
+            console.warn(`[AgentFeedScannedListener] Normalizing reaction type "${r.type}" -> "${normalizedType}"`);
+          }
+
+          return { ...r, type: normalizedType };
+        })
+        .filter(Boolean);
+    }
+
+    return out;
+  }
+
+  private normalizeReactionType(type: any): 'like' | 'love' | 'haha' | 'sad' | 'angry' | undefined {
+    if (typeof type !== 'string') return undefined;
+    const t = type.trim().toLowerCase();
+    if (t === 'like' || t === 'love' || t === 'haha' || t === 'sad' || t === 'angry') return t;
+
+    // Common synonyms / platform variants -> our supported contract
+    if (t === 'wow') return 'like';
+    if (t === 'care') return 'love';
+    if (t === 'laugh' || t === 'lol' || t === 'funny') return 'haha';
+    if (t === 'upvote') return 'like';
+
+    return undefined;
   }
 
   /**

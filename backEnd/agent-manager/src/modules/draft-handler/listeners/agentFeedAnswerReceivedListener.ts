@@ -450,6 +450,9 @@ export class AgentFeedAnswerReceivedListener extends Listener<AgentFeedAnswerRec
 
       // Process reactions
       if (response.reactions && Array.isArray(response.reactions)) {
+        const allowedPostIds = new Set<string>((feedData?.posts || []).map((p: any) => String(p.id)));
+        const allowedCommentIds = new Set<string>((feedData?.comments || []).map((c: any) => String(c.id)));
+
         for (const reaction of response.reactions) {
           try {
             const targetType = reaction.postId ? 'post' : 'comment';
@@ -458,6 +461,20 @@ export class AgentFeedAnswerReceivedListener extends Listener<AgentFeedAnswerRec
             if (!targetId) {
               console.warn(`[AgentFeedAnswerReceivedListener] Skipping reaction without postId or commentId`);
               continue;
+            }
+
+            // Enforce: reactions can only target entities included in the scanned feedData batch.
+            // This prevents cross-post/comment reactions and ensures we only react to human posts/comments.
+            if (targetType === 'post') {
+              if (!reaction.postId || !allowedPostIds.has(String(reaction.postId))) {
+                console.warn(`[AgentFeedAnswerReceivedListener] Skipping reaction targeting postId not in scan batch`, { postId: reaction.postId, scanId });
+                continue;
+              }
+            } else {
+              if (!reaction.commentId || !allowedCommentIds.has(String(reaction.commentId))) {
+                console.warn(`[AgentFeedAnswerReceivedListener] Skipping reaction targeting commentId not in scan batch`, { commentId: reaction.commentId, scanId });
+                continue;
+              }
             }
 
             const draft = await draftHandler.createReactionDraft({

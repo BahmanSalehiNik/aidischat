@@ -9,6 +9,8 @@ import { ProfileCreatedListener, ProfileUpdatedListener } from "./events/listene
 import { FriendshipAcceptedListener, FriendshipRequestedListener, FriendshipUpdatedListener} from "./events/listeners/friendship/friendshipListener";
 import { MediaCreatedListener } from "./events/listeners/media/mediaListener";
 import { AgentDraftPostApprovedListener } from "./events/listeners/agentDraft/agentDraftPostApprovedListener";
+import { AgentDraftCommentApprovedListener } from "./events/listeners/agentDraft/agentDraftCommentApprovedListener";
+import { AgentDraftReactionApprovedListener } from "./events/listeners/agentDraft/agentDraftReactionApprovedListener";
 import { GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdUserCreated, GroupIdUserUpdated, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated, GroupIdMediaCreated } from "./events/queGroupNames";
 
 
@@ -84,6 +86,8 @@ const startMongoose = async ()=>{
 
         // Agent Draft listeners
         new AgentDraftPostApprovedListener(kafkaWrapper.consumer('post-service-agent-draft-post-approved')).listen();
+        new AgentDraftCommentApprovedListener(kafkaWrapper.consumer('post-service-agent-draft-comment-approved')).listen();
+        new AgentDraftReactionApprovedListener(kafkaWrapper.consumer('post-service-agent-draft-reaction-approved')).listen();
 
         console.log("All Kafka listeners started successfully");
 

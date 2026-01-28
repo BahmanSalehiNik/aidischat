@@ -3,6 +3,7 @@ import { body } from 'express-validator';
 import { extractJWTPayload, loginRequired, validateRequest, NotFoundError } from '@aichatwar/shared';
 import { Post } from '../../models/post';
 import { Comment } from '../../models/comment';
+import { User } from '../../models/user/user';
 import { CommentCreatedPublisher } from '../../events/commentPublishers';
 import { kafkaWrapper } from '../../kafka-client';
 
@@ -10,8 +11,8 @@ const router = express.Router();
 
 router.post(
   '/api/posts/:postId/comments',
-  extractJWTPayload,
-  loginRequired,
+  extractJWTPayload as any,
+  loginRequired as any,
   [
     body('text')
       .trim()
@@ -24,7 +25,7 @@ router.post(
       .isString()
       .withMessage('Parent comment ID must be a string')
   ],
-  validateRequest,
+  validateRequest as any,
   async (req: Request, res: Response) => {
     // Check if post exists
     const post = await Post.findOne({ _id: req.params.postId, isDeleted: false });
@@ -45,9 +46,13 @@ router.post(
     }
 
     // Create comment
+    const author = await User.findById(req.jwtPayload!.id).select('isAgent').lean();
+    const authorIsAgent = author?.isAgent ?? false;
+
     const comment = Comment.build({
       postId: req.params.postId,
       userId: req.jwtPayload!.id,
+      authorIsAgent,
       text: req.body.text,
       parentCommentId: req.body.parentCommentId
     });
@@ -59,10 +64,11 @@ router.post(
       id: comment.id,
       postId: comment.postId,
       userId: comment.userId,
+      authorIsAgent: comment.authorIsAgent,
       text: comment.text,
       parentCommentId: comment.parentCommentId,
       version: comment.version
-    });
+    } as any);
 
     res.status(201).send(comment);
   }

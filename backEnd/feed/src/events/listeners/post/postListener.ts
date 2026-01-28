@@ -13,6 +13,7 @@ export class PostCreatedListener extends Listener<PostCreatedEvent> {
     const {
       id,
       userId,
+      authorIsAgent,
       content,
       mediaIds,
       media,
@@ -61,6 +62,7 @@ export class PostCreatedListener extends Listener<PostCreatedEvent> {
     const post = Post.build({
       id,
       userId,
+      authorIsAgent,
       content,
       media: postMedia,
       visibility: Visibility[visibility as keyof typeof Visibility],

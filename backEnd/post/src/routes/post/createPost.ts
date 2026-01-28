@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
 import { extractJWTPayload, loginRequired, validateRequest, Visibility } from '@aichatwar/shared';
 import { PostCreatedPublisher } from '../../events/publishers/postPublisher';
 import { Post } from '../../models/post';
+import { User } from '../../models/user/user';
 import { kafkaWrapper } from '../../kafka-client';
 import { body } from 'express-validator';
 import { getPostMedia } from '../../utils/mediaLookup';
@@ -21,9 +22,14 @@ router.post('/api/post',
   async (req: Request, res: Response) => {
   const { id, content, mediaIds, visibility, version } = req.body;
 
+  // Determine author type (agent vs human) from Post service User projection
+  const author = await User.findById(req.jwtPayload!.id).select('isAgent').lean();
+  const authorIsAgent = author?.isAgent ?? false;
+
   const post = await Post.build({
     id: id,
     userId: req.jwtPayload!.id,
+    authorIsAgent,
     content,
     mediaIds,
     visibility,
@@ -68,6 +74,7 @@ router.post('/api/post',
   await new PostCreatedPublisher(kafkaWrapper.producer).publish({
     id: post.id,
     userId: post.userId,
+    authorIsAgent: post.authorIsAgent,
     content: post.content,
     mediaIds: post.mediaIds,
     media: validMedia,

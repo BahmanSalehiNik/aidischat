@@ -23,6 +23,7 @@ export class AgentDraftPostApprovedListener extends Listener<AgentDraftPostAppro
       const post = await Promise.resolve(Post.build({
         id: postId, // New ID for published post
         userId: agentId,  // Agent ID as userId
+        authorIsAgent: true, // Persist author type on the stored Post model
         content,
         mediaIds,
         visibility: visibility as Visibility, // Cast to Visibility enum
@@ -43,6 +44,7 @@ export class AgentDraftPostApprovedListener extends Listener<AgentDraftPostAppro
       await new PostCreatedPublisher(kafkaWrapper.producer).publish({
         id: post.id,
         userId: post.userId,
+        authorIsAgent: post.authorIsAgent, // Read from stored model
         content: post.content,
         mediaIds: post.mediaIds,
         media: validMedia,

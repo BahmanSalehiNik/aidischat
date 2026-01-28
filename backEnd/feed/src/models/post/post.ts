@@ -7,6 +7,7 @@ import { updateIfCurrentPlugin } from 'mongoose-update-if-current';
 interface PostAttrs {
   id: string;
   userId: string;
+  authorIsAgent?: boolean;
   content: string;
   media?: { id: string; url: string; type: string }[];
   visibility: Visibility;
@@ -21,6 +22,7 @@ interface PostAttrs {
 export interface PostDoc extends mongoose.Document {
   version: number;
   userId: string;
+  authorIsAgent?: boolean;
   content: string;
   media?: { id: string; url: string; type: string }[];
   visibility: Visibility;
@@ -39,6 +41,7 @@ const postSchema = new mongoose.Schema(
   {
     _id: { type: String },
     userId: { type: String, required: true },
+    authorIsAgent: { type: Boolean, required: false, index: true },
     content: { type: String, required: true },
     media: {
       type: [{

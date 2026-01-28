@@ -3,6 +3,7 @@ import mongoose, { Types } from 'mongoose';
 export interface CommentAttrs {
   postId: string;
   userId: string;
+  authorIsAgent?: boolean;
   text: string;
   parentCommentId?: string, // for threads/replies
 }
@@ -16,6 +17,7 @@ interface DummyRet {
 export interface CommentDoc extends mongoose.Document {
   postId: string;
   userId: string;
+  authorIsAgent: boolean;
   text: string;
   deleted: boolean;
   deletedAt?: Date;
@@ -34,6 +36,7 @@ const commentSchema = new mongoose.Schema(
   {
     postId: { type: String, required: true }, 
     userId: { type: String, required: true },
+    authorIsAgent: { type: Boolean, default: false, index: true },
     text: { type: String, required: true },
     deleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },

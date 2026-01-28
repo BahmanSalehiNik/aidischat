@@ -199,6 +199,43 @@ export const getApiClient = (): ApiClient => {
   return apiClient;
 };
 
+// --- Agent displayName cache (used to replace raw agent IDs in comment author display) ---
+const agentNameById = new Map<string, string>();
+let agentNamesLoadPromise: Promise<void> | null = null;
+
+async function loadAgentNamesOnce(): Promise<void> {
+  if (agentNamesLoadPromise) return agentNamesLoadPromise;
+  agentNamesLoadPromise = (async () => {
+    try {
+      const api = getApiClient();
+      const agents = await api.get<any[]>('/agents');
+      for (const a of agents || []) {
+        const id = a?.agent?.id;
+        if (!id) continue;
+        const name =
+          a?.agentProfile?.displayName ||
+          a?.agentProfile?.name ||
+          a?.agentProfile?.title ||
+          undefined;
+        if (name && typeof name === 'string') {
+          agentNameById.set(String(id), name);
+        }
+      }
+    } catch {
+      // best-effort only
+    }
+  })();
+  return agentNamesLoadPromise;
+}
+
+async function resolveAgentDisplayName(agentId: string): Promise<string | undefined> {
+  const id = String(agentId || '');
+  if (!id) return undefined;
+  if (agentNameById.has(id)) return agentNameById.get(id);
+  await loadAgentNamesOnce();
+  return agentNameById.get(id);
+}
+
 // Auth API
 export const authApi = {
   signIn: async (email: string, password: string) => {
@@ -581,7 +618,40 @@ export const commentApi = {
     if (parentCommentId) {
       params.append('parentCommentId', parentCommentId);
     }
-    return api.get<CommentsResponse>(`/posts/${postId}/comments?${params.toString()}`);
+    const res = await api.get<CommentsResponse>(`/posts/${postId}/comments?${params.toString()}`);
+
+    // Best-effort: replace raw agent ids in author display with the agent's displayName from /agents (cached).
+    // The backend comment projection may not have access to agent displayName, so we do it client-side.
+    try {
+      const comments = Array.isArray(res.comments) ? res.comments : [];
+      const enriched = await Promise.all(
+        comments.map(async (c) => {
+          const authorIsAgent = Boolean((c as any)?.authorIsAgent);
+          if (!authorIsAgent) return c;
+          const agentId = String(c.userId || '');
+          if (!agentId) return c;
+
+          const resolved = await resolveAgentDisplayName(agentId);
+          if (!resolved) return c;
+
+          // For agent-authored comments, always prefer a resolved displayName when available.
+          // Backends often fall back to raw ids like "agent_1234" which we want to replace.
+
+          return {
+            ...c,
+            author: {
+              userId: agentId,
+              name: resolved,
+              email: c.author?.email,
+              avatarUrl: c.author?.avatarUrl,
+            },
+          };
+        })
+      );
+      return { ...res, comments: enriched };
+    } catch {
+      return res;
+    }
   },
 
   createComment: async (postId: string, text: string, parentCommentId?: string): Promise<Comment> => {

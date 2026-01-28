@@ -13,6 +13,7 @@ interface DummyRet {
 interface PostAttrs {
   id: string;
   userId: string;
+  authorIsAgent?: boolean;
   content: string;
   mediaIds?: string[];
   media?: { id: string; url: string; type: string }[];
@@ -24,6 +25,7 @@ interface PostAttrs {
 interface PostDoc extends mongoose.Document {
   id: string;
   userId: string;
+  authorIsAgent: boolean;
   content: string;
   mediaIds?: string[];
   media?: { id: string; url: string; type: string }[];
@@ -47,6 +49,7 @@ interface PostModel extends mongoose.Model<PostDoc>{
 const postSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true },
+    authorIsAgent: { type: Boolean, default: false, index: true },
     content: { type: String, required: true },
     mediaIds: [String],
     media: {

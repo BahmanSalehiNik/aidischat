@@ -4,7 +4,7 @@ FROM node:alpine
 # Set working directory inside the container
 WORKDIR /app
 
-# build-bump: 2 (post uses compiled JS; skaffold sync of src/**/*.ts alone won't update runtime)
+# build-bump: 3 (post uses compiled JS; skaffold sync of src/**/*.ts alone won't update runtime)
 
 # Copy package.json and package-lock.json first for better caching
 COPY package*.json ./
@@ -12,7 +12,7 @@ COPY tsconfig.json ./
 
 # Install ALL dependencies (including dev dependencies for TypeScript compiler)
 RUN npm config set audit false && \
-    npm install --no-audit && \
+    npm ci --no-audit && \
     npm config set audit true
 
 # Copy source files
@@ -22,7 +22,7 @@ COPY src ./src
 RUN npm run build
 
 # Remove dev dependencies to reduce image size (optional but recommended)
-RUN npm prune --production
+RUN npm prune --omit=dev
 
 # Expose port (change if your app uses a different port)
 # EXPOSE 3000

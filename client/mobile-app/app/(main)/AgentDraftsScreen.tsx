@@ -7,6 +7,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Image as ExpoImage } from 'expo-image';
 import { agentManagerApi, AgentDraft } from '../../utils/api';
 
+type DraftTypeFilter = 'all' | 'post' | 'comment' | 'reaction';
+
 export default function AgentDraftsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -24,13 +26,16 @@ export default function AgentDraftsScreen() {
   const isFetchingRef = useRef(false);
   const [imageFailedByDraftId, setImageFailedByDraftId] = useState<Record<string, boolean>>({});
   const [imageErrorByDraftId, setImageErrorByDraftId] = useState<Record<string, string>>({});
+  const [draftTypeSheetVisible, setDraftTypeSheetVisible] = useState(false);
+  const [draftTypeFilter, setDraftTypeFilter] = useState<DraftTypeFilter>('post');
 
   const loadDrafts = useCallback(async (opts?: { silent?: boolean }) => {
     if (isFetchingRef.current) return;
     try {
       isFetchingRef.current = true;
       if (!opts?.silent) setLoading(true);
-      const data = await agentManagerApi.getDrafts(params.agentId!, { type: 'post' });
+      const typeOpt = draftTypeFilter === 'all' ? undefined : draftTypeFilter;
+      const data = await agentManagerApi.getDrafts(params.agentId!, { type: typeOpt });
       setDrafts(data);
     } catch (error: any) {
       console.error('Error loading drafts:', error);
@@ -40,7 +45,7 @@ export default function AgentDraftsScreen() {
       setRefreshing(false);
       isFetchingRef.current = false;
     }
-  }, [params.agentId]);
+  }, [params.agentId, draftTypeFilter]);
 
   useEffect(() => {
     if (params.agentId) loadDrafts({ silent: false });
@@ -73,7 +78,7 @@ export default function AgentDraftsScreen() {
   const approveDraft = async (draft: AgentDraft) => {
     try {
       setBusyDraftId(draft.id);
-      await agentManagerApi.approveDraft(draft.id, 'post');
+      await agentManagerApi.approveDraft(draft.id, draft.draftType);
       Alert.alert('Approved', 'Draft approved and queued for publishing.');
       loadDrafts();
     } catch (e: any) {
@@ -121,7 +126,7 @@ export default function AgentDraftsScreen() {
     if (!draftToReject) return;
     try {
       setBusyDraftId(draftToReject.id);
-      await agentManagerApi.rejectDraft(draftToReject.id, 'post', rejectReason.trim() || undefined);
+      await agentManagerApi.rejectDraft(draftToReject.id, draftToReject.draftType, rejectReason.trim() || undefined);
       setRejectModalVisible(false);
       Alert.alert('Rejected', 'Draft rejected.');
       loadDrafts();
@@ -130,6 +135,21 @@ export default function AgentDraftsScreen() {
       Alert.alert('Error', e?.message || 'Failed to reject draft');
     } finally {
       setBusyDraftId(null);
+    }
+  };
+
+  const getDraftTypeLabel = (t: DraftTypeFilter) => {
+    switch (t) {
+      case 'all':
+        return 'All drafts';
+      case 'post':
+        return 'Post drafts';
+      case 'comment':
+        return 'Comment drafts';
+      case 'reaction':
+        return 'Reaction drafts';
+      default:
+        return 'Drafts';
     }
   };
 
@@ -151,6 +171,23 @@ export default function AgentDraftsScreen() {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const getReactionEmoji = (t?: string) => {
+    switch ((t || '').toLowerCase()) {
+      case 'like':
+        return '👍';
+      case 'love':
+        return '❤️';
+      case 'haha':
+        return '😂';
+      case 'sad':
+        return '😢';
+      case 'angry':
+        return '😠';
+      default:
+        return '👍';
+    }
   };
 
   if (loading) {
@@ -176,6 +213,22 @@ export default function AgentDraftsScreen() {
           <Ionicons name="arrow-back" size={24} color="#000000" />
         </TouchableOpacity>
         <Text style={{ fontSize: 18, fontWeight: '600', color: '#000000', flex: 1 }}>Drafts</Text>
+        <TouchableOpacity
+          onPress={() => setDraftTypeSheetVisible(true)}
+          style={{
+            backgroundColor: '#F2F2F7',
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 999,
+            flexDirection: 'row',
+            alignItems: 'center',
+          }}
+        >
+          <Text style={{ fontSize: 12, fontWeight: '700', color: '#000000', marginRight: 6 }}>
+            {getDraftTypeLabel(draftTypeFilter)}
+          </Text>
+          <Ionicons name="chevron-down" size={14} color="#000000" />
+        </TouchableOpacity>
       </View>
 
       {drafts.length === 0 ? (
@@ -187,7 +240,7 @@ export default function AgentDraftsScreen() {
           <Ionicons name="document-text-outline" size={64} color="#C7C7CC" />
           <Text style={{ fontSize: 18, fontWeight: '600', color: '#000000', marginTop: 16, marginBottom: 8 }}>No Drafts</Text>
           <Text style={{ fontSize: 14, color: '#8E8E93', textAlign: 'center' }}>
-            Your agent's post drafts will appear here once they are created.
+            Your agent's drafts will appear here once they are created.
           </Text>
         </ScrollView>
       ) : (
@@ -204,6 +257,11 @@ export default function AgentDraftsScreen() {
                 borderRadius: 12,
                 padding: 16,
                 marginBottom: 12,
+              }}
+              onPress={() => {
+                // Keep tap behavior useful: if the user taps a draft card,
+                // open the type picker so they can quickly switch between post/comment/reaction drafts.
+                setDraftTypeSheetVisible(true);
               }}
             >
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
@@ -228,50 +286,74 @@ export default function AgentDraftsScreen() {
                       </Text>
                     )}
                   </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                    <View style={{ backgroundColor: '#E5E5EA', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, marginRight: 8 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#3A3A3C' }}>
+                        {draft.draftType.toUpperCase()}
+                      </Text>
+                    </View>
+                    {draft.draftType === 'comment' && draft.postId ? (
+                      <Text style={{ fontSize: 12, color: '#8E8E93' }} numberOfLines={1}>
+                        Post: {draft.postId}
+                      </Text>
+                    ) : null}
+                    {draft.draftType === 'reaction' && draft.reactionType ? (
+                      <Text style={{ fontSize: 12, color: '#8E8E93' }} numberOfLines={1}>
+                        Reaction: {getReactionEmoji(draft.reactionType)} {draft.reactionType}
+                      </Text>
+                    ) : null}
+                    {draft.draftType === 'reaction' && (draft.commentId || draft.postId) ? (
+                      <Text style={{ fontSize: 12, color: '#8E8E93', marginLeft: 8 }} numberOfLines={1}>
+                        On {draft.commentId ? 'comment' : 'post'}: {draft.commentId || draft.postId}
+                      </Text>
+                    ) : null}
+                  </View>
                   {draft.content && (
                     <Text style={{ fontSize: 14, color: '#000000', marginTop: 8 }} numberOfLines={3}>
                       {draft.content}
                     </Text>
                   )}
 
-                  {draft.media && draft.media.length > 0 && draft.media[0]?.url ? (
-                    <View style={{ marginTop: 12 }}>
-                      <ExpoImage
-                        source={{ uri: draft.media[0].url }}
-                        style={{ width: '100%', height: 200, borderRadius: 12, backgroundColor: '#E5E5EA' }}
-                        contentFit="cover"
-                        onError={(e) => {
-                          const url = draft.media?.[0]?.url ? String(draft.media[0].url) : '(missing)';
-                          console.log('[AgentDraftsScreen] Draft image failed to load', { draftId: draft.id, url, error: e });
-                          setImageFailedByDraftId((prev) => ({ ...prev, [draft.id]: true }));
-                          try {
-                            setImageErrorByDraftId((prev) => ({ ...prev, [draft.id]: JSON.stringify(e) }));
-                          } catch {
-                            setImageErrorByDraftId((prev) => ({ ...prev, [draft.id]: String(e) }));
-                          }
-                        }}
-                      />
-                      {imageFailedByDraftId[draft.id] ? (
-                        <View style={{ marginTop: 8 }}>
-                          <Text style={{ fontSize: 12, color: '#8E8E93' }}>
-                            Image failed to load ({(() => { try { return new URL(draft.media?.[0]?.url || '').host || 'unknown host'; } catch { return 'invalid url'; } })()}).
-                          </Text>
-                          <Text style={{ marginTop: 4, fontSize: 11, color: '#8E8E93' }}>
-                            URL: {draft.media?.[0]?.url ? String(draft.media[0].url) : '(missing)'}
-                          </Text>
-                          {imageErrorByDraftId[draft.id] ? (
-                            <Text style={{ marginTop: 4, fontSize: 11, color: '#8E8E93' }}>
-                              Error: {imageErrorByDraftId[draft.id]}
+                  {draft.draftType === 'post' ? (
+                    draft.media && draft.media.length > 0 && draft.media[0]?.url ? (
+                      <View style={{ marginTop: 12 }}>
+                        <ExpoImage
+                          source={{ uri: draft.media[0].url }}
+                          style={{ width: '100%', height: 200, borderRadius: 12, backgroundColor: '#E5E5EA' }}
+                          contentFit="cover"
+                          onError={(e) => {
+                            const url = draft.media?.[0]?.url ? String(draft.media[0].url) : '(missing)';
+                            console.log('[AgentDraftsScreen] Draft image failed to load', { draftId: draft.id, url, error: e });
+                            setImageFailedByDraftId((prev) => ({ ...prev, [draft.id]: true }));
+                            try {
+                              setImageErrorByDraftId((prev) => ({ ...prev, [draft.id]: JSON.stringify(e) }));
+                            } catch {
+                              setImageErrorByDraftId((prev) => ({ ...prev, [draft.id]: String(e) }));
+                            }
+                          }}
+                        />
+                        {imageFailedByDraftId[draft.id] ? (
+                          <View style={{ marginTop: 8 }}>
+                            <Text style={{ fontSize: 12, color: '#8E8E93' }}>
+                              Image failed to load ({(() => { try { return new URL(draft.media?.[0]?.url || '').host || 'unknown host'; } catch { return 'invalid url'; } })()}).
                             </Text>
-                          ) : null}
-                        </View>
-                      ) : null}
-                    </View>
-                  ) : (
-                    <Text style={{ marginTop: 12, fontSize: 12, color: '#8E8E93' }}>
-                      No image attached.
-                    </Text>
-                  )}
+                            <Text style={{ marginTop: 4, fontSize: 11, color: '#8E8E93' }}>
+                              URL: {draft.media?.[0]?.url ? String(draft.media[0].url) : '(missing)'}
+                            </Text>
+                            {imageErrorByDraftId[draft.id] ? (
+                              <Text style={{ marginTop: 4, fontSize: 11, color: '#8E8E93' }}>
+                                Error: {imageErrorByDraftId[draft.id]}
+                              </Text>
+                            ) : null}
+                          </View>
+                        ) : null}
+                      </View>
+                    ) : (
+                      <Text style={{ marginTop: 12, fontSize: 12, color: '#8E8E93' }}>
+                        No image attached.
+                      </Text>
+                    )
+                  ) : null}
                 </View>
               </View>
               {draft.status === 'pending' && (
@@ -292,21 +374,23 @@ export default function AgentDraftsScreen() {
                     <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>{busyDraftId === draft.id ? 'Working…' : 'Approve'}</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    onPress={() => openRevise(draft)}
-                    disabled={busyDraftId === draft.id}
-                    style={{
-                      flex: 1,
-                      backgroundColor: '#007AFF',
-                      paddingVertical: 10,
-                      borderRadius: 10,
-                      alignItems: 'center',
-                      opacity: busyDraftId === draft.id ? 0.6 : 1,
-                      marginRight: 10,
-                    }}
-                  >
-                    <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Revise</Text>
-                  </TouchableOpacity>
+                  {draft.draftType === 'post' ? (
+                    <TouchableOpacity
+                      onPress={() => openRevise(draft)}
+                      disabled={busyDraftId === draft.id}
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#007AFF',
+                        paddingVertical: 10,
+                        borderRadius: 10,
+                        alignItems: 'center',
+                        opacity: busyDraftId === draft.id ? 0.6 : 1,
+                        marginRight: 10,
+                      }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Revise</Text>
+                    </TouchableOpacity>
+                  ) : null}
 
                   <TouchableOpacity
                     onPress={() => openReject(draft)}
@@ -401,6 +485,81 @@ export default function AgentDraftsScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Draft type picker (bottom sheet style) */}
+      <Modal
+        visible={draftTypeSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDraftTypeSheetVisible(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setDraftTypeSheetVisible(false)}
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' }}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => {}}
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              paddingHorizontal: 16,
+              paddingTop: 12,
+              paddingBottom: Math.max(insets.bottom, 12),
+            }}
+          >
+            <View style={{ alignItems: 'center', marginBottom: 10 }}>
+              <View style={{ width: 42, height: 5, borderRadius: 999, backgroundColor: '#E5E5EA' }} />
+            </View>
+
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#000000', marginBottom: 10 }}>
+              Show drafts
+            </Text>
+
+            {([
+              { key: 'post', label: 'Post drafts' },
+              { key: 'comment', label: 'Comment drafts' },
+              { key: 'reaction', label: 'Reaction drafts' },
+              { key: 'all', label: 'All drafts' },
+            ] as Array<{ key: DraftTypeFilter; label: string }>).map((opt) => {
+              const selected = draftTypeFilter === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  onPress={() => {
+                    setDraftTypeFilter(opt.key);
+                    setDraftTypeSheetVisible(false);
+                    // NOTE:
+                    // Don't call loadDrafts() here. setDraftTypeFilter() is async, so calling loadDrafts()
+                    // immediately would fetch using the *previous* filter, and also block the correct fetch
+                    // (triggered by the effect) due to isFetchingRef.
+                  }}
+                  style={{
+                    paddingVertical: 14,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderBottomWidth: 1,
+                    borderBottomColor: '#F2F2F7',
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#000000' }}>{opt.label}</Text>
+                  {selected ? <Ionicons name="checkmark" size={18} color="#007AFF" /> : null}
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity
+              onPress={() => setDraftTypeSheetVisible(false)}
+              style={{ marginTop: 12, paddingVertical: 14, borderRadius: 12, backgroundColor: '#F2F2F7', alignItems: 'center' }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '800', color: '#000000' }}>Close</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
