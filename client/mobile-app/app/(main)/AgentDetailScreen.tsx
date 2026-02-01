@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, Image, Alert, Modal } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, Image, Alert, Modal, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { agentsApi, AgentWithProfile } from '../../utils/api';
 import { formatBreedLabel } from '../../constants/agentConstants';
 import { AvatarViewer } from '../../components/avatar/AvatarViewer';
 import { avatarApi } from '../../utils/avatarApi';
+import * as Linking from 'expo-linking';
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -42,6 +43,7 @@ export default function AgentDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [showAvatarViewer, setShowAvatarViewer] = useState(false);
   const [avatarStatus, setAvatarStatus] = useState<'pending' | 'generating' | 'ready' | 'failed' | null>(null);
+  const [launchingVideoChat, setLaunchingVideoChat] = useState(false);
 
   useEffect(() => {
     if (params.agentId) {
@@ -78,6 +80,58 @@ export default function AgentDetailScreen() {
       router.back();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const launchUnityVideoChat = async (agentId: string) => {
+    // Keep this inside the current screen (no navigation) to avoid any intermediate page flash.
+    try {
+      setLaunchingVideoChat(true);
+
+      const status = await avatarApi.getAvatarStatus(agentId);
+      if (status.status !== 'ready') {
+        Alert.alert('Avatar not ready', 'Please wait until the avatar is ready before starting video chat.');
+        return;
+      }
+
+      // IMPORTANT:
+      // Always prefer the download-url endpoint to get a fresh, correct URL to *this agent's* model.
+      // This avoids stale cached URLs and avoids relying on status.modelUrl which may be a stored/original URL.
+      let modelUrl: string | undefined;
+      try {
+        const dl = await avatarApi.getDownloadUrl(agentId, 900);
+        modelUrl = dl.url;
+      } catch (e) {
+        // Fallback to status.modelUrl (for public/external URLs, or if download-url fails unexpectedly)
+        modelUrl = status.modelUrl;
+      }
+
+      const queryParams = new URLSearchParams({ agentId });
+      if (modelUrl) queryParams.append('modelUrl', modelUrl);
+
+      if (status.animationUrls && status.animationUrls.length > 0) {
+        for (const url of status.animationUrls) {
+          if (url) queryParams.append('animUrl', url);
+        }
+      }
+
+      const unityUrl = `aichatar://ar?${queryParams.toString()}`;
+      const supported = await Linking.canOpenURL(unityUrl);
+
+      if (supported || Platform.OS === 'android') {
+        await Linking.openURL(unityUrl);
+      } else {
+        Alert.alert(
+          'AR App Not Installed',
+          'Please install the "AI Chat AR" companion app to start video chat.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (e: any) {
+      console.error('[AgentDetailScreen] launchUnityVideoChat error:', e);
+      Alert.alert('Error', e?.message || 'Failed to start video chat');
+    } finally {
+      setLaunchingVideoChat(false);
     }
   };
 
@@ -201,16 +255,17 @@ export default function AgentDetailScreen() {
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
+                opacity: launchingVideoChat ? 0.7 : 1,
               }}
               onPress={() => {
-                router.push({
-                  pathname: '/(main)/ARChatScreen',
-                  params: { agentId: agent.agent.id },
-                });
+                launchUnityVideoChat(agent.agent.id);
               }}
+              disabled={launchingVideoChat}
             >
               <Ionicons name="videocam" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Video Chat</Text>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>
+                {launchingVideoChat ? 'Starting…' : 'Video Chat'}
+              </Text>
             </TouchableOpacity>
           )}
 

@@ -45,10 +45,11 @@ namespace AIChatAR.AR
         public System.Action<GameObject> OnAvatarLoaded;
         public System.Action<string> OnError;
 
-        // DEBUG GUI
+        // DEBUG GUI (editor/dev builds only)
         private string debugMessage = "AvatarLoader: Initializing...";
         private GUIStyle debugStyle;
 
+        #if UNITY_EDITOR || DEVELOPMENT_BUILD
         void OnGUI()
         {
             if (debugStyle == null)
@@ -62,12 +63,13 @@ namespace AIChatAR.AR
 
             // NOTE: Hardcoded test URLs removed. Use Meshy/Azure-provided URLs (deeplink / backend) instead.
 
-            // Button: switch to idle animation GLB (if provided via SetAnimationUrls)
+            // Debug-only: switch to idle animation GLB (if provided via SetAnimationUrls)
             if (GUI.Button(new Rect(20, Screen.height - 160, 380, 110), "LOAD IDLE GLB"))
             {
                 LoadIdleGlb();
             }
         }
+        #endif
 
         /// <summary>
         /// Receive animation GLB URLs (e.g. idle/talking/walking) from deep link or status endpoint.

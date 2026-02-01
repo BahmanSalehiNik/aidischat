@@ -28,10 +28,11 @@ namespace AIChatAR.Utils
             }
         }
 
-        // DEBUG GUI
+        // DEBUG GUI (editor/dev builds only)
         private string deepLinkStatus = "DeepLink: Waiting...";
         private GUIStyle deepLinkStyle;
-        
+
+        #if UNITY_EDITOR || DEVELOPMENT_BUILD
         void OnGUI()
         {
             if (deepLinkStyle == null)
@@ -42,6 +43,7 @@ namespace AIChatAR.Utils
             }
             GUI.Label(new Rect(20, 200, Screen.width - 40, 100), deepLinkStatus, deepLinkStyle);
         }
+        #endif
 
         void Start()
         {
