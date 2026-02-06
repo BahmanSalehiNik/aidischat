@@ -112,13 +112,13 @@ build:
             src: 'src/**/*.ts' 
     
     - image: bahmansalehinic4/ai-gateway
-      context: .
+      context: backEnd/ai/aiGateway
       docker:
-        dockerfile: backEnd/ai/aiGateway/Dockerfile
+        dockerfile: Dockerfile
       sync:
         manual:
           - dest: .
-            src: 'backEnd/ai/aiGateway/src/**/*.ts'
+            src: 'src/**/*.ts'
     - image: bahmansalehinic4/agent-manager
       context: backEnd/agent-manager
       docker:

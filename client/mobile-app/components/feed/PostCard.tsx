@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { useAuthStore } from '../../store/authStore';
-import { postApi } from '../../utils/api';
+import { commentApi, postApi } from '../../utils/api';
 import { ReactionButton } from './ReactionButton';
 
 export interface Post {
@@ -45,6 +45,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   const { user } = useAuthStore();
   const [showMenu, setShowMenu] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [previewComments, setPreviewComments] = useState<Array<{ id: string; authorName: string; text: string }>>([]);
 
   const isOwnPost = post.userId === user?.id;
 
@@ -182,6 +183,54 @@ const getReactionCounts = () => {
   const currentUserReaction = getCurrentUserReaction();
   const commentsCount = post.commentsCount || 0;
 
+  // Comment preview cache (module-level) to avoid refetching on every rerender
+  // (Feed renders up to ~10 posts; fetching 1-2 comments per post is acceptable but we still cache.)
+  const PREVIEW_LIMIT = 2;
+  const cacheKey = post.id;
+  // eslint-disable-next-line @typescript-eslint/no-use-before-define
+  const cached = getPreviewCache(cacheKey);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!post?.id || commentsCount <= 0) {
+      setPreviewComments([]);
+      return;
+    }
+
+    // Use cache if available
+    if (cached) {
+      setPreviewComments(cached);
+      return;
+    }
+
+    (async () => {
+      try {
+        const res = await commentApi.getComments(post.id, 1, PREVIEW_LIMIT);
+        const items = (res.comments || []).slice(0, PREVIEW_LIMIT).map((c) => ({
+          id: c.id,
+          authorName:
+            c.author?.name ||
+            (c.author?.email ? c.author.email.split('@')[0] : '') ||
+            c.userId ||
+            'User',
+          text: c.text || '',
+        }));
+        if (!cancelled) {
+          setPreviewComments(items);
+          setPreviewCache(cacheKey, items);
+        }
+      } catch {
+        // best-effort only
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // We intentionally key off post.id + commentsCount; if count changes, reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post.id, commentsCount]);
+
   const renderStatsRow = () => {
     if (!reactionCounts.length && !commentsCount) {
       return null;
@@ -210,6 +259,43 @@ const getReactionCounts = () => {
             {commentsCount} {commentsCount === 1 ? 'comment' : 'comments'}
           </Text>
         </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderCommentPreviews = () => {
+    if (!commentsCount) return null;
+
+    // Big-app pattern:
+    // - Show "View all X comments" / "View 1 comment"
+    // - Show 1-2 recent comment previews
+    // - If there are more, show "View more comments"
+    return (
+      <View style={styles.commentPreviewContainer}>
+        <TouchableOpacity onPress={onCommentPress || onPress}>
+          <Text style={styles.viewAllCommentsText}>
+            {commentsCount === 1 ? 'View 1 comment' : `View all ${commentsCount} comments`}
+          </Text>
+        </TouchableOpacity>
+
+        {previewComments.map((c, idx) => (
+          <TouchableOpacity
+            key={`${post.id}:${c.id || idx}`}
+            onPress={onCommentPress || onPress}
+            style={styles.commentPreviewRow}
+          >
+            <Text style={styles.commentPreviewText} numberOfLines={1}>
+              <Text style={styles.commentPreviewAuthor}>{c.authorName} </Text>
+              {c.text}
+            </Text>
+          </TouchableOpacity>
+        ))}
+
+        {commentsCount > previewComments.length ? (
+          <TouchableOpacity onPress={onCommentPress || onPress}>
+            <Text style={styles.viewMoreCommentsText}>View more comments</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     );
   };
@@ -284,6 +370,7 @@ const getReactionCounts = () => {
       )}
 
       {renderStatsRow()}
+      {renderCommentPreviews()}
 
       <View style={styles.footer}>
         <ReactionButton
@@ -476,6 +563,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8E8E93',
   },
+  commentPreviewContainer: {
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  viewAllCommentsText: {
+    fontSize: 13,
+    color: '#8E8E93',
+    marginBottom: 4,
+  },
+  commentPreviewRow: {
+    marginBottom: 2,
+  },
+  commentPreviewText: {
+    fontSize: 13,
+    color: '#000000',
+  },
+  commentPreviewAuthor: {
+    fontWeight: '700',
+    color: '#000000',
+  },
+  viewMoreCommentsText: {
+    fontSize: 13,
+    color: '#8E8E93',
+    marginTop: 2,
+  },
   menuButton: {
     padding: 4,
   },
@@ -514,4 +626,15 @@ const styles = StyleSheet.create({
     color: '#FF3B30',
   },
 });
+
+// --- Module-local cache helpers ---
+const previewCache = new Map<string, Array<{ id: string; authorName: string; text: string }>>();
+
+function getPreviewCache(postId: string) {
+  return previewCache.get(postId);
+}
+
+function setPreviewCache(postId: string, items: Array<{ id: string; authorName: string; text: string }>) {
+  previewCache.set(postId, items);
+}
 

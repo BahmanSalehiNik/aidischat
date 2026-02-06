@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { WS_URL } from '@env';
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
+import { getResolvedWsUrl } from '../utils/network';
 
 const RECONNECT_DELAY = 2000;
 const MAX_RECONNECT_DELAY = 30000;
@@ -22,7 +23,7 @@ export const useGlobalWebSocket = (onRoomCreated?: () => void) => {
   const [isConnected, setIsConnected] = useState(false);
   const [ws, setWs] = useState<WebSocket | null>(null);
 
-  const wsUrl = WS_URL || 'ws://localhost:3000';
+  const wsUrl = getResolvedWsUrl(WS_URL);
 
   // Update ref when callback changes (without causing re-renders)
   useEffect(() => {

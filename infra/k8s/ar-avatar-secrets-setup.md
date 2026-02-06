@@ -94,9 +94,9 @@ kubectl create secret generic ar-avatar-secrets \
 --from-literal=ready-player-me-app-id="$YOUR_APP_ID"
 
 ## Verify Secrets
-
+https://assets.meshy.ai/f0bb784b-ab50-49d3-8c63-d93c3cd2ab3f/tasks/019b0f71-d54c-7b34-b41f-e10e8a825880/output/model.glb?Expires=4919011200&Signature=qA59B4OQPceOphMGl5ccm7zJ8EVrzRpCDmGrnYj~SFvJqqnyzAVblAEHg2cIDeccc7CDewFkItAhEtDTg7zWXfXmInAZwJnpO8Tq55oBl95-zfXInoOHoelcwObFSc1J6Ctjw7~J4RvSMMu0ue-RDXHZ9h~paTL1ikthpr~ihm7JoyZL-R9g4EOQG9JlHtoP6~sNxY43gyB5vQJVgQHVLK4s~~mI~OZH2vRSj4qvIzQ51IMNepDGGzRDm0E6vkDF3Qyj~EWcTbnklrtsh39rzcmMbdT41bq71WHvs~1Bf8OLEbE~uP0q9EjzyV0L0Ye7aW~7xI894~TiczPuhM1uRg__&Key-Pair-Id=KL5I0C8H7HX83
 To verify the secrets are created:
-
+https://gltf-viewer.donmccurdy.com/
 ```bash
 kubectl get secret ar-avatar-secrets
 kubectl describe secret ar-avatar-secrets

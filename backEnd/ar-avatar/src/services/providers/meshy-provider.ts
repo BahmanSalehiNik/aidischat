@@ -72,8 +72,12 @@ export class MeshyProvider extends BaseModelProvider {
         console.log(`[MeshyProvider] Refinement completed: ${refineTaskId}`);
         console.log(`[MeshyProvider] Refined model URL: ${refinedModelUrl}`);
       } catch (error: any) {
-        console.warn(`[MeshyProvider] Texture refinement failed: ${error.message}. Using preview model without textures.`);
-        // Continue with untextured preview model
+        const allowUntextured = (process.env.MESHY_ALLOW_UNTEXTURED || 'true').toLowerCase() === 'true';
+        console.warn(`[MeshyProvider] Texture refinement failed: ${error.message}. allowUntextured=${allowUntextured}`);
+        if (!allowUntextured) {
+          throw new Error(`Texture refinement failed: ${error.message}`);
+        }
+        // Continue with untextured preview model (degraded)
       }
 
       // Step 4: Optional remesh pass for final lightweight optimization
@@ -241,7 +245,8 @@ export class MeshyProvider extends BaseModelProvider {
         format: AvatarModelFormat.GLB,
         metadata: {
           polygonCount: previewResult?.polygonCount || refineResult?.polygonCount || 10000, // Target: 6k-15k for mobile
-          textureResolution: refineResult?.textureResolution || 1024, // Lower for mobile (base color only, enable_pbr: false)
+          // If refinement failed, keep this at 0 so downstream can detect "untextured" models.
+          textureResolution: refineResult?.textureResolution || 0,
           boneCount: 60, // Standard humanoid rig
           animationCount: animationUrls.length || 0,
         },
@@ -327,7 +332,7 @@ export class MeshyProvider extends BaseModelProvider {
             'Authorization': `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
           },
-          timeout: 30000,
+          timeout: 120000, // 120s (was 30s) - reduce false timeouts
         }
       );
 
@@ -376,7 +381,7 @@ export class MeshyProvider extends BaseModelProvider {
 
   private async pollTask(
     taskId: string,
-    maxAttempts: number = 60,
+    maxAttempts: number = 120,
     intervalMs: number = 5000
   ): Promise<any> {
     let attempts = 0;
@@ -389,7 +394,7 @@ export class MeshyProvider extends BaseModelProvider {
             headers: {
               'Authorization': `Bearer ${this.apiKey}`,
             },
-            timeout: 30000, // Increased timeout for Meshy API (30 seconds)
+            timeout: 120000, // 120s (was 30s) - reduce false timeouts
           }
         );
 
@@ -490,7 +495,7 @@ export class MeshyProvider extends BaseModelProvider {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
       },
-      timeout: 30000,
+      timeout: 120000, // 120s (was 30s) - reduce false timeouts
     });
 
     // Response structure: { "result": "rigging_task_id" } or { "rigging_task_id": "..." }
@@ -509,7 +514,7 @@ export class MeshyProvider extends BaseModelProvider {
    */
   private async pollRigTask(
     taskId: string,
-    maxAttempts: number = 60,
+    maxAttempts: number = 120,
     intervalMs: number = 5000
   ): Promise<{ modelUrl: string; basicAnimations?: any }> {
     let attempts = 0;
@@ -522,7 +527,7 @@ export class MeshyProvider extends BaseModelProvider {
             headers: {
               'Authorization': `Bearer ${this.apiKey}`,
             },
-            timeout: 10000,
+            timeout: 20000, // 20s (was 10s) - 2x
           }
         );
 
@@ -596,12 +601,14 @@ export class MeshyProvider extends BaseModelProvider {
     animations: Array<{ name: string; action_id: number }>
   ): Promise<Array<{ name: string; url: string }>> {
     const results: Array<{ name: string; url: string }> = [];
-    
-    // Generate each animation separately
-    for (const anim of animations) {
+
+    const concurrencyEnv = parseInt(process.env.MESHY_ANIMATION_CONCURRENCY || '', 10);
+    const concurrencyLimit = Number.isFinite(concurrencyEnv) && concurrencyEnv > 0 ? concurrencyEnv : 3;
+
+    const runOne = async (anim: { name: string; action_id: number }): Promise<{ name: string; url: string } | null> => {
       try {
         console.log(`[MeshyProvider] Generating ${anim.name} animation (action_id: ${anim.action_id})...`);
-        
+
         const response = await axios.post(
           `${this.baseUrl}/openapi/v1/animations`,
           {
@@ -617,31 +624,36 @@ export class MeshyProvider extends BaseModelProvider {
               'Authorization': `Bearer ${this.apiKey}`,
               'Content-Type': 'application/json',
             },
-            timeout: 30000,
+            timeout: 120000, // 120s - reduce false timeouts
           }
         );
 
-        // Response structure: { "result": "animation_task_id" }
         const animTaskId = response.data.result || response.data.animation_task_id || response.data.id;
         if (!animTaskId) {
           throw new Error('Invalid response from Meshy animation API');
         }
 
-        // Poll for animation completion
         const animResult = await this.pollAnimationTask(animTaskId);
-        
-        results.push({
-          name: anim.name,
-          url: animResult.modelUrl || '',
-        });
-        
         console.log(`[MeshyProvider] ✅ ${anim.name} animation completed: ${animResult.modelUrl}`);
+        return { name: anim.name, url: animResult.modelUrl || '' };
       } catch (error: any) {
         console.warn(`[MeshyProvider] Failed to generate ${anim.name} animation: ${error.message}`);
-        // Continue with other animations
+        return null;
+      }
+    };
+
+    // Run in batches to avoid hammering Meshy API
+    for (let i = 0; i < animations.length; i += concurrencyLimit) {
+      const batch = animations.slice(i, i + concurrencyLimit);
+      const batchResults = await Promise.allSettled(batch.map(runOne));
+
+      for (const r of batchResults) {
+        if (r.status === 'fulfilled' && r.value) {
+          results.push(r.value);
+        }
       }
     }
-    
+
     return results;
   }
 
@@ -651,7 +663,7 @@ export class MeshyProvider extends BaseModelProvider {
    */
   private async pollAnimationTask(
     taskId: string,
-    maxAttempts: number = 60,
+    maxAttempts: number = 120,
     intervalMs: number = 5000
   ): Promise<{ modelUrl: string; animationUrls: string[] }> {
     let attempts = 0;
@@ -664,7 +676,7 @@ export class MeshyProvider extends BaseModelProvider {
             headers: {
               'Authorization': `Bearer ${this.apiKey}`,
             },
-            timeout: 10000,
+            timeout: 20000, // 20s (was 10s) - 2x
           }
         );
 
@@ -746,6 +758,10 @@ export class MeshyProvider extends BaseModelProvider {
 
     // Optional: texture_prompt or texture_image_url for custom texturing
     // requestBody.texture_prompt = 'same as original prompt';
+    // Prefer a lower texture resolution to reduce refine latency/timeouts (can be overridden).
+    const texResEnv = parseInt(process.env.MESHY_TEXTURE_RESOLUTION || '', 10);
+    const textureResolution = Number.isFinite(texResEnv) && texResEnv > 0 ? texResEnv : 512;
+    requestBody.texture_resolution = textureResolution;
     
     const response = await axios.post(
       `${this.baseUrl}/openapi/v2/text-to-3d`,
@@ -755,7 +771,7 @@ export class MeshyProvider extends BaseModelProvider {
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        timeout: 30000,
+        timeout: 120000, // 120s (was 60s) - reduce false timeouts during refine creation
       }
     );
 
@@ -778,7 +794,10 @@ export class MeshyProvider extends BaseModelProvider {
    */
   private async pollRefineTask(
     taskId: string,
-    maxAttempts: number = 60,
+    maxAttempts: number = (() => {
+      const env = parseInt(process.env.MESHY_REFINE_MAX_ATTEMPTS || '', 10);
+      return Number.isFinite(env) && env > 0 ? env : 240; // default: 20 minutes (240 * 5s)
+    })(),
     intervalMs: number = 5000
   ): Promise<any> {
     let attempts = 0;
@@ -791,7 +810,7 @@ export class MeshyProvider extends BaseModelProvider {
             headers: {
               'Authorization': `Bearer ${this.apiKey}`,
             },
-            timeout: 30000, // Increased timeout for Meshy API (30 seconds)
+            timeout: 120000, // 120s (was 60s) - reduce false timeouts during refine polling
           }
         );
 
@@ -861,7 +880,7 @@ export class MeshyProvider extends BaseModelProvider {
         input_task_id: inputTaskId, // Use task ID instead of model URL
         target_formats: ['glb'],
         topology: 'triangle', // Best for mobile
-        target_polycount: 8000, // Sweet spot for mobile AR characters
+        target_polycount: 10000, // Sweet spot for mobile AR characters
         resize_height: 1.7, // Character height in meters (AR-friendly)
         origin_at: 'bottom', // Character stands on AR plane nicely
       },
@@ -870,7 +889,7 @@ export class MeshyProvider extends BaseModelProvider {
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        timeout: 30000,
+        timeout: 120000, // 120s (was 30s) - reduce false timeouts
       }
     );
 
@@ -889,7 +908,7 @@ export class MeshyProvider extends BaseModelProvider {
    */
   private async pollRemeshTask(
     taskId: string,
-    maxAttempts: number = 60,
+    maxAttempts: number = 120,
     intervalMs: number = 5000
   ): Promise<{ modelUrl: string }> {
     let attempts = 0;
@@ -902,7 +921,7 @@ export class MeshyProvider extends BaseModelProvider {
             headers: {
               'Authorization': `Bearer ${this.apiKey}`,
             },
-            timeout: 10000,
+            timeout: 20000, // 20s (was 10s) - 2x
           }
         );
 

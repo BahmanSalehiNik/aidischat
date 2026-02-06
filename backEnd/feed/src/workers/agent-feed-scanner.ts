@@ -16,6 +16,7 @@ import { UserStatus } from '@aichatwar/shared';
 import { User } from '../models/user/user';
 import { Feed, FeedStatus } from '../models/feed/feed';
 import { Post } from '../models/post/post';
+import { Comment } from '../models/comment/comment';
 import { kafkaWrapper } from '../kafka-client';
 import { AgentFeedScannedPublisher } from '../events/publishers/agentFeedScannedPublisher';
 
@@ -112,8 +113,12 @@ class AgentFeedScannerWorker {
       .sort({ createdAt: -1 })
       .lean();
 
+    // Filter out agent-authored posts so agents only react to human-created posts
+    // (If authorIsAgent is missing, treat it as human/false for backward compatibility.)
+    const humanPosts = posts.filter((post: any) => !(post as any).authorIsAgent);
+
     // Transform posts for event
-    const postsData = posts.map((post) => ({
+    const postsData = humanPosts.map((post: any) => ({
       id: post._id.toString(),
       userId: post.userId,
       content: post.content,
@@ -123,14 +128,51 @@ class AgentFeedScannerWorker {
       commentsCount: post.commentsCount || 0,
     }));
 
-    // Note: Individual comments and reactions are not stored in Feed Service
-    // They are aggregated in Post projection (commentsCount, reactionsSummary)
-    // For now, we return empty arrays. This can be enhanced later if needed
-    // by adding Comment and Reaction projections to Feed Service.
+    // Include a small set of recent HUMAN comments for these human posts.
+    // This enables AI to draft reactions on comments (targeting commentId) while keeping payload small.
+    const humanPostIds = postsData.map((p) => p.id);
+    const MAX_COMMENTS_PER_SCAN = 20;
+    const MAX_COMMENTS_PER_POST = 3;
+
+    let commentsData: Array<{
+      id: string;
+      postId: string;
+      userId: string;
+      content: string;
+      createdAt: string;
+    }> = [];
+
+    if (humanPostIds.length > 0) {
+      const comments = await Comment.find({
+        postId: { $in: humanPostIds },
+        // Only include human-authored comments (avoid agents reacting to agent content)
+        authorIsAgent: { $ne: true },
+      })
+        .sort({ createdAt: -1 })
+        .limit(MAX_COMMENTS_PER_SCAN)
+        .lean();
+
+      // Cap per-post to keep distribution fair across the batch
+      const perPostCount = new Map<string, number>();
+      for (const c of comments) {
+        const pid = String((c as any).postId);
+        const count = perPostCount.get(pid) || 0;
+        if (count >= MAX_COMMENTS_PER_POST) continue;
+        perPostCount.set(pid, count + 1);
+
+        commentsData.push({
+          id: String((c as any)._id),
+          postId: pid,
+          userId: String((c as any).userId),
+          content: String((c as any).text || ''),
+          createdAt: ((c as any).createdAt ? new Date((c as any).createdAt).toISOString() : new Date().toISOString()),
+        });
+      }
+    }
 
     return {
       posts: postsData,
-      comments: [], // TODO: Add Comment projection to Feed Service if individual comments are needed
+      comments: commentsData,
       reactions: [], // TODO: Add Reaction projection to Feed Service if individual reactions are needed
       feedEntryIds, // Return feed entry IDs so we can mark them as seen after processing
     };
@@ -158,12 +200,6 @@ class AgentFeedScannerWorker {
         `[AgentFeedScanner] Fetched feed for agent ${agentId}: ${feedData.posts.length} posts, ${feedData.comments.length} comments, ${feedData.reactions.length} reactions`
       );
 
-      // Skip if no new posts to process
-      if (feedData.posts.length === 0) {
-        console.log(`[AgentFeedScanner] ⏭️  Skipping agent ${agentId} - no new unseen posts`);
-        return;
-      }
-
       // Extract feedEntryIds for tracking
       const { feedEntryIds, ...feedDataForEvent } = feedData;
 
@@ -174,6 +210,12 @@ class AgentFeedScannerWorker {
           { $set: { status: FeedStatus.Seen } }
         );
         console.log(`[AgentFeedScanner] ✅ Marked ${result.modifiedCount} feed entries as seen for agent ${agentId}`);
+      }
+
+      // Skip publish if no (human) posts to process
+      if (feedData.posts.length === 0) {
+        console.log(`[AgentFeedScanner] ⏭️  Skipping agent ${agentId} - no new unseen human posts`);
+        return;
       }
 
       // Publish agent.feed.scanned event

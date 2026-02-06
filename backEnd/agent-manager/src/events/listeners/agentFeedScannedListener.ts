@@ -6,6 +6,7 @@ import { Listener, Subjects, AgentFeedScannedEvent, EachMessagePayload } from '@
 import { kafkaWrapper } from '../../kafka-client';
 import { AgentFeedScannedPublisher } from '../publishers/agentManagerPublishers';
 import { StorageFactory, StorageProvider } from '../../storage/storageFactory';
+import { AgentDraftComment } from '../../models/agent-draft-comment';
 
 export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
   readonly topic = Subjects.AgentFeedScanned;
@@ -121,6 +122,17 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
         })
       );
 
+      // Decide whether AI Gateway should generate comment suggestions for this scan.
+      //
+      // Goal: avoid generating comments when the (approximate) per-post AI comment budget is already exhausted.
+      //
+      // Note: Until Feed provides explicit human/ai comment breakdown, we use a safe approximation:
+      // - Treat feedData.posts[i].commentsCount as the "human baseline" for the cap (human + 3).
+      // - Treat existing comment drafts (pending/approved) in agent-manager as AI-comment pressure.
+      // - Enforce per-agent rule: at most 1 comment per post per agent (skip if agent already has a comment draft).
+      const createComment = await this.computeCreateComment(agentId, feedData.posts);
+      console.log(`[AgentFeedScannedListener] Comment suggestion gate for scanId ${scanId}: createComment=${createComment}`);
+
       // Create event data with signed URLs
       const signedFeedData = {
         ...feedData,
@@ -128,15 +140,17 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
       };
 
       // Forward event to AI Gateway with signed URLs
+      // Note: createComment is an additive field on the event payload; older shared typings may not include it yet.
       await new AgentFeedScannedPublisher(kafkaWrapper.producer).publish({
         agentId,
         ownerUserId,
         scanId,
+        createComment,
         feedData: signedFeedData,
         feedEntryIds,
         scanTimestamp,
         scanInterval,
-      });
+      } as any);
 
       console.log(`[AgentFeedScannedListener] ✅ Forwarded agent.feed.scanned event to AI Gateway with signed URLs for agent ${agentId} (scanId: ${scanId})`);
 
@@ -150,6 +164,47 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
       // Don't throw - ack anyway to avoid blocking the queue
       await this.ack();
     }
+  }
+
+  private async computeCreateComment(
+    agentId: string,
+    posts: Array<{ id: string; commentsCount: number }>
+  ): Promise<boolean> {
+    if (!posts || posts.length === 0) return false;
+
+    const postIds = posts.map((p) => p.id);
+
+    // AI pressure approximation: count comment drafts (pending/approved) per post across all agents
+    const draftsByPost = await AgentDraftComment.aggregate([
+      { $match: { postId: { $in: postIds }, status: { $in: ['pending', 'approved'] } } },
+      { $group: { _id: '$postId', count: { $sum: 1 } } },
+    ]);
+    const aiDraftCountByPostId = new Map<string, number>(draftsByPost.map((d: any) => [String(d._id), Number(d.count) || 0]));
+
+    // Per-agent rule: if this agent already has a comment draft for that post, don't ask AI to create another
+    const existingAgentDrafts = await AgentDraftComment.find({
+      agentId,
+      postId: { $in: postIds },
+      status: { $in: ['pending', 'approved'] },
+    })
+      .select('postId')
+      .lean();
+    const agentHasDraftForPost = new Set<string>(existingAgentDrafts.map((d: any) => String(d.postId)));
+
+    for (const p of posts) {
+      const postId = String(p.id);
+      if (agentHasDraftForPost.has(postId)) continue;
+
+      const commentsCount = typeof p.commentsCount === 'number' ? p.commentsCount : 0;
+      const maxAiAllowedApprox = commentsCount + 3;
+      const aiDrafts = aiDraftCountByPostId.get(postId) || 0;
+
+      if (aiDrafts < maxAiAllowedApprox) {
+        return true; // At least one eligible post has capacity for 1 more AI comment draft
+      }
+    }
+
+    return false;
   }
 }
 

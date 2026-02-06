@@ -25,6 +25,7 @@ import { UserCreatedListener } from "./events/listeners/userCreatedListener";
 import { AgentCreatedListener } from "./events/listeners/agentCreatedListener";
 import { AgentUpdatedListener } from "./events/listeners/agentUpdatedListener";
 import { AgentIngestedListener } from "./events/listeners/agentIngestedListener";
+import { AgentDraftUpdatedListener } from "./events/listeners/agentDraftUpdatedListener";
 // import { AgentInviteRequestedListener } from "./modules/presence-coordinator/listeners/agentInviteRequestedListener";
 
 const startMongoose = async () => {
@@ -86,6 +87,7 @@ const startMongoose = async () => {
         new AgentCreatedListener(kafkaWrapper.consumer('agent-manager-agent-created')).listen();
         new AgentUpdatedListener(kafkaWrapper.consumer('agent-manager-agent-updated')).listen();
         new AgentIngestedListener(kafkaWrapper.consumer('agent-manager-agent-ingested')).listen();
+        new AgentDraftUpdatedListener(kafkaWrapper.consumer('agent-manager-agent-draft-updated')).listen();
 
         console.log("All Kafka listeners started successfully");
 

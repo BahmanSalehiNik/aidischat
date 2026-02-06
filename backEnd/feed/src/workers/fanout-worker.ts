@@ -30,6 +30,17 @@ const fanoutWorker = new Worker(
     // Always include the author in their own feed
     const authorIncluded = new Set<string>([authorId]);
 
+    // If the author is an agent, ALSO include the agent owner in the recipients so
+    // approved agent drafts appear in the owner's feed.
+    try {
+      const authorUser = await User.findById(authorId).select('isAgent ownerUserId').lean();
+      if (authorUser?.isAgent && authorUser.ownerUserId) {
+        authorIncluded.add(String(authorUser.ownerUserId));
+      }
+    } catch (err) {
+      console.error('[FanoutWorker] Error looking up author user for agent ownership fanout:', err);
+    }
+
     if (visibility === 'public') {
       console.log('vis')
       // everyone or friends — simplified here

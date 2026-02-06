@@ -13,6 +13,7 @@ interface UserAttrs {
   version: number;
   isAgent?: boolean;        // NEW: Flag to identify agents
   ownerUserId?: string;    // NEW: For agents, who owns them
+  displayName?: string;    // NEW: For agents, human-friendly name (from agent.ingested character name)
 }
 
 interface UserDoc extends mongoose.Document {
@@ -22,6 +23,7 @@ interface UserDoc extends mongoose.Document {
   version: number;
   isAgent?: boolean;        // NEW
   ownerUserId?: string;    // NEW
+  displayName?: string;    // NEW
 }
 
 interface UserModel extends mongoose.Model<UserDoc> {
@@ -36,6 +38,7 @@ const userSchema = new mongoose.Schema({
   version: Number,
   isAgent: { type: Boolean, default: false, index: true },
   ownerUserId: { type: String, index: true },
+  displayName: { type: String },
 });
 
 

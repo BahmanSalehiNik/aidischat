@@ -23,6 +23,10 @@ spec:
               memory: "1Gi"
               cpu: "500m"
           env:
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=768"
+            - name: MEDIA_INTERNAL_TOKEN
+              value: "dev-media-internal-token"
             - name: AZURE_STORAGE_ACCOUNT
               valueFrom:
                 secretKeyRef:

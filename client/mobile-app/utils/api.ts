@@ -1,26 +1,10 @@
 import { API_BASE_URL } from '@env';
 import { useAuthStore } from '../store/authStore';
+import { getResolvedApiBaseUrl, normalizeApiBaseUrl } from './network';
 
-const DEFAULT_BASE_URL = 'http://localhost:3000';
-const API_PATH_REGEX = /\/api(\/|$)/i;
-
-const normalizeBaseUrl = (baseUrl?: string | null) => {
-  if (!baseUrl) {
-    return '';
-  }
-
-  const trimmed = baseUrl.trim();
-  if (!trimmed) {
-    return '';
-  }
-
-  const withoutTrailingSlash = trimmed.replace(/\/+$/, '');
-  if (API_PATH_REGEX.test(withoutTrailingSlash)) {
-    return withoutTrailingSlash;
-  }
-
-  return `${withoutTrailingSlash}/api`;
-};
+// NOTE: Backend defaults are resolved in `utils/network.ts` to work well on a physical device
+// (where laptop LAN IP may differ from the Metro host IP the device can reach).
+const DEFAULT_BASE_URL = 'http://localhost:8080/api';
 
 export interface ApiError {
   message: string;
@@ -199,9 +183,9 @@ export const getApiClient = (): ApiClient => {
   // Log the raw environment variable to debug
   console.log(`📋 Raw API_BASE_URL from env:`, API_BASE_URL);
 
-  const normalizedEnvBase = normalizeBaseUrl(API_BASE_URL);
-  const fallbackBase = normalizeBaseUrl(DEFAULT_BASE_URL);
-  const currentBaseUrl = normalizedEnvBase || fallbackBase;
+  const normalizedEnvBase = normalizeApiBaseUrl(API_BASE_URL);
+  const fallbackBase = normalizeApiBaseUrl(DEFAULT_BASE_URL);
+  const currentBaseUrl = getResolvedApiBaseUrl(normalizedEnvBase || fallbackBase);
 
   // Reinitialize if base URL changed (e.g., .env was updated)
   if (!apiClient || lastBaseUrl !== currentBaseUrl) {
@@ -214,6 +198,43 @@ export const getApiClient = (): ApiClient => {
 
   return apiClient;
 };
+
+// --- Agent displayName cache (used to replace raw agent IDs in comment author display) ---
+const agentNameById = new Map<string, string>();
+let agentNamesLoadPromise: Promise<void> | null = null;
+
+async function loadAgentNamesOnce(): Promise<void> {
+  if (agentNamesLoadPromise) return agentNamesLoadPromise;
+  agentNamesLoadPromise = (async () => {
+    try {
+      const api = getApiClient();
+      const agents = await api.get<any[]>('/agents');
+      for (const a of agents || []) {
+        const id = a?.agent?.id;
+        if (!id) continue;
+        const name =
+          a?.agentProfile?.displayName ||
+          a?.agentProfile?.name ||
+          a?.agentProfile?.title ||
+          undefined;
+        if (name && typeof name === 'string') {
+          agentNameById.set(String(id), name);
+        }
+      }
+    } catch {
+      // best-effort only
+    }
+  })();
+  return agentNamesLoadPromise;
+}
+
+async function resolveAgentDisplayName(agentId: string): Promise<string | undefined> {
+  const id = String(agentId || '');
+  if (!id) return undefined;
+  if (agentNameById.has(id)) return agentNameById.get(id);
+  await loadAgentNamesOnce();
+  return agentNameById.get(id);
+}
 
 // Auth API
 export const authApi = {
@@ -597,7 +618,40 @@ export const commentApi = {
     if (parentCommentId) {
       params.append('parentCommentId', parentCommentId);
     }
-    return api.get<CommentsResponse>(`/posts/${postId}/comments?${params.toString()}`);
+    const res = await api.get<CommentsResponse>(`/posts/${postId}/comments?${params.toString()}`);
+
+    // Best-effort: replace raw agent ids in author display with the agent's displayName from /agents (cached).
+    // The backend comment projection may not have access to agent displayName, so we do it client-side.
+    try {
+      const comments = Array.isArray(res.comments) ? res.comments : [];
+      const enriched = await Promise.all(
+        comments.map(async (c) => {
+          const authorIsAgent = Boolean((c as any)?.authorIsAgent);
+          if (!authorIsAgent) return c;
+          const agentId = String(c.userId || '');
+          if (!agentId) return c;
+
+          const resolved = await resolveAgentDisplayName(agentId);
+          if (!resolved) return c;
+
+          // For agent-authored comments, always prefer a resolved displayName when available.
+          // Backends often fall back to raw ids like "agent_1234" which we want to replace.
+
+          return {
+            ...c,
+            author: {
+              userId: agentId,
+              name: resolved,
+              email: c.author?.email,
+              avatarUrl: c.author?.avatarUrl,
+            },
+          };
+        })
+      );
+      return { ...res, comments: enriched };
+    } catch {
+      return res;
+    }
   },
 
   createComment: async (postId: string, text: string, parentCommentId?: string): Promise<Comment> => {
@@ -851,6 +905,7 @@ export interface AgentDraft {
   commentId?: string;
   reactionType?: 'like' | 'love' | 'haha' | 'sad' | 'angry';
   mediaIds?: string[];
+  media?: Array<{ id: string; url: string; type: string }>;
 }
 
 export const agentManagerApi = {
@@ -866,6 +921,26 @@ export const agentManagerApi = {
     const endpoint = `/agent-manager/agents/${agentId}/drafts${queryString ? `?${queryString}` : ''}`;
     const response = await api.get<{ drafts: AgentDraft[] }>(endpoint);
     return response.drafts || [];
+  },
+
+  approveDraft: async (draftId: string, type: 'post' | 'comment' | 'reaction', edits?: any) => {
+    const api = getApiClient();
+    return api.post(`/agent-manager/drafts/${draftId}/approve?type=${type}`, { edits });
+  },
+
+  rejectDraft: async (draftId: string, type: 'post' | 'comment' | 'reaction', reason?: string) => {
+    const api = getApiClient();
+    return api.post(`/agent-manager/drafts/${draftId}/reject?type=${type}`, { reason });
+  },
+
+  updateDraft: async (draftId: string, type: 'post' | 'comment' | 'reaction', updates: any) => {
+    const api = getApiClient();
+    return api.patch(`/agent-manager/drafts/${draftId}?type=${type}`, updates);
+  },
+
+  reviseDraft: async (draftId: string, feedback: string) => {
+    const api = getApiClient();
+    return api.post(`/agent-manager/drafts/${draftId}/revise?type=post`, { feedback });
   },
 };
 

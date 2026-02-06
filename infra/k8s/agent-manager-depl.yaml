@@ -24,6 +24,10 @@ spec:
             memory: "1Gi"
             cpu: "500m"
         env:
+        - name: MEDIA_SERVICE_URL
+          value: "http://media-srv:3000"
+        - name: MEDIA_INTERNAL_TOKEN
+          value: "dev-media-internal-token"
         - name: MONGO_URI
           value: "mongodb://agent-manager-mongo-srv:27017/agent-manager"
         - name: JWT_DEV

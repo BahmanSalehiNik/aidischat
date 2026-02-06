@@ -13,6 +13,7 @@ import { FriendshipAcceptedListener,
     FriendshipRequestedListener } from "./events/listeners/friendship/friendshipListener";
 import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdPostCreated, GroupIdPostUpdated, GroupIdPostDeleted, GroupIdCommentCreated, GroupIdCommentDeleted, GroupIdReactionCreated, GroupIdReactionDeleted, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated, GroupIdAgentFeedAnswerReceived } from "./events/queGroupNames";
 import { AgentFeedAnswerReceivedListener } from "./events/listeners/agentFeedAnswerReceived/agentFeedAnswerReceivedListener";
+import { AgentIngestedListener } from "./events/listeners/agent/agentIngestedListener";
 import { trendingWorker } from "./modules/trending/trendingWorker";
 import { agentFeedScannerWorker } from "./workers/agent-feed-scanner";
 import { retryWithBackoff } from "./utils/connection-retry";
@@ -109,6 +110,9 @@ const startListeners = () => {
 
     // Agent feed answer received listener - marks feed entries as seen after processing
     new AgentFeedAnswerReceivedListener(kafkaWrapper.consumer(GroupIdAgentFeedAnswerReceived)).listen();
+
+    // Agent ingested listener - caches agent displayName so feeds don't show raw agentId
+    new AgentIngestedListener(kafkaWrapper.consumer('feed-agent-ingested')).listen();
 
     console.log("✅ All Kafka listeners started successfully");
 };

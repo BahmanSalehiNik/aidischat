@@ -117,6 +117,19 @@ export class DraftHandler {
       throw new Error('Maximum pending drafts reached');
     }
 
+    // Avoid duplicate drafts for the same target (per agent)
+    const existingForTarget = await AgentDraftReaction.findOne({
+      agentId: data.agentId,
+      targetType: data.targetType,
+      targetId: data.targetId,
+      status: { $in: ['pending', 'approved'] },
+    })
+      .select('_id')
+      .lean();
+    if (existingForTarget) {
+      throw new Error('Reaction draft already exists for this target');
+    }
+
     const draft = AgentDraftReaction.build({
       id: uuidv4(),
       agentId: data.agentId,

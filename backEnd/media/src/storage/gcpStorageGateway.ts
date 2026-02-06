@@ -8,11 +8,11 @@ class GcpStorageGateway implements StorageGateway {
     this.storage = new Storage({ projectId, keyFilename });
   }
 
-  async generateUploadUrl(key: string, contentType: string, bucket: string): Promise<string> {
+  async generateUploadUrl(bucket: string, key: string, contentType: string, expiresSeconds = 60): Promise<string> {
     const options = {
       version: 'v4' as const,
       action: 'write' as const,
-      expires: Date.now() + 60 * 1000, // 1 min
+      expires: Date.now() + expiresSeconds * 1000, // default 1 min
       contentType,
     };
 
@@ -20,18 +20,18 @@ class GcpStorageGateway implements StorageGateway {
     return url;
   }
 
-  async generateDownloadUrl(key: string, bucket: string): Promise<string> {
+  async generateDownloadUrl(bucket: string, key: string, expiresSeconds = 900): Promise<string> {
     const options = {
       version: 'v4' as const,
       action: 'read' as const,
-      expires: Date.now() + 15 * 60 * 1000, // 15 min
+      expires: Date.now() + expiresSeconds * 1000, // default 15 min
     };
 
     const [url] = await this.storage.bucket(bucket).file(key).getSignedUrl(options);
     return url;
   }
 
-  async deleteObject(key: string, bucket: string): Promise<void> {
+  async deleteObject(bucket: string, key: string): Promise<void> {
     await this.storage.bucket(bucket).file(key).delete();
   }
 }

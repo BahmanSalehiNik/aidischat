@@ -10,8 +10,8 @@ const router = express.Router();
 
 router.patch(
   '/api/posts/:postId/comments/:commentId',
-  extractJWTPayload,
-  loginRequired,
+  extractJWTPayload as any,
+  loginRequired as any,
   [
     body('text')
       .trim()
@@ -20,7 +20,7 @@ router.patch(
       .isLength({ min: 1, max: 1000 })
       .withMessage('Comment must be between 1 and 1000 characters')
   ],
-  validateRequest,
+  validateRequest as any,
   async (req: Request, res: Response) => {
     // Check if post exists
     const post = await Post.findOne({ _id: req.params.postId, isDeleted: false });
@@ -48,10 +48,11 @@ router.patch(
       id: comment.id,
       postId: comment.postId,
       userId: comment.userId,
+      authorIsAgent: comment.authorIsAgent,
       text: comment.text,
       parentCommentId: comment.parentCommentId,
       version: comment.version
-    });
+    } as any);
 
     res.send(comment);
   }

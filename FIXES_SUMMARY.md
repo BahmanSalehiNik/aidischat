@@ -24,6 +24,23 @@ if (!state) {
 }
 ```
 
+ LOG  ✅ Global WebSocket connected
+ LOG  📨 [GlobalWS] Received: room.joined {"roomId": "831a0e7d-4e72-4dc5-856d-14b32986954f"}
+ LOG  📡 API Response: 200  for http://192.168.178.179:8080/api/ar-rooms/831a0e7d-4e72-4dc5-856d-14b32986954f/provider-tokens
+ LOG  📋 Raw API_BASE_URL from env: http://192.168.178.179:8080/api
+ LOG  ♻️  Using existing API Client with base URL: http://192.168.178.179:8080/api
+ LOG  🌐 API Request: GET http://192.168.178.179:8080/api/avatars/1767013132446/status
+ LOG  🔑 Token available: Yes eyJhbGciOiJIUzI1NiIs...
+ LOG  ✅ Added Authorization header
+ LOG  📡 API Response: 200  for http://192.168.178.179:8080/api/avatars/1767013132446/status
+ LOG  ✅ [ARChatScreen] Loaded 3 animation URLs
+ LOG  📝 [Subtitle] Render check: {"hasStreamingContent": false, "messagesCount": 0, "streamingContentLength": 0, "streamingMessageId": null}
+ LOG  📝 [Subtitle] Final displayText: EMPTY
+ LOG  📝 [Subtitle] Returning null - no text to display
+ LOG  🔍 [Model3DViewer] Movement effect triggered: {"controllerState": undefined, "currentMovement": undefined, "hasController": false}
+ LOG  ℹ️ [Model3DViewer] No movement set or model not loaded, skipping animation update
+
+
 **File**: `backEnd/ai-chat-host/src/events/listeners/message-created-listener.ts`
 
 ### 2. Removed PVC References from YAML Files ✅

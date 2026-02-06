@@ -18,6 +18,16 @@ export interface AiProviderRequest {
   tools?: Array<{ name: string; config: any }>;
   assistantId?: string; // For OpenAI Assistants API - the providerAgentId
   threadId?: string; // For OpenAI Assistants API - the thread ID (one per room+agent)
+  /**
+   * Optional image URLs to include as multimodal inputs for vision-capable models.
+   * Providers that do not support vision will ignore this field.
+   */
+  imageUrls?: string[];
+  /**
+   * Optional hint to force the provider to return machine-parseable JSON.
+   * Only some providers support this.
+   */
+  responseFormat?: 'text' | 'json_object';
 }
 
 export interface AgentCreationRequest {
