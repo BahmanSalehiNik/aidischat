@@ -121,19 +121,15 @@ spec:
               create_topic_if_not_exists "chat.message.reply.ingested"
               create_topic_if_not_exists "chat.message.reply.created"
               
-              # Chat Recommendation topics
-              create_topic_if_not_exists "chat.recommendation.requested"
-              create_topic_if_not_exists "chat.recommendations.ready"
-              
               # AI Message topics
               create_topic_if_not_exists "ai.message.created"
               create_topic_if_not_exists "ai.message.reply"
               
-              # AR Conversation topics
-              create_topic_if_not_exists "ar.message.request"
-              create_topic_if_not_exists "ar.stream.start"
-              create_topic_if_not_exists "ar.stream.chunk"
-              create_topic_if_not_exists "ar.stream.end"
+              # Agent Chat topics (renamed from AR)
+              create_topic_if_not_exists "agent-chat.message.request"
+              create_topic_if_not_exists "agent-chat.stream.start"
+              create_topic_if_not_exists "agent-chat.stream.chunk"
+              create_topic_if_not_exists "agent-chat.stream.end"
               
               # Presence topics
               create_topic_if_not_exists "presence.updated"
@@ -193,22 +189,10 @@ spec:
               create_topic_if_not_exists "agent.draft.reaction.created"
               create_topic_if_not_exists "agent.draft.connection.request.created"
               
-              # Feedback topics
-              create_topic_if_not_exists "feedback.reply.received"
-              create_topic_if_not_exists "feedback.reaction.received"
-              create_topic_if_not_exists "agent.learning.updated"
-              create_topic_if_not_exists "training.dataset.ready"
-              create_topic_if_not_exists "model.updated"
+              # Feedback/Agent-learning topics removed for MVP
               
               # Session topics
               create_topic_if_not_exists "session.ended"
-              
-              # Ecommerce topics
-              create_topic_if_not_exists "ecommerce-model.created"
-              create_topic_if_not_exists "ecommerce-model.updated"
-              create_topic_if_not_exists "ecommerce-order.created"
-              create_topic_if_not_exists "ecommerce-order.cancelled"
-              create_topic_if_not_exists "ecommerce-order.expired"
               
               # Re-enable error handling
               set -e
@@ -219,7 +203,7 @@ spec:
               
               # Verify critical topics exist
               echo "🔍 Verifying critical topics..."
-              critical_topics=("message.created" "user.created" "agent.ingested" "agent.creation.reply.success" "chat.recommendation.requested" "ar.message.request" "ar.stream.chunk")
+              critical_topics=("message.created" "user.created" "agent.ingested" "agent.creation.reply.success" "chat.recommendation.requested" "agent-chat.message.request" "agent-chat.stream.chunk")
               missing_topics=()
               for topic in "${critical_topics[@]}"; do
                 if ! rpk topic list --brokers $KAFKA_BROKER 2>/dev/null | grep -q "^$topic "; then

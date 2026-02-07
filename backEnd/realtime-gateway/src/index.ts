@@ -65,6 +65,8 @@ const connectKafkaConsumer = async () => {
       await consumer.subscribe({ topic: 'chat.message.reaction.created', fromBeginning: false });
       await consumer.subscribe({ topic: 'chat.message.reaction.removed', fromBeginning: false });
       await consumer.subscribe({ topic: 'chat.message.reply.created', fromBeginning: false });
+      // Agent Chat (renamed from AR). Subscribe to both during transition.
+      await consumer.subscribe({ topic: 'agent-chat.stream.chunk', fromBeginning: false });
       await consumer.subscribe({ topic: 'ar.stream.chunk', fromBeginning: false });
       
       console.log('✅ [Realtime Gateway] Subscribed to all Kafka topics');
@@ -143,7 +145,7 @@ const connectKafkaConsumer = async () => {
             } else if (topic === 'chat.message.reply.created') {
               await replyCreatedListener.onMessage(data, payload);
               await ackMessage(payload);
-            } else if (topic === 'ar.stream.chunk') {
+            } else if (topic === 'agent-chat.stream.chunk' || topic === 'ar.stream.chunk') {
               await arStreamChunkListener.onMessage(data, payload);
               await ackMessage(payload);
             } else {

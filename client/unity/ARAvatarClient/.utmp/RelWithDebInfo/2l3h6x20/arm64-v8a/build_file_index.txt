@@ -1,2 +1,0 @@
-/home/bahman/projects/aiChatDistributed/client/unity/ARAvatarClient/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/CMakeLists.txt
-/home/bahman/projects/aiChatDistributed/client/unity/ARAvatarClient/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity/CMakeLists.txt

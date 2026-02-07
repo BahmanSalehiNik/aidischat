@@ -2,6 +2,10 @@ import { API_BASE_URL } from '@env';
 import { useAuthStore } from '../store/authStore';
 import { getResolvedApiBaseUrl, normalizeApiBaseUrl } from './network';
 
+// DEBUG: Log environment variables at module load time
+console.log('🔍 [ENV DEBUG] Raw API_BASE_URL from @env:', API_BASE_URL);
+console.log('🔍 [ENV DEBUG] Type:', typeof API_BASE_URL);
+
 // NOTE: Backend defaults are resolved in `utils/network.ts` to work well on a physical device
 // (where laptop LAN IP may differ from the Metro host IP the device can reach).
 const DEFAULT_BASE_URL = 'http://localhost:8080/api';
@@ -23,7 +27,7 @@ export class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const { token } = useAuthStore.getState();
-    
+
     const url = `${this.baseUrl}${endpoint}`;
     console.log(`🌐 API Request: ${options.method || 'GET'} ${url}`);
     console.log(`🔑 Token available: ${token ? 'Yes' : 'No'}`, token ? `${token.substring(0, 20)}...` : '');
@@ -32,7 +36,7 @@ export class ApiClient {
     if (roomIdMatch) {
       console.log(`📋 [CLIENT DEBUG] roomId in request: "${roomIdMatch[1]}"`);
     }
-    
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {}),
@@ -56,7 +60,7 @@ export class ApiClient {
     try {
       const response = await fetch(url, fetchOptions);
       console.log(`📡 API Response: ${response.status} ${response.statusText} for ${url}`);
-      
+
       // Handle non-JSON responses
       const contentType = response.headers.get('content-type');
       if (!contentType?.includes('application/json')) {
@@ -74,7 +78,7 @@ export class ApiClient {
         if (!isAgentLookup) {
           console.error(`❌ API Error:`, data);
         }
-        
+
         // Handle 401 Unauthorized - might indicate token issue
         if (response.status === 401) {
           const { token } = useAuthStore.getState();
@@ -85,7 +89,7 @@ export class ApiClient {
             endpoint,
           });
         }
-        
+
         // Handle validation errors (400 status with errors array)
         if (response.status === 400 && data.errors && Array.isArray(data.errors)) {
           const validationMessages = data.errors
@@ -97,7 +101,7 @@ export class ApiClient {
           };
           throw error;
         }
-        
+
         // Backend may return error in 'error' field or 'message' field
         const errorMessage = data.error || data.message || `HTTP error! status: ${response.status}`;
         const error: ApiError = {
@@ -111,11 +115,11 @@ export class ApiClient {
     } catch (error: any) {
       // Don't log 404 errors for agent lookups - they're expected when checking if an ID is an agent
       // Also don't log 404 errors for room lookups - rooms might be deleted
-      const isAgentLookup = url.includes('/api/agents/') && 
-                           (error?.message?.includes('404') || error?.message?.includes('not found'));
-      const isRoomLookup = url.includes('/api/rooms/') && 
-                          (error?.message?.includes('404') || error?.message?.includes('Room not found'));
-      
+      const isAgentLookup = url.includes('/api/agents/') &&
+        (error?.message?.includes('404') || error?.message?.includes('not found'));
+      const isRoomLookup = url.includes('/api/rooms/') &&
+        (error?.message?.includes('404') || error?.message?.includes('Room not found'));
+
       if (!isAgentLookup && !isRoomLookup) {
         console.error(`❌ Network Error for ${url}:`, error);
         console.error(`❌ Error Details:`, {
@@ -126,7 +130,7 @@ export class ApiClient {
           stack: error?.stack,
         });
       }
-      
+
       if (error instanceof TypeError) {
         // Network-related errors
         if (error.message.includes('fetch') || error.message.includes('Network request failed')) {
@@ -139,7 +143,7 @@ export class ApiClient {
           throw new Error(errorMessage);
         }
       }
-      
+
       // Re-throw other errors as-is
       throw error;
     }
@@ -351,7 +355,7 @@ export const chatHistoryApi = {
     if (options?.limit) params.append('limit', options.limit.toString());
     if (options?.offset) params.append('offset', options.offset.toString());
     if (options?.includeActive !== undefined) params.append('includeActive', options.includeActive.toString());
-    
+
     const query = params.toString();
     return api.get(`/sessions${query ? `?${query}` : ''}`);
   },
@@ -369,7 +373,7 @@ export const chatHistoryApi = {
     if (options?.limit) params.append('limit', options.limit.toString());
     if (options?.offset) params.append('offset', options.offset.toString());
     if (options?.includeActive !== undefined) params.append('includeActive', options.includeActive.toString());
-    
+
     const query = params.toString();
     return api.get(`/agents/${agentId}/sessions${query ? `?${query}` : ''}`);
   },
@@ -386,7 +390,7 @@ export const chatHistoryApi = {
     if (options?.limit) params.append('limit', options.limit.toString());
     if (options?.offset) params.append('offset', options.offset.toString());
     if (options?.includeActive !== undefined) params.append('includeActive', options.includeActive.toString());
-    
+
     const query = params.toString();
     return api.get(`/rooms/${roomId}/sessions${query ? `?${query}` : ''}`);
   },
@@ -406,7 +410,7 @@ export const chatHistoryApi = {
     const params = new URLSearchParams();
     if (options?.limit) params.append('limit', options.limit.toString());
     if (options?.offset) params.append('offset', options.offset.toString());
-    
+
     const query = params.toString();
     return api.get(`/sessions/${sessionId}/messages${query ? `?${query}` : ''}`);
   },
@@ -435,17 +439,17 @@ export const mediaApi = {
     // In React Native, we need to read the file and send it as binary data
     const response = await fetch(fileUri);
     const blob = await response.blob();
-    
+
     // Build headers based on provider
     const headers: Record<string, string> = {
       'Content-Type': contentType,
     };
-    
+
     // Add provider-specific headers if needed
     if (provider === 'azure' || uploadUrl.includes('blob.core.windows.net')) {
       headers['x-ms-blob-type'] = 'BlockBlob';
     }
-    
+
     const uploadResponse = await fetch(uploadUrl, {
       method: 'PUT',
       headers,
@@ -510,7 +514,7 @@ export const postApi = {
       // Use the new posts endpoint with userId filter
       const endpoint = userId ? `/posts?userId=${userId}` : '/posts';
       const posts = await api.get<any[]>(endpoint);
-      
+
       // Transform to Post format
       return (Array.isArray(posts) ? posts : []).map((post: any) => ({
         id: post.id || post._id,
@@ -735,7 +739,7 @@ export const searchApi = {
   search: async (query: string, types?: string[]): Promise<SearchResponse> => {
     const api = getApiClient();
     const typesParam = types && types.length > 0 ? types.join(',') : undefined;
-    const url = typesParam 
+    const url = typesParam
       ? `/search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(typesParam)}`
       : `/search?q=${encodeURIComponent(query)}`;
     return api.get<SearchResponse>(url);

@@ -47,10 +47,6 @@ spec:
               value: "http://agent-srv:3000"
             - name: AGENT_MANAGER_SERVICE_URL
               value: "http://agent-manager-srv:3000"
-            - name: ECOMMERCE_MODELS_SERVICE_URL
-              value: "http://ecommerce-models-srv:3000"
-            - name: ECOMMERCE_ORDERS_SERVICE_URL
-              value: "http://ecommerce-orders-srv:3000"
             - name: REALTIME_GATEWAY_URL
               value: "http://realtime-gateway-srv:3000"
             - name: AI_GATEWAY_URL
@@ -61,8 +57,6 @@ spec:
               value: "http://friend-suggestions-srv:3000"
             - name: CHAT_HISTORY_SERVICE_URL
               value: "http://chat-history-srv:3000"
-            - name: AR_AVATAR_SERVICE_URL
-              value: "http://ar-avatar-srv:3000"
             - name: AR_CONVERSATIONS_SERVICE_URL
               value: "http://ar-conversations-srv:3000"
 ---

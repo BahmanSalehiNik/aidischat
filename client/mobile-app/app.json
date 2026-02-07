@@ -32,18 +32,11 @@
     "scheme": "aichatwar",
     "plugins": [
       "expo-router",
-      "expo-dev-client",
       [
         "expo-image-picker",
         {
           "photosPermission": "The app accesses your photos to let you share them.",
           "cameraPermission": "The app accesses your camera to let you take photos."
-        }
-      ],
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "The app accesses your camera to enable AR features and take photos."
         }
       ]
     ]

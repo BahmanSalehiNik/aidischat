@@ -4,6 +4,10 @@ import { useChatStore, Message } from '../store/chatStore';
 import { useAuthStore } from '../store/authStore';
 import { getResolvedWsUrl } from '../utils/network';
 
+// DEBUG: Log environment variables at module load time
+console.log('🔍 [ENV DEBUG] Raw WS_URL from @env:', WS_URL);
+console.log('🔍 [ENV DEBUG] Type:', typeof WS_URL);
+
 const RECONNECT_DELAY = 2000;
 const MAX_RECONNECT_DELAY = 30000;
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
@@ -39,7 +43,7 @@ export const useWebSocket = (roomId: string | null) => {
       // Connect with token in query parameter
       const wsUrlWithToken = `${wsUrl}?token=${token}`;
       console.log(`🔗 Connecting to WebSocket: ${wsUrlWithToken.replace(/token=[^&]+/, 'token=***')}`);
-      
+
       const ws = new WebSocket(wsUrlWithToken);
       wsRef.current = ws;
 
@@ -111,77 +115,77 @@ export const useWebSocket = (roomId: string | null) => {
                     data: msg.data,
                   });
                   break;
-              }
-              
-              const { user } = useAuthStore.getState();
-              // Normalize roomId for comparison
-              const messageRoomIdNormalized = msg.data.roomId?.trim();
-              const roomIdMatch = messageRoomIdNormalized === normalizedRoomId;
-              
-              console.log(`📨 Received message via WebSocket:`, {
-                id: msg.data.id,
-                roomId: msg.data.roomId,
-                roomIdNormalized: messageRoomIdNormalized,
-                roomIdFromHook: normalizedRoomId, // DEBUG: Compare roomId from hook param vs message
-                roomIdMatch, // DEBUG: Check if they match
-                senderId: msg.data.senderId,
-                content: msg.data.content?.substring(0, 50),
-                replyToMessageId: msg.data.replyToMessageId,
-                reactionsSummary: msg.data.reactionsSummary,
-                reactions: msg.data.reactions,
-              });
-              const message: Message = {
-                id: msg.data.id,
-                roomId: msg.data.roomId,
-                senderId: msg.data.senderId,
-                senderType: msg.data.senderType || 'human',
-                senderName: msg.data.senderName, // Use denormalized sender name from event
-                content: msg.data.content || '',
-                createdAt: msg.data.createdAt || new Date().toISOString(),
-                attachments: msg.data.attachments,
-                replyToMessageId: msg.data.replyToMessageId || null,
-                // Include replyTo directly from message.created event if available
-                replyTo: msg.data.replyTo ? {
-                  id: msg.data.replyTo.id,
+                }
+
+                const { user } = useAuthStore.getState();
+                // Normalize roomId for comparison
+                const messageRoomIdNormalized = msg.data.roomId?.trim();
+                const roomIdMatch = messageRoomIdNormalized === normalizedRoomId;
+
+                console.log(`📨 Received message via WebSocket:`, {
+                  id: msg.data.id,
                   roomId: msg.data.roomId,
-                  senderId: msg.data.replyTo.senderId,
-                  senderName: msg.data.replyTo.senderName,
-                  senderType: msg.data.replyTo.senderType || 'human',
-                  content: msg.data.replyTo.content || '',
-                  createdAt: msg.data.replyTo.createdAt || new Date().toISOString(),
-                  // Exclude attachments - not needed for preview card
-                } : undefined,
-                reactions: msg.data.reactions || [],
-                reactionsSummary: msg.data.reactionsSummary || [], // Initialize with empty array if not provided
-                currentUserReaction: msg.data.reactions?.find((r: any) => r.userId === user?.id)?.emoji || null, // Calculate current user's reaction if available
-                sender: msg.data.sender, // Preserve sender info if present (for backward compatibility)
-              };
-                
+                  roomIdNormalized: messageRoomIdNormalized,
+                  roomIdFromHook: normalizedRoomId, // DEBUG: Compare roomId from hook param vs message
+                  roomIdMatch, // DEBUG: Check if they match
+                  senderId: msg.data.senderId,
+                  content: msg.data.content?.substring(0, 50),
+                  replyToMessageId: msg.data.replyToMessageId,
+                  reactionsSummary: msg.data.reactionsSummary,
+                  reactions: msg.data.reactions,
+                });
+                const message: Message = {
+                  id: msg.data.id,
+                  roomId: msg.data.roomId,
+                  senderId: msg.data.senderId,
+                  senderType: msg.data.senderType || 'human',
+                  senderName: msg.data.senderName, // Use denormalized sender name from event
+                  content: msg.data.content || '',
+                  createdAt: msg.data.createdAt || new Date().toISOString(),
+                  attachments: msg.data.attachments,
+                  replyToMessageId: msg.data.replyToMessageId || null,
+                  // Include replyTo directly from message.created event if available
+                  replyTo: msg.data.replyTo ? {
+                    id: msg.data.replyTo.id,
+                    roomId: msg.data.roomId,
+                    senderId: msg.data.replyTo.senderId,
+                    senderName: msg.data.replyTo.senderName,
+                    senderType: msg.data.replyTo.senderType || 'human',
+                    content: msg.data.replyTo.content || '',
+                    createdAt: msg.data.replyTo.createdAt || new Date().toISOString(),
+                    // Exclude attachments - not needed for preview card
+                  } : undefined,
+                  reactions: msg.data.reactions || [],
+                  reactionsSummary: msg.data.reactionsSummary || [], // Initialize with empty array if not provided
+                  currentUserReaction: msg.data.reactions?.find((r: any) => r.userId === user?.id)?.emoji || null, // Calculate current user's reaction if available
+                  sender: msg.data.sender, // Preserve sender info if present (for backward compatibility)
+                };
+
                 // Check if this message already exists before adding
                 // The addMessage function in the store will handle optimistic message replacement
                 // So we just call addMessage and let it handle deduplication
                 console.log(`[WebSocket] Adding/updating message ${message.id} with reactionsSummary:`, message.reactionsSummary);
-                
+
                 // Normalize roomId from message data and compare with hook param
                 const messageRoomId = msg.data.roomId?.trim();
                 const targetRoomId = messageRoomId || normalizedRoomId;
-                
+
                 console.log(`[WebSocket] 🔍 DEBUG - Adding message to roomId: "${messageRoomId}", hook roomId: "${normalizedRoomId}", using: "${targetRoomId}"`);
-                
+
                 if (!targetRoomId) {
                   console.error(`[WebSocket] ❌ Cannot add message: no roomId in message data or hook param`);
                   break;
                 }
-                
+
                 // Log if there's a mismatch
                 if (messageRoomId && normalizedRoomId && messageRoomId !== normalizedRoomId) {
                   console.warn(`[WebSocket] ⚠️ roomId mismatch - hook: "${normalizedRoomId}", message: "${messageRoomId}", using: "${targetRoomId}"`);
                 }
-                
+
                 // Ensure message.roomId matches targetRoomId
                 message.roomId = targetRoomId;
                 addMessage(targetRoomId, message);
-                
+
                 // After adding, check if there are any pending reaction updates for this message
                 // Use a small delay to ensure the message is in the store and optimistic replacement is complete
                 setTimeout(() => {
@@ -189,12 +193,12 @@ export const useWebSocket = (roomId: string | null) => {
                   const { messages: currentMessages } = useChatStore.getState();
                   const roomMessages = currentMessages[targetRoomId] || [];
                   // Find the message - it might have been replaced (optimistic -> real), so check both id and tempId
-                  const actualMessage = roomMessages.find(m => 
-                    m.id === message.id || 
+                  const actualMessage = roomMessages.find(m =>
+                    m.id === message.id ||
                     (message.tempId && m.tempId === message.tempId) ||
                     (message.tempId && m.id === message.id) // Real message replaced optimistic
                   );
-                  
+
                   if (actualMessage) {
                     // Check for pending updates by both real ID and tempId (in case message was replaced)
                     let pendingUpdates = pendingReactionUpdatesRef.current.get(actualMessage.id);
@@ -208,19 +212,19 @@ export const useWebSocket = (roomId: string | null) => {
                         pendingUpdates = pendingByTempId;
                       }
                     }
-                    
+
                     if (pendingUpdates && pendingUpdates.length > 0) {
                       console.log(`🔄 [WebSocket] Found ${pendingUpdates.length} pending reaction update(s) for message ${actualMessage.id}, applying now...`);
                       const { updateMessage } = useChatStore.getState();
                       const { user } = useAuthStore.getState();
-                      
+
                       // Apply the most recent pending update
                       const latestUpdate = pendingUpdates[pendingUpdates.length - 1];
                       const updateData = latestUpdate.data;
-                      
+
                       // Determine if this is a created or removed event based on data structure
                       const isRemoval = updateData.userId && !updateData.reaction; // Removal has userId but no reaction object
-                      
+
                       let newCurrentUserReaction: string | null | undefined;
                       if (isRemoval) {
                         // For removal: if current user removed, set to null; otherwise preserve
@@ -235,17 +239,17 @@ export const useWebSocket = (roomId: string | null) => {
                           newCurrentUserReaction = actualMessage.currentUserReaction;
                         }
                       }
-                      
+
                       const updates: any = {
                         reactionsSummary: updateData.reactionsSummary || [],
                       };
                       if (newCurrentUserReaction !== undefined) {
                         updates.currentUserReaction = newCurrentUserReaction;
                       }
-                      
+
                       updateMessage(targetRoomId, actualMessage.id, updates);
                       console.log(`✅ [WebSocket] Applied pending ${isRemoval ? 'removal' : 'reaction'} update for message ${actualMessage.id}`);
-                      
+
                       // Remove all processed updates for this message
                       pendingReactionUpdatesRef.current.delete(actualMessage.id);
                       if (message.tempId) {
@@ -254,7 +258,7 @@ export const useWebSocket = (roomId: string | null) => {
                     }
                   }
                 }, 50); // Small delay to ensure message is in store
-                
+
                 // If this is a reply and replyTo isn't set yet, try to populate from store
                 // (fallback in case replyTo wasn't included in message.created event)
                 if (message.replyToMessageId && !message.replyTo) {
@@ -299,12 +303,12 @@ export const useWebSocket = (roomId: string | null) => {
                 const { user } = useAuthStore.getState();
                 const messageId = msg.data.messageId;
                 const roomId = reactionRoomId;
-                
+
                 // Get the existing message to preserve currentUserReaction if it's not from this event
                 // Use a retry mechanism in case the message was just added and store hasn't updated yet
                 let roomMessages = messages[roomId] || [];
                 let existingMessage = roomMessages.find(m => m.id === messageId);
-                
+
                 // If message not found, queue the update for when the message arrives
                 if (!existingMessage) {
                   console.warn(`⚠️ [WebSocket] Message ${messageId} not found in store for room ${roomId}. Queueing reaction update...`, {
@@ -313,12 +317,12 @@ export const useWebSocket = (roomId: string | null) => {
                     totalMessagesInRoom: roomMessages.length,
                     messageIds: roomMessages.slice(0, 5).map(m => m.id),
                   });
-                  
+
                   // Queue this reaction update
                   const pending = pendingReactionUpdatesRef.current.get(messageId) || [];
                   pending.push({ data: msg.data, timestamp: Date.now() });
                   pendingReactionUpdatesRef.current.set(messageId, pending);
-                  
+
                   // Also retry after delays (message might be added asynchronously)
                   const retryDelays = [100, 500, 1000]; // Progressive retries
                   retryDelays.forEach((delay, index) => {
@@ -326,27 +330,27 @@ export const useWebSocket = (roomId: string | null) => {
                       const { messages: retryMessages } = useChatStore.getState();
                       const retryRoomMessages = retryMessages[roomId] || [];
                       const retryExistingMessage = retryRoomMessages.find(m => m.id === messageId);
-                      
+
                       if (retryExistingMessage) {
                         console.log(`✅ [WebSocket] Found message ${messageId} on retry ${index + 1}, updating reactions.`);
                         const isCurrentUserReaction = msg.data.reaction?.userId === user?.id;
                         let newCurrentUserReaction: string | null | undefined;
-                        
+
                         if (isCurrentUserReaction) {
                           newCurrentUserReaction = msg.data.reaction?.emoji || null;
                         } else {
                           newCurrentUserReaction = retryExistingMessage.currentUserReaction;
                         }
-                        
+
                         const updates: any = {
                           reactionsSummary: msg.data.reactionsSummary || [],
                         };
                         if (newCurrentUserReaction !== undefined) {
                           updates.currentUserReaction = newCurrentUserReaction;
                         }
-                        
+
                         updateMessage(roomId, messageId, updates);
-                        
+
                         // Remove from queue since we applied it (remove all pending updates for this message)
                         pendingReactionUpdatesRef.current.delete(messageId);
                       } else if (index === retryDelays.length - 1) {
@@ -355,15 +359,15 @@ export const useWebSocket = (roomId: string | null) => {
                       }
                     }, delay);
                   });
-                  
+
                   // Don't break - continue to try immediate update as well
                 } else {
                   console.log(`✅ [WebSocket] Found message ${messageId}, updating reactions. Current reactionsSummary:`, existingMessage.reactionsSummary);
                 }
-                
+
                 // Determine if this reaction is from the current user
                 const isCurrentUserReaction = msg.data.reaction?.userId === user?.id;
-                
+
                 // Calculate currentUserReaction:
                 // - If this reaction is from current user, use it
                 // - Otherwise, preserve existing currentUserReaction OR calculate from reactions array if available
@@ -391,7 +395,7 @@ export const useWebSocket = (roomId: string | null) => {
                   newCurrentUserReaction = undefined;
                   console.log(`👤 [WebSocket] Message not found, leaving currentUserReaction undefined`);
                 }
-                
+
                 // Update message with new reaction summary (only if message exists)
                 if (existingMessage) {
                   const updates: any = {
@@ -400,10 +404,10 @@ export const useWebSocket = (roomId: string | null) => {
                   if (newCurrentUserReaction !== undefined) {
                     updates.currentUserReaction = newCurrentUserReaction;
                   }
-                  
+
                   console.log(`🔄 [WebSocket] Updating message ${messageId} with:`, updates);
                   updateMessage(roomId, messageId, updates);
-                  
+
                   // Verify update
                   const { messages: updatedMessages } = useChatStore.getState();
                   const updatedRoomMessages = updatedMessages[roomId] || [];
@@ -423,20 +427,20 @@ export const useWebSocket = (roomId: string | null) => {
                 const { user } = useAuthStore.getState();
                 const messageId = msg.data.messageId;
                 const roomId = reactionRoomId;
-                
+
                 // Get the existing message to preserve currentUserReaction if it's not from this event
                 const roomMessages = messages[roomId] || [];
                 const existingMessage = roomMessages.find(m => m.id === messageId);
-                
+
                 // If message not found, queue the update for when the message arrives
                 if (!existingMessage) {
                   console.warn(`⚠️ [WebSocket] Message ${messageId} not found for reaction removal. Queueing update...`);
-                  
+
                   // Queue this reaction removal update
                   const pending = pendingReactionUpdatesRef.current.get(messageId) || [];
                   pending.push({ data: msg.data, timestamp: Date.now() });
                   pendingReactionUpdatesRef.current.set(messageId, pending);
-                  
+
                   // Also retry after delays
                   const retryDelays = [100, 500, 1000];
                   retryDelays.forEach((delay, index) => {
@@ -444,17 +448,17 @@ export const useWebSocket = (roomId: string | null) => {
                       const { messages: retryMessages } = useChatStore.getState();
                       const retryRoomMessages = retryMessages[roomId] || [];
                       const retryExistingMessage = retryRoomMessages.find(m => m.id === messageId);
-                      
+
                       if (retryExistingMessage) {
                         console.log(`✅ [WebSocket] Found message ${messageId} on retry ${index + 1} for removal, updating reactions.`);
                         const isCurrentUserRemoval = msg.data.userId === user?.id;
                         const newCurrentUserReaction = isCurrentUserRemoval ? null : retryExistingMessage.currentUserReaction;
-                        
+
                         updateMessage(roomId, messageId, {
                           reactionsSummary: msg.data.reactionsSummary || [],
                           currentUserReaction: newCurrentUserReaction,
                         });
-                        
+
                         // Remove from queue
                         pendingReactionUpdatesRef.current.delete(messageId);
                       } else if (index === retryDelays.length - 1) {
@@ -466,10 +470,10 @@ export const useWebSocket = (roomId: string | null) => {
                   // If this removal is from the current user, clear their reaction
                   // Otherwise, preserve the existing currentUserReaction
                   const isCurrentUserRemoval = msg.data.userId === user?.id;
-                  const newCurrentUserReaction = isCurrentUserRemoval 
-                    ? null 
+                  const newCurrentUserReaction = isCurrentUserRemoval
+                    ? null
                     : existingMessage.currentUserReaction; // Preserve existing if not from current user
-                  
+
                   // Update message with new reaction summary
                   updateMessage(roomId, messageId, {
                     reactionsSummary: msg.data.reactionsSummary || [],
@@ -493,12 +497,12 @@ export const useWebSocket = (roomId: string | null) => {
                 const { updateMessage, messages } = useChatStore.getState();
                 const messageId = msg.data.messageId;
                 const roomId = replyRoomId;
-                
+
                 // Only update if replyTo isn't already set (message.created should have set it)
                 if (msg.data.replyTo) {
                   const roomMessages = messages[roomId] || [];
                   const existingMessage = roomMessages.find(m => m.id === messageId);
-                  
+
                   if (existingMessage && !existingMessage.replyTo) {
                     // Only update if replyTo is missing (fallback case)
                     console.log(`[WebSocket] Fallback: Updating message ${messageId} with replyTo data`);
@@ -555,9 +559,9 @@ export const useWebSocket = (roomId: string | null) => {
             RECONNECT_DELAY * Math.pow(2, reconnectAttemptsRef.current),
             MAX_RECONNECT_DELAY
           );
-          
+
           console.log(`🔄 Reconnecting in ${delay}ms... (attempt ${reconnectAttemptsRef.current + 1})`);
-          
+
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectAttemptsRef.current++;
             connect();
@@ -606,12 +610,12 @@ export const useWebSocket = (roomId: string | null) => {
         const { messages } = useChatStore.getState();
         const roomMessages = messages[normalizedRoomId] || [];
         let replyTo: Message | undefined;
-        
+
         // If this is a reply, find the original message to populate replyTo
         if (replyToMessageId) {
           replyTo = roomMessages.find(m => m.id === replyToMessageId);
         }
-        
+
         const optimisticMessage: Message = {
           id: tempId,
           roomId: normalizedRoomId,

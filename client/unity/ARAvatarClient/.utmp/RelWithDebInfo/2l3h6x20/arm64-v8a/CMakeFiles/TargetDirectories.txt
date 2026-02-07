@@ -1,5 +1,0 @@
-/home/bahman/projects/aiChatDistributed/client/unity/ARAvatarClient/.utmp/RelWithDebInfo/2l3h6x20/arm64-v8a/CMakeFiles/edit_cache.dir
-/home/bahman/projects/aiChatDistributed/client/unity/ARAvatarClient/.utmp/RelWithDebInfo/2l3h6x20/arm64-v8a/CMakeFiles/rebuild_cache.dir
-/home/bahman/projects/aiChatDistributed/client/unity/ARAvatarClient/.utmp/RelWithDebInfo/2l3h6x20/arm64-v8a/GameActivity/CMakeFiles/game.dir
-/home/bahman/projects/aiChatDistributed/client/unity/ARAvatarClient/.utmp/RelWithDebInfo/2l3h6x20/arm64-v8a/GameActivity/CMakeFiles/edit_cache.dir
-/home/bahman/projects/aiChatDistributed/client/unity/ARAvatarClient/.utmp/RelWithDebInfo/2l3h6x20/arm64-v8a/GameActivity/CMakeFiles/rebuild_cache.dir

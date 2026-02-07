@@ -6,7 +6,7 @@ import { AgentUpdatedListener } from './events/listeners/agent-updated-listener'
 import { AgentIngestedListener } from './events/listeners/agent-ingested-listener';
 import { AgentFeedScannedListener } from './events/listeners/agent-feed-scanned-listener';
 import { ARMessageRequestListener } from './events/listeners/ar-message-request-listener';
-import { FeedbackReplyReceivedListener } from './events/listeners/feedback-reply-received-listener';
+import { AgentReplyMessageCreatedListener } from './events/listeners/agent-reply-message-created-listener';
 import { AgentDraftRevisionRequestListener } from './events/listeners/agent-feed-scanned-listener';
 
 const startService = async () => {
@@ -70,11 +70,12 @@ const startService = async () => {
     );
     await arMessageRequestListener.listen();
 
-    // Feedback reply received listener (RLHF) - when user replies to an agent message, let the agent respond
-    const feedbackReplyReceivedListener = new FeedbackReplyReceivedListener(
-      kafkaWrapper.consumer('ai-gateway-feedback-reply-received')
+    // MVP: agent replies are triggered directly from `message.created` (reply metadata),
+    // not via feedback.* events / feedback service.
+    const agentReplyMessageCreatedListener = new AgentReplyMessageCreatedListener(
+      kafkaWrapper.consumer('ai-gateway-agent-reply-message-created')
     );
-    await feedbackReplyReceivedListener.listen();
+    await agentReplyMessageCreatedListener.listen();
 
     // Draft revision request listener - consumes AgentDraftUpdated events with revisionRequest payload
     const draftRevisionRequestListener = new AgentDraftRevisionRequestListener(

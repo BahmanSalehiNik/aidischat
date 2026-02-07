@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ReactNode } from 'react-native';
+import type { ReactNode } from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { settingsScreenStyles as styles } from '../../styles/settings/settingsScreenStyles';
 

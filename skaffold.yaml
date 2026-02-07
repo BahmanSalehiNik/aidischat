@@ -16,14 +16,6 @@ build:
           - dest: .
             src: 'src/**/*.ts'
     
-    - image: bahmansalehinic4/order-expiration
-      context: backEnd/ecommerce/expiration
-      docker:
-        dockerfile: Dockerfile
-      sync:
-        manual:
-          - dest: .
-            src: 'src/**/*.ts' 
     - image: bahmansalehinic4/friendship
       context: backEnd/friendship
       docker:
@@ -59,15 +51,6 @@ build:
     
     - image: bahmansalehinic4/feed
       context: backEnd/feed
-      docker:
-        dockerfile: Dockerfile
-      sync:
-        manual:
-          - dest: .
-            src: 'src/**/*.ts' 
-
-    - image: bahmansalehinic4/feedback
-      context: backEnd/feedback
       docker:
         dockerfile: Dockerfile
       sync:
@@ -151,30 +134,6 @@ build:
         manual:
           - dest: .
             src: 'src/**/*.ts'
-    - image: bahmansalehinic4/ai-chat-host
-      context: backEnd/ai-chat-host
-      docker:
-        dockerfile: Dockerfile
-      sync:
-        manual:
-          - dest: .
-            src: 'src/**/*.ts'
-    - image: bahmansalehinic4/chat-recommendation
-      context: backEnd/chat-recommendation
-      docker:
-        dockerfile: Dockerfile
-      sync:
-        manual:
-          - dest: .
-            src: 'src/**/*.ts'
-    - image: bahmansalehinic4/ar-avatar
-      context: backEnd/ar-avatar
-      docker:
-        dockerfile: Dockerfile
-      sync:
-        manual:
-          - dest: .
-            src: 'src/**/*.ts'
     - image: bahmansalehinic4/ar-conversations
       context: backEnd/ar-conversations
       docker:
@@ -189,10 +148,9 @@ manifests:
     - ./infra/k8s/redpanda-external-srv.yaml  # External service pointing to host Redpanda
     - ./infra/k8s/kafka-topics-init.yaml      # Initialize Kafka topics (Job)
     - ./infra/k8s/*-mongo-depl.yaml
-    - ./infra/k8s/expiration-redis-depl.yaml
     - ./infra/k8s/realtime-redis-depl.yaml
     - ./infra/k8s/redis-room-depl.yaml
-    - ./infra/k8s/redis-feedback-depl.yaml
+    # (feedback service removed for MVP)
     # Phase 2: Application services (deployed after infrastructure)
     # Services with startup probes will wait for dependencies automatically
     - ./infra/k8s/auth-depl.yaml
@@ -202,17 +160,10 @@ manifests:
     - ./infra/k8s/media-depl.yaml
     - ./infra/k8s/post-depl.yaml
     - ./infra/k8s/feed-depl.yaml
-    - ./infra/k8s/feedback-depl.yaml
     - ./infra/k8s/search-depl.yaml
     - ./infra/k8s/room-depl.yaml
     - ./infra/k8s/chat-depl.yaml
     - ./infra/k8s/chat-history-depl.yaml
-    - ./infra/k8s/ai-chat-host-mongo-depl.yaml  # MongoDB BEFORE service
-    - ./infra/k8s/ai-chat-host-depl.yaml
-    - ./infra/k8s/chat-recommendation-mongo-depl.yaml  # MongoDB BEFORE service
-    - ./infra/k8s/chat-recommendation-depl.yaml
-    - ./infra/k8s/ar-avatar-mongo-depl.yaml  # MongoDB BEFORE service
-    - ./infra/k8s/ar-avatar-depl.yaml
     - ./infra/k8s/ar-conversations-mongo-depl.yaml  # MongoDB BEFORE service
     - ./infra/k8s/ar-conversations-depl.yaml
     - ./infra/k8s/agent-depl.yaml
@@ -221,7 +172,6 @@ manifests:
     - ./infra/k8s/ai-gateway-depl.yaml
     - ./infra/k8s/realtime-gateway-depl.yaml
     - ./infra/k8s/api-gateway-depl.yaml
-    - ./infra/k8s/expiration-depl.yaml
     # Phase 3: Ingress (deployed last)
     - ./infra/k8s/ingress-srv.yaml
 deploy:

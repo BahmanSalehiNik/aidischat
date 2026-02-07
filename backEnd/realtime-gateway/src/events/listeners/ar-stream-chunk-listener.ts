@@ -3,7 +3,7 @@ import { EachMessagePayload } from 'kafkajs';
 
 // Temporary local type definition until ARStreamChunkEvent is added to shared package
 interface ARStreamChunkEvent {
-  subject: 'ar.stream.chunk';
+  subject: 'agent-chat.stream.chunk' | 'ar.stream.chunk';
   data: {
     streamId: string;
     messageId: string;
@@ -34,7 +34,8 @@ interface ARStreamChunkEvent {
  */
 
 export class ARStreamChunkListener {
-  readonly topic = 'ar.stream.chunk';
+  // Renamed from AR → agent-chat, but keep AR for backward compatibility
+  readonly topic = 'agent-chat.stream.chunk';
   readonly groupId = 'realtime-gateway-group';
 
   async onMessage(data: ARStreamChunkEvent['data'], kafkaPayload: EachMessagePayload) {

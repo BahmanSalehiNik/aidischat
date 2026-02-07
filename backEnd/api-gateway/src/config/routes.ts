@@ -10,8 +10,6 @@ const regex = {
   messages: /^\/api\/messages(?:\/.*)?$/i,
   usersRooms: /^\/api\/users\/rooms(?:\/.*)?$/i,
   users: /^\/api\/users(?:\/.*)?$/i,
-  ecommerceModels: /^\/api\/ecommerce\/models(?:\/.*)?$/i,
-  ecommerceOrders: /^\/api\/ecommerce\/orders(?:\/.*)?$/i,
   friends: /^\/api\/friends(?:\/.*)?$/i,
   media: /^\/api\/media(?:\/.*)?$/i,
   post: /^\/api\/post(?:\/.*)?$/i,
@@ -29,9 +27,6 @@ const regex = {
   sessions: /^\/api\/sessions(?:\/.*)?$/i,
   agentSessions: /^\/api\/agents\/[^/]+\/sessions(?:\/.*)?$/i,
   roomSessions: /^\/api\/rooms\/[^/]+\/sessions(?:\/.*)?$/i,
-  // AR Avatar routes - TODO: Remove internal routes in Phase 2 (TTS routes will be client-side)
-  avatars: /^\/api\/avatars(?:\/.*)?$/i,
-  tts: /^\/api\/tts(?:\/.*)?$/i,
   // AR Conversations routes
   arRooms: /^\/api\/ar-rooms(?:\/.*)?$/i,
 };
@@ -88,16 +83,6 @@ export const routeRules: RouteRule[] = [
     patterns: [regex.agents],
   },
   {
-    name: 'ecommerce-models-service',
-    targetEnv: 'ECOMMERCE_MODELS_SERVICE_URL',
-    patterns: [regex.ecommerceModels],
-  },
-  {
-    name: 'ecommerce-orders-service',
-    targetEnv: 'ECOMMERCE_ORDERS_SERVICE_URL',
-    patterns: [regex.ecommerceOrders],
-  },
-  {
     name: 'realtime-gateway',
     targetEnv: 'REALTIME_GATEWAY_URL',
     patterns: [regex.realtime],
@@ -126,17 +111,6 @@ export const routeRules: RouteRule[] = [
     name: 'chat-history-service',
     targetEnv: 'CHAT_HISTORY_SERVICE_URL',
     patterns: [regex.sessions, regex.agentSessions, regex.roomSessions],
-  },
-  {
-    name: 'ar-avatar-service',
-    targetEnv: 'AR_AVATAR_SERVICE_URL',
-    patterns: [regex.avatars],
-  },
-  // TODO: Remove in Phase 2 - TTS will be client-side, not through API gateway
-  {
-    name: 'ar-avatar-tts-service',
-    targetEnv: 'AR_AVATAR_SERVICE_URL',
-    patterns: [regex.tts],
   },
   {
     name: 'ar-conversations-service',

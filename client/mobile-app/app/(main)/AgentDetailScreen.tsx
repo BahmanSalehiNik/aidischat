@@ -5,8 +5,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { agentsApi, AgentWithProfile } from '../../utils/api';
 import { formatBreedLabel } from '../../constants/agentConstants';
-import { AvatarViewer } from '../../components/avatar/AvatarViewer';
-import { avatarApi } from '../../utils/avatarApi';
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -40,26 +38,12 @@ export default function AgentDetailScreen() {
   const params = useLocalSearchParams<{ agentId: string }>();
   const [agent, setAgent] = useState<AgentWithProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showAvatarViewer, setShowAvatarViewer] = useState(false);
-  const [avatarStatus, setAvatarStatus] = useState<'pending' | 'generating' | 'ready' | 'failed' | null>(null);
 
   useEffect(() => {
     if (params.agentId) {
       loadAgent();
-      checkAvatarStatus();
     }
   }, [params.agentId]);
-
-  const checkAvatarStatus = async () => {
-    if (!params.agentId) return;
-    try {
-      const status = await avatarApi.getAvatarStatus(params.agentId);
-      setAvatarStatus(status.status);
-    } catch (error) {
-      // Avatar might not exist yet, that's okay
-      setAvatarStatus('pending');
-    }
-  };
 
   const loadAgent = async () => {
     try {
@@ -141,79 +125,14 @@ export default function AgentDetailScreen() {
 
         {/* Model Info */}
         <View style={{ backgroundColor: '#F9F9F9', borderRadius: 12, padding: 16, marginBottom: 24 }}>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: '#000000', marginBottom: 8 }}>Model Information</Text>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: '#000000', marginBottom: 8 }}>Agent Information</Text>
           <Text style={{ fontSize: 14, color: '#8E8E93' }}>
-            {agent.agent.modelProvider} • {agent.agent.modelName}
+            {agent.agent.id}
           </Text>
         </View>
 
         {/* Action Buttons */}
         <View style={{ gap: 12 }}>
-          {/* AR Avatar Button */}
-          <TouchableOpacity
-            style={{
-              backgroundColor: avatarStatus === 'ready' ? '#34C759' : avatarStatus === 'generating' ? '#FF9500' : '#8E8E93',
-              borderRadius: 12,
-              padding: 16,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onPress={() => {
-              if (avatarStatus === 'ready' || avatarStatus === 'generating' || avatarStatus === 'pending') {
-                setShowAvatarViewer(true);
-              } else {
-                Alert.alert(
-                  'Avatar Not Available',
-                  avatarStatus === 'failed' 
-                    ? 'Avatar generation failed. Please try again later.'
-                    : 'Avatar is still being generated. Please wait.',
-                  [{ text: 'OK' }]
-                );
-              }
-            }}
-            disabled={avatarStatus === 'failed'}
-          >
-            <Ionicons 
-              name={avatarStatus === 'ready' ? 'cube' : avatarStatus === 'generating' ? 'hourglass' : 'cube-outline'} 
-              size={20} 
-              color="#FFFFFF" 
-              style={{ marginRight: 8 }} 
-            />
-            <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>
-              {avatarStatus === 'ready' 
-                ? 'View 3D Avatar' 
-                : avatarStatus === 'generating' 
-                ? 'Generating Avatar...' 
-                : avatarStatus === 'failed'
-                ? 'Avatar Failed'
-                : 'View Avatar'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Video Chat Button - Only visible when avatar is ready */}
-          {avatarStatus === 'ready' && (
-            <TouchableOpacity
-              style={{
-                backgroundColor: '#5856D6',
-                borderRadius: 12,
-                padding: 16,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              onPress={() => {
-                router.push({
-                  pathname: '/(main)/ARChatScreen',
-                  params: { agentId: agent.agent.id },
-                });
-              }}
-            >
-              <Ionicons name="videocam" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>Video Chat</Text>
-            </TouchableOpacity>
-          )}
-
           <TouchableOpacity
             style={{
               backgroundColor: '#007AFF',
@@ -235,22 +154,6 @@ export default function AgentDetailScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-
-      {/* Avatar Viewer Modal */}
-      <Modal
-        visible={showAvatarViewer}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowAvatarViewer(false)}
-      >
-        <AvatarViewer 
-          agentId={params.agentId || ''} 
-          onClose={() => {
-            setShowAvatarViewer(false);
-            checkAvatarStatus(); // Refresh status when closing
-          }} 
-        />
-      </Modal>
     </SafeAreaView>
   );
 }
