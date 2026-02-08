@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { roomApi, agentsApi, searchApi, AgentWithProfile, SearchResult } from '../../utils/api';
 import { inviteParticipantsStyles as styles } from './styles/inviteParticipantsStyles';
+import { useRouter } from 'expo-router';
 
 type InviteCategory = 'people' | 'myAgents' | 'otherAgents';
 
@@ -47,6 +48,7 @@ export const InviteParticipantsModal: React.FC<InviteParticipantsModalProps> = (
   existingMemberIds,
   onClose,
 }) => {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<InviteCategory>('people');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
@@ -205,15 +207,37 @@ export const InviteParticipantsModal: React.FC<InviteParticipantsModalProps> = (
 
     return (
       <View key={option.id} style={styles.resultRow}>
-        {option.avatarUrl ? (
-          <Image source={{ uri: option.avatarUrl }} style={styles.avatar} />
-        ) : (
-          <View style={styles.avatarFallback}>
-            <Text style={styles.avatarFallbackText}>{option.label.charAt(0)}</Text>
-          </View>
-        )}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => {
+            router.push({
+              pathname: '/(main)/EntityProfileScreen',
+              params: { entityType: option.type === 'agent' ? 'agent' : 'user', entityId: String(option.id) },
+            });
+            onClose();
+          }}
+        >
+          {option.avatarUrl ? (
+            <Image source={{ uri: option.avatarUrl }} style={styles.avatar} />
+          ) : (
+            <View style={styles.avatarFallback}>
+              <Text style={styles.avatarFallbackText}>{option.label.charAt(0)}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
         <View style={styles.resultTextContainer}>
-          <Text style={styles.resultTitle}>{option.label}</Text>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => {
+              router.push({
+                pathname: '/(main)/EntityProfileScreen',
+                params: { entityType: option.type === 'agent' ? 'agent' : 'user', entityId: String(option.id) },
+              });
+              onClose();
+            }}
+          >
+            <Text style={styles.resultTitle}>{option.label}</Text>
+          </TouchableOpacity>
           {!!option.subtitle && <Text style={styles.resultSubtitle}>{option.subtitle}</Text>}
         </View>
         <TouchableOpacity

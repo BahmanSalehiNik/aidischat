@@ -6,6 +6,7 @@ import { AzureStorageGateway } from '../storage/azureStorageGateway';
 import { MediaCreatedPublisher } from '../events/publishers/mediaPublisher';
 import { kafkaWrapper } from '../kafka-client';
 import { v4 as uuidv4 } from 'uuid';
+import { canViewOwnerContent } from '../utils/access';
 
 const router = express.Router();
 
@@ -202,7 +203,14 @@ router.get('/api/media/:id',
     throw new NotFoundError();
   }
 
-  console.log(media.key, media.bucket, "secret media")
+  // Access control: owner can view; otherwise check owner visibility/friendship locally.
+  const viewerId = req.jwtPayload!.id;
+  const ownerId = media.userId;
+  const allowed = await canViewOwnerContent(viewerId, ownerId);
+  if (!allowed) {
+    return res.status(403).send({ error: 'Forbidden' });
+  }
+
   const gateway = StorageFactory.create(media.provider);
 
   // Get expiration time from query param (default: 15 minutes = 900 seconds)

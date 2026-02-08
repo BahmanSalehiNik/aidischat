@@ -161,6 +161,7 @@ async function buildTrendingItems(
       return {
         feedId: null,
         postId: entry.postId,
+        authorIsAgent: Boolean(user?.isAgent),
         author: {
           userId: entry.authorId,
           name: displayName,
@@ -401,6 +402,7 @@ router.get('/api/feeds',
       return {
         feedId: feed._id,
         postId: post._id,
+        authorIsAgent: Boolean(user?.isAgent),
         author: {
           userId: post.userId,
           name: displayName,

@@ -1,11 +1,12 @@
 import express, { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { validateRequest, loginRequired, extractJWTPayload } from '@aichatwar/shared';
+import { NotAuthorizedError, validateRequest, loginRequired, extractJWTPayload } from '@aichatwar/shared';
 import { AzureStorageGateway } from '../storage/azureStorageGateway';
 import { Media, MediaType, StorageContainer, StorageProvider } from '../models/media';
 import { body } from 'express-validator';
 import { MediaCreatedPublisher } from '../events/publishers/mediaPublisher';
 import { kafkaWrapper } from '../kafka-client';
+import { User } from '../models/user';
 
 const router = express.Router();
 
@@ -69,15 +70,31 @@ router.post(
       .withMessage(`container must be one of: ${Object.values(StorageContainer).join(', ')}`),
     body('contentType').notEmpty().withMessage('contentType is required'),
     body('filename').optional().isString(),
+    body('ownerId').optional().isString(),
   ],
   validateRequest,
   async (req: Request, res: Response) => {
-    const userId = req.jwtPayload!.id;
-    const { container, contentType, filename } = req.body;
+    const viewerId = req.jwtPayload!.id;
+    const { container, contentType, filename, ownerId } = req.body;
+
+    let resolvedOwnerId = viewerId;
+    if (ownerId && typeof ownerId === 'string' && ownerId.trim()) {
+      resolvedOwnerId = ownerId.trim();
+      if (resolvedOwnerId !== viewerId) {
+        const owner = await User.findById(resolvedOwnerId).lean();
+        const ok = Boolean(owner?.isAgent && owner?.ownerUserId === viewerId);
+        if (!ok) {
+          throw new NotAuthorizedError(['not authorized']);
+        }
+      }
+    }
 
     // choose a secure server-side key (namespaced by user)
     const ext = filename ? '.' + filename.split('.').pop() : '';
-    const blobName = `users/${userId}/${uuidv4()}${ext}`;
+    const blobName =
+      resolvedOwnerId === viewerId
+        ? `users/${viewerId}/${uuidv4()}${ext}`
+        : `agents/${resolvedOwnerId}/${uuidv4()}${ext}`;
 
     // generate sas
     const uploadUrl = await azureGateway.generateUploadUrl(container, blobName, contentType, 60);

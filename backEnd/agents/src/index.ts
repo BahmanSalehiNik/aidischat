@@ -3,12 +3,16 @@ import express from "express";
 import mongoose from "mongoose";
 import { kafkaWrapper } from './kafka-client';
 import { UserCreatedListener, UserUpdatedListener, UserDeletedListener } from './events/listeners/userListeners';
+import { FriendshipAcceptedListener, FriendshipRequestedListener, FriendshipUpdatedListener } from './events/listeners/friendshipListeners';
 import {
     GroupIdUserCreated,
     GroupIdUserUpdated,
     GroupIdUserDeleted,
     GroupIdAgentCreationReplySuccess,
-    GroupIdAgentCreationReplyFailed
+    GroupIdAgentCreationReplyFailed,
+    GroupIdFriendshipAccepted,
+    GroupIdFriendshipRequested,
+    GroupIdFriendshipUpdated
 } from './events/listeners/queGroupNames';
 import { AgentCreationReplySuccessListener, AgentCreationReplyFailedListener } from './events/listeners/agentProvisionListeners';
 import { eventRetryWorker } from './workers/event-retry-worker';
@@ -72,6 +76,9 @@ const startListeners = () => {
     new UserDeletedListener(kafkaWrapper.consumer(GroupIdUserDeleted)).listen();
     new AgentCreationReplySuccessListener(kafkaWrapper.consumer(GroupIdAgentCreationReplySuccess)).listen();
     new AgentCreationReplyFailedListener(kafkaWrapper.consumer(GroupIdAgentCreationReplyFailed)).listen();
+    new FriendshipRequestedListener(kafkaWrapper.consumer(GroupIdFriendshipRequested)).listen();
+    new FriendshipAcceptedListener(kafkaWrapper.consumer(GroupIdFriendshipAccepted)).listen();
+    new FriendshipUpdatedListener(kafkaWrapper.consumer(GroupIdFriendshipUpdated)).listen();
     console.log("✅ All Kafka listeners started successfully");
 };
 

@@ -8,6 +8,7 @@ import { agentCardStyles as styles } from './styles/agentCardStyles';
 interface AgentCardProps {
   agent: AgentWithProfile;
   onPress: () => void;
+  onProfilePress?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
 }
@@ -38,7 +39,7 @@ const getStatusLabel = (status: string) => {
   }
 };
 
-export const AgentCard: React.FC<AgentCardProps> = ({ agent, onPress, onEdit, onDelete }) => {
+export const AgentCard: React.FC<AgentCardProps> = ({ agent, onPress, onProfilePress, onEdit, onDelete }) => {
   const profile = agent.agentProfile;
   const displayName = profile?.displayName || profile?.name || 'Unnamed Agent';
   const profession = profile?.profession || 'No profession';
@@ -48,15 +49,19 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, onPress, onEdit, on
   return (
     <View style={styles.agentCard}>
       <TouchableOpacity style={styles.agentCardContent} onPress={onPress}>
-        {profile?.avatarUrl ? (
-          <Image source={{ uri: profile.avatarUrl }} style={styles.agentAvatar} />
-        ) : (
-          <View style={styles.agentAvatarPlaceholder}>
-            <Ionicons name="sparkles" size={32} color="#8E8E93" />
-          </View>
-        )}
+        <TouchableOpacity activeOpacity={0.7} onPress={onProfilePress}>
+          {profile?.avatarUrl ? (
+            <Image source={{ uri: profile.avatarUrl }} style={styles.agentAvatar} />
+          ) : (
+            <View style={styles.agentAvatarPlaceholder}>
+              <Ionicons name="sparkles" size={32} color="#8E8E93" />
+            </View>
+          )}
+        </TouchableOpacity>
         <View style={styles.agentInfo}>
-          <Text style={styles.agentName}>{displayName}</Text>
+          <TouchableOpacity activeOpacity={0.7} onPress={onProfilePress}>
+            <Text style={styles.agentName}>{displayName}</Text>
+          </TouchableOpacity>
           <View style={styles.agentDetails}>
             {breed && <Text style={styles.agentBreed}>{breed}</Text>}
             <Text style={styles.agentProfession}>{profession}</Text>

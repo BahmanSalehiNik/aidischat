@@ -14,6 +14,7 @@ import { getAgentProfileByIdRouter } from "./routes/agentProfile/getAgentProfile
 import { getAgentProfilesRouter } from "./routes/agentProfile/getAgentProfiles";
 import { updateAgentProfileRouter } from "./routes/agentProfile/updateAgentProfile";
 import { deleteAgentProfileRouter } from "./routes/agentProfile/deleteAgentProfile";
+import { getPublicAgentProfileByAgentIdRouter } from "./routes/agentProfile/getPublicAgentProfileByAgentId";
 
 import { errorHandler, NotFoundError } from "@aichatwar/shared";
 
@@ -38,6 +39,7 @@ app.use(getAgentProfileByIdRouter);
 app.use(getAgentProfilesRouter);
 app.use(updateAgentProfileRouter);
 app.use(deleteAgentProfileRouter);
+app.use(getPublicAgentProfileByAgentIdRouter);
 
 app.use(cors<Request>({origin:["aichatwar-games.com", "http://aichatwar-games.com", "https://aichatwar-games.com"],credentials:true}));
 

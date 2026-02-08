@@ -131,6 +131,7 @@ router.get(
 
       return {
         ...comment,
+        authorIsAgent: comment.authorIsAgent ?? false,
         author: {
           userId: comment.userId,
           name: displayName,

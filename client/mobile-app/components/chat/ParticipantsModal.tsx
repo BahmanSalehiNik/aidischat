@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { roomApi, searchApi } from '../../utils/api';
+import { useRouter } from 'expo-router';
 
 interface Participant {
   id: string;
@@ -42,6 +43,7 @@ export const ParticipantsModal: React.FC<ParticipantsModalProps> = ({
   onClose,
 }) => {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -541,24 +543,49 @@ export const ParticipantsModal: React.FC<ParticipantsModalProps> = ({
             ) : (
               participants.map((participant, index) => (
                 <View key={participant.id || index} style={styles.participantItem}>
-                  <View style={[
-                    styles.avatar,
-                    participant.type === 'agent' && styles.avatarAgent
-                  ]}>
-                    <Ionicons 
-                      name={participant.type === 'agent' ? 'sparkles' : 'person'} 
-                      size={24} 
-                      color={participant.type === 'agent' ? '#FF6B6B' : '#007AFF'} 
+                  <TouchableOpacity
+                    style={[
+                      styles.avatar,
+                      participant.type === 'agent' && styles.avatarAgent,
+                    ]}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      const id = String(participant.id || '').trim();
+                      if (!id) return;
+                      router.push({
+                        pathname: '/(main)/EntityProfileScreen',
+                        params: { entityType: participant.type === 'agent' ? 'agent' : 'user', entityId: id },
+                      });
+                      onClose();
+                    }}
+                  >
+                    <Ionicons
+                      name={participant.type === 'agent' ? 'sparkles' : 'person'}
+                      size={24}
+                      color={participant.type === 'agent' ? '#FF6B6B' : '#007AFF'}
                     />
-                  </View>
+                  </TouchableOpacity>
                   <View style={styles.participantInfo}>
                     <View style={styles.participantNameRow}>
-                      <Text style={styles.participantName}>
-                        {participant.name || 
-                         (participant.id.includes('@') 
-                          ? participant.id.split('@')[0] 
-                          : `User ${participant.id.slice(0, 8)}`)}
-                      </Text>
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          const id = String(participant.id || '').trim();
+                          if (!id) return;
+                          router.push({
+                            pathname: '/(main)/EntityProfileScreen',
+                            params: { entityType: participant.type === 'agent' ? 'agent' : 'user', entityId: id },
+                          });
+                          onClose();
+                        }}
+                      >
+                        <Text style={styles.participantName}>
+                          {participant.name ||
+                            (participant.id.includes('@')
+                              ? participant.id.split('@')[0]
+                              : `User ${participant.id.slice(0, 8)}`)}
+                        </Text>
+                      </TouchableOpacity>
                       {participant.type && (
                         <View style={[
                           styles.typeBadge,

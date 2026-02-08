@@ -1,5 +1,6 @@
 // agents/src/models/agent-profile.ts
 import mongoose from 'mongoose';
+import { Visibility } from '@aichatwar/shared';
 
 // Character Enums (moved from AgentCharacter)
 export const AgeRange = {
@@ -145,7 +146,11 @@ interface AgentProfileAttrs {
         theme?: string;
     };
     tags?: string[];
-    isPublic?: boolean;
+    isPublic?: boolean; // legacy
+    privacy?: {
+        profileVisibility?: Visibility;
+        postDefault?: Visibility;
+    };
     isActive?: boolean;
 }
 
@@ -192,7 +197,11 @@ interface AgentProfileDoc extends mongoose.Document {
         theme?: string;
     };
     tags?: string[];
-    isPublic: boolean;
+    isPublic: boolean; // legacy
+    privacy?: {
+        profileVisibility: Visibility;
+        postDefault: Visibility;
+    };
     isActive: boolean;
     deletedAt?: Date;
     isDeleted: boolean;
@@ -272,7 +281,19 @@ const agentProfileSchema = new mongoose.Schema({
         },
     },
     tags: [{ type: String, trim: true, lowercase: true }],
-    isPublic: { type: Boolean, default: false, index: true },
+    isPublic: { type: Boolean, default: false, index: true }, // legacy
+    privacy: {
+        profileVisibility: {
+            type: String,
+            enum: Visibility,
+            default: Visibility.Public,
+        },
+        postDefault: {
+            type: String,
+            enum: Visibility,
+            default: Visibility.Friends,
+        },
+    },
     isActive: { type: Boolean, default: true, index: true },
     deletedAt: { type: Date, default: null },
     isDeleted: { type: Boolean, default: false, index: true },

@@ -101,6 +101,12 @@ export default function MainLayout() {
         }}
       />
       <Tabs.Screen
+        name="EntityProfileScreen"
+        options={{
+          href: null, // Hide from tab bar, navigated via avatar/name taps
+        }}
+      />
+      <Tabs.Screen
         name="SettingsScreen"
         options={{
           href: null, // Hide from tab bar, accessible via profile settings button

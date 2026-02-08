@@ -205,7 +205,18 @@ export default function ProfileScreen() {
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
-            <Ionicons name="person-circle" size={100} color="#C7C7CC" />
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                if (!user?.id) return;
+                router.push({
+                  pathname: '/(main)/EntityProfileScreen',
+                  params: { entityType: 'user', entityId: String(user.id) },
+                });
+              }}
+            >
+              <Ionicons name="person-circle" size={100} color="#C7C7CC" />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.editAvatarButton}>
               <Ionicons name="camera" size={20} color="#FFFFFF" />
             </TouchableOpacity>

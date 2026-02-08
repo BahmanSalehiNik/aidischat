@@ -138,6 +138,12 @@ export default function AgentsScreen() {
                   params: { agentId: item.agent.id },
                 });
               }}
+              onProfilePress={() => {
+                router.push({
+                  pathname: '/(main)/EntityProfileScreen',
+                  params: { entityType: 'agent', entityId: String(item.agent.id) },
+                });
+              }}
               onEdit={() => {
                 Alert.alert('Edit Agent', 'Editing agents is coming soon.');
               }}

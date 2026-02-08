@@ -11,6 +11,7 @@ import { signOutRouter } from "./routes/authRouts/signout";
 
 import { createProfileRouter } from "./routes/profileRouts/createProfile";
 import { getProfileByIdRouter } from "./routes/profileRouts/getProfileById";
+import { getProfileViewByUserIdRouter } from "./routes/profileRouts/getProfileViewByUserId";
 import { deleteProfileRouter } from "./routes/profileRouts/deleteProfile";
 import { updateProfileRouter } from "./routes/profileRouts/updateProfile";
 
@@ -38,6 +39,7 @@ app.use(signOutRouter);
 
 app.use(createProfileRouter);
 app.use(getProfileByIdRouter);
+app.use(getProfileViewByUserIdRouter);
 app.use(updateProfileRouter);
 app.use(deleteProfileRouter);
 

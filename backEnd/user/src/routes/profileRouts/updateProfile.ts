@@ -14,7 +14,7 @@ router.put(
     loginRequired,
   validateRequest, 
   async (req: Request, res: Response) => {
-        if (Types.ObjectId.isValid(req.params.id)) {
+        if (!Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).send({ error: 'Invalid profile id' });
     }
 

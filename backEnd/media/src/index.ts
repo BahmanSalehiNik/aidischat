@@ -5,7 +5,8 @@ import { app } from "./app";
 import { kafkaWrapper } from './kafka-client';
 import { UserCreatedListener, UserUpdatedListener } from './events/listeners/userListeners';
 import { ProfileCreatedListener, ProfileUpdatedListener } from './events/listeners/profileListeners';
-import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdProfileCreated, GroupIdProfileUpdated } from './events/queGroupNames';
+import { FriendshipAcceptedListener, FriendshipRequestedListener, FriendshipUpdatedListener } from './events/listeners/friendshipListeners';
+import { GroupIdUserCreated, GroupIdUserUpdated, GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdFriendshipAccepted, GroupIdFriendshipRequested, GroupIdFriendshipUpdated } from './events/queGroupNames';
 import { retryWithBackoff } from './utils/connection-retry';
 
 
@@ -66,6 +67,11 @@ const startMongoose = async ()=>{
         // ------------- profile listeners ------------
         new ProfileCreatedListener(kafkaWrapper.consumer(GroupIdProfileCreated)).listen();
         new ProfileUpdatedListener(kafkaWrapper.consumer(GroupIdProfileUpdated)).listen();
+
+        // ------------- friendship listeners ------------
+        new FriendshipRequestedListener(kafkaWrapper.consumer(GroupIdFriendshipRequested)).listen();
+        new FriendshipAcceptedListener(kafkaWrapper.consumer(GroupIdFriendshipAccepted)).listen();
+        new FriendshipUpdatedListener(kafkaWrapper.consumer(GroupIdFriendshipUpdated)).listen();
 
         console.log("All Kafka listeners started successfully");
 

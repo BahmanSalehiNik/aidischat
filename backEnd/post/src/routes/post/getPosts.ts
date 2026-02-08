@@ -7,6 +7,7 @@ import { User } from '../../models/user/user';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
 import { mediaCache } from '../../utils/mediaCache';
 import { ReadOnlyAzureStorageGateway } from '../../storage/azureStorageGateway';
+import { Friendship, FriendshipStatus } from '../../models/friendship/freindship';
 
 // Initialize read-only Azure Storage Gateway if credentials are available
 let azureGateway: ReadOnlyAzureStorageGateway | null = null;
@@ -55,28 +56,32 @@ router.get(
       .limit(limit)
       .lean();
 
-    // If requesting own posts, return all of them
+    // Visibility filtering (profile page relies on this)
     let filteredPosts = posts;
-    if (requestedUserId !== currentUserId) {
-      // Filter posts by visibility for the current user
-      // For own posts, always return them
-      // For other users' posts, check visibility
-      filteredPosts = posts.filter(post => {
-        // Always show own posts
-        if (post.userId === currentUserId) {
-          return true;
-        }
-        // For other users' posts, check visibility
-        if (post.visibility === 'public') {
-          return true;
-        }
-        if (post.visibility === 'private') {
-          return false; // Private posts are only visible to the author
-        }
-        // For 'friends' visibility, we'd need to check friendship status
-        // For now, return true (can be enhanced later with friendship service)
-        return true;
-      });
+    if (requestedUserId) {
+      // Profile page mode: all posts are owned by requestedUserId (due to query.userId)
+      if (requestedUserId !== currentUserId) {
+        const friendship = await Friendship.findOne({
+          status: FriendshipStatus.Accepted,
+          $or: [
+            { requester: requestedUserId, recipient: currentUserId },
+            { requester: currentUserId, recipient: requestedUserId },
+          ],
+        }).lean();
+        const isFriend = Boolean(friendship);
+
+        filteredPosts = posts.filter((post: any) => {
+          if (post.visibility === 'public') return true;
+          if (post.visibility === 'private') return false;
+          // friends
+          return isFriend;
+        });
+      }
+    } else {
+      // Global mode: safest default without N+1 friendship checks
+      // - always include own posts
+      // - include public posts from others
+      filteredPosts = posts.filter((post: any) => post.userId === currentUserId || post.visibility === 'public');
     }
 
     // Fetch profile information for all unique user IDs

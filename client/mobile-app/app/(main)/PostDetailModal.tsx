@@ -19,6 +19,7 @@ import { useAuthStore } from '../../store/authStore';
 import { Image as ExpoImage } from 'expo-image';
 import { commentApi, Comment, CommentsResponse, postApi } from '../../utils/api';
 import { ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
 
 const REACTION_EMOJI_MAP: Record<string, string> = {
   like: '👍',
@@ -43,6 +44,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
   onPostUpdated,
   onPostDeleted,
 }) => {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -245,13 +247,38 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
     <View style={styles.postContainer}>
       <View style={styles.postHeader}>
         <View style={styles.userInfo}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={24} color="#007AFF" />
-          </View>
+          <TouchableOpacity
+            style={styles.avatar}
+            activeOpacity={0.7}
+            onPress={() => {
+              const isAgent = Boolean((postData as any)?.authorIsAgent);
+              const id = String(postData?.userId || '');
+              if (!id) return;
+              router.push({
+                pathname: '/(main)/EntityProfileScreen',
+                params: { entityType: isAgent ? 'agent' : 'user', entityId: id },
+              });
+            }}
+          >
+            <Ionicons name={Boolean((postData as any)?.authorIsAgent) ? 'sparkles' : 'person'} size={24} color="#007AFF" />
+          </TouchableOpacity>
           <View style={styles.userDetails}>
-            <Text style={styles.userName}>
-              {getUserDisplayName(postData.author)}
-            </Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                const isAgent = Boolean((postData as any)?.authorIsAgent);
+                const id = String(postData?.userId || '');
+                if (!id) return;
+                router.push({
+                  pathname: '/(main)/EntityProfileScreen',
+                  params: { entityType: isAgent ? 'agent' : 'user', entityId: id },
+                });
+              }}
+            >
+              <Text style={styles.userName}>
+                {getUserDisplayName(postData.author)}
+              </Text>
+            </TouchableOpacity>
             <View style={styles.metaRow}>
               <Text style={styles.timestamp}>{formatDate(postData.createdAt)}</Text>
               <Ionicons

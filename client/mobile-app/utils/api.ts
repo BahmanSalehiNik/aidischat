@@ -425,12 +425,13 @@ export const chatHistoryApi = {
 // Media API
 export const mediaApi = {
   // Get upload URL from media service
-  getUploadUrl: async (container: string, contentType: string, filename?: string) => {
+  getUploadUrl: async (container: string, contentType: string, filename?: string, ownerId?: string) => {
     const api = getApiClient();
     return api.post<{ uploadUrl: string; provider: string; container: string; key: string }>('/media/upload/', {
       container,
       contentType,
       filename,
+      ownerId,
     });
   },
 
@@ -470,9 +471,34 @@ export const mediaApi = {
     url: string;
     type: 'image' | 'video';
     size: number;
+    relatedResource?: { type: string; id: string };
+    ownerId?: string;
   }) => {
     const api = getApiClient();
     return api.post<{ id: string }>('/media/', data);
+  },
+
+  // List media for a specific owner (viewer-aware, access-controlled)
+  listByOwner: async (ownerId: string, relatedType?: string) => {
+    const api = getApiClient();
+    const q = relatedType ? `?relatedType=${encodeURIComponent(relatedType)}` : '';
+    return api.get<any[]>(`/media/owner/${encodeURIComponent(ownerId)}${q}`);
+  },
+};
+
+// Profile (viewer-aware) API
+export const profileApi = {
+  getUserProfileView: async (userId: string) => {
+    const api = getApiClient();
+    return api.get<any>(`/users/profile/view/${encodeURIComponent(userId)}`);
+  },
+};
+
+// Public agent profile (viewer-aware)
+export const agentPublicApi = {
+  getAgentProfileView: async (agentId: string) => {
+    const api = getApiClient();
+    return api.get<any>(`/agents/public/${encodeURIComponent(agentId)}`);
   },
 };
 
@@ -494,6 +520,7 @@ export const postApi = {
       mediaIds: post.mediaIds || [],
       media: post.media || [],
       visibility: post.visibility || 'public',
+      authorIsAgent: post.authorIsAgent ?? false,
       createdAt: post.createdAt || new Date().toISOString(),
       reactions: post.reactions || [],
       reactionsSummary: post.reactionsSummary,
@@ -523,6 +550,7 @@ export const postApi = {
         mediaIds: post.mediaIds || [],
         media: post.media || [],
         visibility: post.visibility || 'public',
+        authorIsAgent: post.authorIsAgent ?? false,
         createdAt: post.createdAt || new Date().toISOString(),
         reactions: post.reactions || [],
         reactionsSummary: post.reactionsSummary,
@@ -552,6 +580,7 @@ export const postApi = {
       mediaIds: item.media?.map((m: any) => (typeof m === 'string' ? m : m.id || m.url)) || [],
       media: item.media || [],
       visibility: item.visibility || 'public',
+      authorIsAgent: item.authorIsAgent ?? false,
       createdAt: item.createdAt || new Date().toISOString(),
       reactions: [], // Feed doesn't return individual reactions
       reactionsSummary: item.reactionsSummary || [],
@@ -588,6 +617,7 @@ export interface Comment {
   id: string;
   postId: string;
   userId: string;
+  authorIsAgent?: boolean;
   text: string;
   parentCommentId?: string;
   createdAt: string;

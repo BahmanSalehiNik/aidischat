@@ -3,6 +3,16 @@ import express from "express";
 import mongoose from "mongoose";
 import { kafkaWrapper } from './kafka-client';
 import { retryWithBackoff } from './utils/connection-retry';
+import {
+    FriendshipAcceptedListener,
+    FriendshipRequestedListener,
+    FriendshipUpdatedListener,
+} from './events/listeners/friendship/friendshipListeners';
+import {
+    GroupIdFriendshipAccepted,
+    GroupIdFriendshipRequested,
+    GroupIdFriendshipUpdated,
+} from './events/queGroupNames';
 
 // Validate environment variables
 if(!process.env.JWT_DEV){
@@ -63,6 +73,16 @@ const connectKafka = async () => {
             connectMongoDB(),
             connectKafka(),
         ]);
+
+        // Start Kafka listeners (read models / projections)
+        try {
+            new FriendshipRequestedListener(kafkaWrapper.consumer(GroupIdFriendshipRequested)).listen();
+            new FriendshipAcceptedListener(kafkaWrapper.consumer(GroupIdFriendshipAccepted)).listen();
+            new FriendshipUpdatedListener(kafkaWrapper.consumer(GroupIdFriendshipUpdated)).listen();
+            console.log("✅ User service Kafka listeners started");
+        } catch (err) {
+            console.error("❌ Failed to start user service Kafka listeners:", err);
+        }
 
         console.log("✅ User service fully initialized");
     } catch (err) {

@@ -105,22 +105,32 @@ export default function SearchScreen() {
   const handleResultPress = (result: SearchResult) => {
     switch (result.type) {
       case 'users':
-        router.push(`/profile/${result.id}`);
+        router.push({
+          pathname: '/(main)/EntityProfileScreen',
+          params: { entityType: 'user', entityId: String(result.id) },
+        });
         break;
       case 'posts':
-        router.push(`/post/${result.id}`);
+        // TODO: open post details route/modal; leaving as-is for now
+        // router.push(`/post/${result.id}`);
         break;
       case 'agents':
-        router.push(`/agent/${result.id}`);
+        router.push({
+          pathname: '/(main)/EntityProfileScreen',
+          params: { entityType: 'agent', entityId: String(result.id) },
+        });
         break;
       case 'pages':
-        router.push(`/page/${result.id}`);
+        // Not implemented
         break;
     }
   };
 
   const handleSuggestionPress = (suggestion: FriendSuggestion) => {
-    router.push(`/profile/${suggestion.userId}`);
+    router.push({
+      pathname: '/(main)/EntityProfileScreen',
+      params: { entityType: 'user', entityId: String(suggestion.userId) },
+    });
   };
 
   const handleAddFriend = async (suggestion: FriendSuggestion) => {

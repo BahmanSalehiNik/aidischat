@@ -1,9 +1,10 @@
 import express, { Request, Response } from 'express';
 import { body } from 'express-validator';
-import { validateRequest, loginRequired, extractJWTPayload } from '@aichatwar/shared';
+import { NotAuthorizedError, validateRequest, loginRequired, extractJWTPayload } from '@aichatwar/shared';
 import { Media, MediaType, StorageProvider } from '../models/media';
 import { MediaCreatedPublisher } from '../events/publishers/mediaPublisher';
 import { kafkaWrapper } from '../kafka-client';
+import { User } from '../models/user';
 
 const router = express.Router();
 
@@ -23,10 +24,26 @@ router.post(
   ],
   validateRequest,
   async (req: Request, res: Response) => {
-    const { provider, bucket, key, url, type, size, relatedResource } = req.body;
+    const { provider, bucket, key, url, type, size, relatedResource, ownerId } = req.body;
+    const viewerId = req.jwtPayload!.id;
+
+    // Allow registering media for:
+    // - self (ownerId omitted or == viewerId)
+    // - an owned agent (ownerId == agentId and User projection says isAgent + ownerUserId == viewerId)
+    let resolvedOwnerId = viewerId;
+    if (ownerId && typeof ownerId === 'string' && ownerId.trim()) {
+      resolvedOwnerId = ownerId.trim();
+      if (resolvedOwnerId !== viewerId) {
+        const owner = await User.findById(resolvedOwnerId).lean();
+        const ok = Boolean(owner?.isAgent && owner?.ownerUserId === viewerId);
+        if (!ok) {
+          throw new NotAuthorizedError(['not authorized']);
+        }
+      }
+    }
 
     const media = Media.build({
-      userId: req.jwtPayload!.id,
+      userId: resolvedOwnerId,
       provider,
       bucket,
       key,

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, TextInput, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { Comment, commentApi } from '../../utils/api';
 import { useAuthStore } from '../../store/authStore';
 import { ReactionButton } from './ReactionButton';
@@ -26,12 +27,21 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   onCommentUpdated,
   onCommentDeleted,
 }) => {
+  const router = useRouter();
   const { user } = useAuthStore();
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(comment.text);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const isOwnComment = comment.userId === user?.id;
+
+  const openAuthorProfile = () => {
+    const isAgent = Boolean((comment as any)?.authorIsAgent);
+    router.push({
+      pathname: '/(main)/EntityProfileScreen',
+      params: { entityType: isAgent ? 'agent' : 'user', entityId: String(comment.userId) },
+    });
+  };
 
   const handleEdit = async () => {
     if (!editText.trim() || editText === comment.text) {
@@ -149,16 +159,18 @@ export const CommentItem: React.FC<CommentItemProps> = ({
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.userInfo}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={16} color="#007AFF" />
-          </View>
+          <TouchableOpacity style={styles.avatar} onPress={openAuthorProfile} activeOpacity={0.7}>
+            <Ionicons name={Boolean((comment as any)?.authorIsAgent) ? "sparkles" : "person"} size={16} color="#007AFF" />
+          </TouchableOpacity>
           <View style={styles.userDetails}>
-            <Text style={styles.userName}>
-              {comment.author?.name || 
-               (comment.author?.email ? comment.author.email.split('@')[0] : null) ||
-               comment.userId || 
-               'User'}
-            </Text>
+            <TouchableOpacity onPress={openAuthorProfile} activeOpacity={0.7}>
+              <Text style={styles.userName}>
+                {comment.author?.name || 
+                 (comment.author?.email ? comment.author.email.split('@')[0] : null) ||
+                 comment.userId || 
+                 'User'}
+              </Text>
+            </TouchableOpacity>
             <Text style={styles.timestamp}>{formatDate(comment.createdAt)}</Text>
           </View>
         </View>

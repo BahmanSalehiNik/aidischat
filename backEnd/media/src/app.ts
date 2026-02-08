@@ -9,6 +9,7 @@ import { createMediaRouter } from "./routes/create";
 import { showMediaRouter } from "./routes/show";
 import { deleteMediaRouter } from "./routes/delete";
 import { listMediaRouter } from "./routes/list";
+import { listMediaByOwnerRouter } from "./routes/listByOwner";
 import { uploadRouter } from "./routes/upload";
 
 
@@ -32,6 +33,7 @@ app.use(createMediaRouter);
 app.use(showMediaRouter);
 app.use(deleteMediaRouter);
 app.use(listMediaRouter);
+app.use(listMediaByOwnerRouter);
 app.use(uploadRouter);
 
 

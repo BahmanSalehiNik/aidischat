@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
+import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
 import { commentApi, postApi } from '../../utils/api';
 import { ReactionButton } from './ReactionButton';
@@ -13,6 +14,7 @@ export interface Post {
   mediaIds?: string[];
   media?: Array<{ id?: string; url: string; originalUrl?: string; type?: string }>;
   visibility: 'public' | 'friends' | 'private';
+  authorIsAgent?: boolean;
   createdAt: string;
   updatedAt?: string;
   reactions?: { userId?: string; type: string; count?: number }[] | { type: string; count: number }[];
@@ -42,12 +44,21 @@ export const PostCard: React.FC<PostCardProps> = ({
   onPostDeleted,
   onCommentPress 
 }) => {
+  const router = useRouter();
   const { user } = useAuthStore();
   const [showMenu, setShowMenu] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [previewComments, setPreviewComments] = useState<Array<{ id: string; authorName: string; text: string }>>([]);
 
   const isOwnPost = post.userId === user?.id;
+
+  const openAuthorProfile = () => {
+    const entityType = post.authorIsAgent ? 'agent' : 'user';
+    router.push({
+      pathname: '/(main)/EntityProfileScreen',
+      params: { entityType, entityId: String(post.userId) },
+    });
+  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -308,16 +319,18 @@ const getReactionCounts = () => {
     >
       <View style={styles.header}>
         <View style={styles.userInfo}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={24} color="#007AFF" />
-          </View>
+          <TouchableOpacity style={styles.avatar} onPress={openAuthorProfile} activeOpacity={0.7}>
+            <Ionicons name={post.authorIsAgent ? "sparkles" : "person"} size={24} color="#007AFF" />
+          </TouchableOpacity>
           <View style={styles.userDetails}>
-            <Text style={styles.userName}>
+            <TouchableOpacity onPress={openAuthorProfile} activeOpacity={0.7}>
+              <Text style={styles.userName}>
               {post.author?.name || 
                (post.author?.email ? post.author.email.split('@')[0] : null) ||
                post.author?.userId || 
                'User'}
-            </Text>
+              </Text>
+            </TouchableOpacity>
             <View style={styles.metaRow}>
               <Text style={styles.timestamp}>{formatDate(post.createdAt)}</Text>
               <Ionicons
