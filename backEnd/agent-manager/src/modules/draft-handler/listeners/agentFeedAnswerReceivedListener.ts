@@ -5,8 +5,8 @@ import { AgentDraftPostCreatedPublisher, AgentDraftCommentCreatedPublisher, Agen
 import { kafkaWrapper } from '../../../kafka-client';
 import { v4 as uuidv4 } from 'uuid';
 import { Visibility } from '@aichatwar/shared';
-import { importImageFromUrl } from '../../../utils/mediaServiceClient';
 import { AgentDraftPost } from '../../../models/agent-draft-post';
+import { importImageFromUrl } from '../../../utils/mediaServiceClient';
 
 export class AgentFeedAnswerReceivedListener extends Listener<AgentFeedAnswerReceivedEvent> {
   readonly topic = Subjects.AgentFeedAnswerReceived;
@@ -32,26 +32,13 @@ export class AgentFeedAnswerReceivedListener extends Listener<AgentFeedAnswerRec
 
       // Used to avoid immediately reusing the exact same external URL (Wikimedia/fallback) across drafts.
       // Best-effort: older drafts won't have this metadata yet.
-      const recentlyUsedImageSourceUrls = new Set<string>();
-      try {
-        const recentDrafts = await AgentDraftPost.find({ agentId, ownerUserId })
-          .sort({ createdAt: -1 })
-          .limit(30)
-          .lean();
-        for (const d of recentDrafts as any[]) {
-          const u = d?.metadata?.image?.sourceUrl;
-          if (typeof u === 'string' && u.startsWith('https://')) recentlyUsedImageSourceUrls.add(u);
-        }
-      } catch (e: any) {
-        console.warn(`[AgentFeedAnswerReceivedListener] Failed to load recent drafts for image de-dupe (scanId ${scanId}):`, e?.message);
-      }
-
       const isLikelyRasterImageUrl = (url: string): boolean => {
         try {
           const u = new URL(url);
           if (u.protocol !== 'https:') return false;
           // Allow known template endpoints that redirect to a real JPEG (no file extension in the template URL)
           if (u.host === 'loremflickr.com') return true;
+          if (u.host === 'picsum.photos') return true;
           const path = u.pathname.toLowerCase();
           return (
             path.endsWith('.jpg') ||
@@ -65,312 +52,370 @@ export class AgentFeedAnswerReceivedListener extends Listener<AgentFeedAnswerRec
         }
       };
 
-      /**
-       * Wikimedia often returns very large "original" files which are slow to load on mobile
-       * and may exceed our internal import size cap. Convert commons originals into 1024px thumbnails.
-       * Example:
-       *  https://upload.wikimedia.org/wikipedia/commons/3/3f/Foo.jpg
-       *  -> https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Foo.jpg/1024px-Foo.jpg
-       */
-      const normalizeWebImageUrl = (url: string): string => {
-        try {
-          const u = new URL(url);
-          if (u.protocol !== 'https:') return url;
-          if (u.host !== 'upload.wikimedia.org') return url;
-          const p = u.pathname;
-          // If already a thumb URL, keep it.
-          if (p.includes('/wikipedia/commons/thumb/')) return url;
-          // Only handle commons originals.
-          const prefix = '/wikipedia/commons/';
-          if (!p.startsWith(prefix)) return url;
-
-          const rest = p.slice(prefix.length); // e.g. "3/3f/Foo.jpg"
-          const parts = rest.split('/').filter(Boolean);
-          if (parts.length < 3) return url;
-          const filename = parts[parts.length - 1];
-          const dir1 = parts[0];
-          const dir2 = parts[1];
-          const width = 1024;
-          const thumbPath = `/wikipedia/commons/thumb/${dir1}/${dir2}/${filename}/${width}px-${filename}`;
-          u.pathname = thumbPath;
-          u.search = ''; // drop any query params
-          return u.toString();
-        } catch {
-          return url;
-        }
-      };
-
-      const buildWebImageFallbackUrl = (text: string, seed?: string): string => {
-        const raw = (text || '').toLowerCase();
-        const words = raw.match(/\b[a-z0-9]{4,}\b/g) || [];
-        const stop = new Set(['this', 'that', 'with', 'from', 'have', 'your', 'just', 'like', 'love', 'post', 'draft']);
-        const keywords: string[] = [];
-        for (const w of words) {
-          if (stop.has(w)) continue;
-          if (!keywords.includes(w)) keywords.push(w);
-          if (keywords.length >= 4) break;
-        }
-        const q = keywords.length > 0 ? keywords.join(',') : 'photo';
-        // loremflickr supports comma-separated keywords in the path and reliably returns an image via redirect.
-        // Add cache-busting so back-to-back imports don't accidentally return the same cached image.
-        const cacheBust = seed ? shortSeed(seed) : shortSeed(`${Date.now()}-${Math.random()}`);
-        return `https://loremflickr.com/1024/768/${encodeURIComponent(q)}?random=${encodeURIComponent(cacheBust)}`;
-      };
-
-      const deriveKeywordsFromText = (text: string): string => {
-        const raw = (text || '').toLowerCase();
-        const words = raw.match(/\b[a-z0-9]{4,}\b/g) || [];
-        const stop = new Set([
-          'this','that','with','from','have','your','just','like','love','post','draft','when','what','about','into','they','them',
-          'been','were','will','would','could','should','make','made','more','most','very','also','here','there'
-        ]);
-        const keywords: string[] = [];
-        for (const w of words) {
-          if (stop.has(w)) continue;
-          if (!keywords.includes(w)) keywords.push(w);
-          if (keywords.length >= 6) break;
-        }
-        return keywords.join(',');
-      };
-
-      const normalizeImageSearchQuery = (query: string, contentHint: string): string => {
-        const raw = (query || '').toLowerCase();
-        const tokens = raw
-          .split(/[,\s]+/g)
-          .map((t) => t.trim())
-          .filter(Boolean)
-          .flatMap((t) => t.split('-').filter(Boolean)); // sports-car -> sports, car
-
-        const blacklist = new Set([
-          'highway','road','street','st','ave','avenue','drive','dr','route','lane','freeway','motorway','intersection',
-          'pdf','document','report','administration',
-        ]);
-
-        const kept: string[] = [];
-        for (const t of tokens) {
-          if (blacklist.has(t)) continue;
-          if (!kept.includes(t)) kept.push(t);
-          if (kept.length >= 6) break;
-        }
-
-        // If query becomes too generic, augment with keywords derived from content.
-        if (kept.length < 2) {
-          const derived = deriveKeywordsFromText(contentHint || '');
-          for (const t of derived.split(',').map(s => s.trim()).filter(Boolean)) {
-            if (blacklist.has(t)) continue;
-            if (!kept.includes(t)) kept.push(t);
-            if (kept.length >= 6) break;
-          }
-        }
-
-        return kept.join(' ');
-      };
-
-      const searchWikimediaCommonsThumbUrls = async (query: string): Promise<string[]> => {
+      const searchOpenverseImageUrls = async (query: string): Promise<string[]> => {
         const q = (query || '').trim();
         if (!q) return [];
-
-        // Wikimedia Commons search for files (namespace 6) + return a 1024px thumb URL when possible.
+        // Openverse: free, no API key required for basic usage.
+        // We still validate URLs before using them.
         const url =
-          `https://commons.wikimedia.org/w/api.php` +
-          `?action=query` +
-          `&generator=search` +
-          `&gsrnamespace=6` +
-          `&gsrsearch=${encodeURIComponent(q)}` +
-          `&gsrlimit=50` +
-          `&prop=imageinfo` +
-          `&iiprop=url|mime` +
-          `&iiurlwidth=512` +
-          `&format=json`;
+          `https://api.openverse.engineering/v1/images` +
+          `?q=${encodeURIComponent(q)}` +
+          `&page_size=20` +
+          `&mature=false`;
 
         const resp = await fetch(url, {
           headers: {
-            'User-Agent': 'aichatwar-agent-manager/1.0 (image search)',
+            'User-Agent': 'aichatwar-agent-manager/1.0 (openverse image search)',
             'Accept': 'application/json',
           },
         });
         if (!resp.ok) return [];
         const data: any = await resp.json().catch(() => null);
-        const pages = data?.query?.pages;
-        if (!pages || typeof pages !== 'object') return [];
+        const results: any[] = Array.isArray(data?.results) ? data.results : [];
 
-        const allowedMimes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
         const out: string[] = [];
-        for (const key of Object.keys(pages)) {
-          const page = pages[key];
-          const info = page?.imageinfo?.[0];
-          const mime = String(info?.mime || '').toLowerCase();
-          if (!allowedMimes.has(mime)) continue;
-          const thumburl = info?.thumburl;
-          const originalUrl = info?.url;
-          const candidate = typeof thumburl === 'string' ? thumburl : typeof originalUrl === 'string' ? originalUrl : undefined;
-          if (candidate && candidate.startsWith('https://')) out.push(candidate);
+        for (const r of results) {
+          // Prefer direct image URLs when provided, else fall back to thumbnail.
+          // Openverse fields may vary; we keep this defensive.
+          const candidates = [
+            r?.url,
+            r?.thumbnail,
+            r?.thumbnail_url,
+            r?.image,
+            r?.image_url,
+          ]
+            .filter((x: any) => typeof x === 'string')
+            .map((s: string) => s.trim())
+            .filter(Boolean);
+          for (const c of candidates) {
+            if (c.startsWith('https://')) out.push(c);
+          }
         }
         return out;
+      };
+
+      type OpenverseCandidate = { url: string; title?: string; tags?: string[]; provider?: string; source?: string };
+
+      const tokenize = (input: string): string[] => {
+        const s = (input || '')
+          .toLowerCase()
+          .replace(/[,/]+/g, ' ')
+          .replace(/[^a-z0-9\s-]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!s) return [];
+        const stop = new Set([
+          'the', 'and', 'or', 'a', 'an', 'to', 'of', 'for', 'with', 'on', 'in', 'at', 'by', 'is', 'are',
+          'this', 'that', 'it', 'my', 'your', 'our', 'their', 'from', 'as', 'be', 'been', 'was', 'were',
+          'looks', 'look', 'great', 'new', 'just', 'recently', 'anyone', 'tried',
+        ]);
+        return s
+          .split(' ')
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .filter((t) => t.length >= 3)
+          .filter((t) => !stop.has(t));
+      };
+
+      const scoreCandidate = (cand: OpenverseCandidate, tokens: string[]): number => {
+        if (!cand?.url) return 0;
+        const title = (cand.title || '').toLowerCase();
+        const tags = Array.isArray(cand.tags) ? cand.tags : [];
+        const tagStr = tags.join(' ').toLowerCase();
+        let score = 0;
+        for (const tok of tokens) {
+          if (!tok) continue;
+          if (title.includes(tok)) score += 3;
+          if (tagStr.includes(tok)) score += 2;
+          if (cand.url.toLowerCase().includes(tok)) score += 1;
+        }
+        return score;
+      };
+
+      const searchOpenverseCandidates = async (query: string): Promise<OpenverseCandidate[]> => {
+        const q = (query || '').trim();
+        if (!q) return [];
+        const url =
+          `https://api.openverse.engineering/v1/images` +
+          `?q=${encodeURIComponent(q)}` +
+          `&page_size=30` +
+          `&mature=false`;
+        const resp = await fetch(url, {
+          headers: {
+            'User-Agent': 'aichatwar-agent-manager/1.0 (openverse image search)',
+            'Accept': 'application/json',
+          },
+        });
+        if (!resp.ok) return [];
+        const data: any = await resp.json().catch(() => null);
+        const results: any[] = Array.isArray(data?.results) ? data.results : [];
+        const out: OpenverseCandidate[] = [];
+        for (const r of results) {
+          const tags = Array.isArray(r?.tags)
+            ? r.tags.map((t: any) => (typeof t?.name === 'string' ? t.name : '')).filter(Boolean)
+            : undefined;
+          const title = typeof r?.title === 'string' ? r.title : undefined;
+          const provider = typeof r?.provider === 'string' ? r.provider : undefined;
+          const source = typeof r?.source === 'string' ? r.source : undefined;
+
+          const candidates = [
+            r?.thumbnail, // often a resolvable image endpoint
+            r?.thumbnail_url,
+            r?.url, // sometimes direct image (flickr static), sometimes page url
+            r?.image,
+            r?.image_url,
+          ]
+            .filter((x: any) => typeof x === 'string')
+            .map((s: string) => s.trim())
+            .filter(Boolean)
+            .filter((c: string) => c.startsWith('https://'));
+
+          for (const c of candidates) {
+            out.push({ url: c, title, tags, provider, source });
+          }
+        }
+        return out;
+      };
+
+      const searchWikimediaCommonsImageUrls = async (query: string): Promise<string[]> => {
+        const q = (query || '').trim();
+        if (!q) return [];
+
+        // Search only in File namespace (6) to get media.
+        const searchUrl =
+          `https://commons.wikimedia.org/w/api.php` +
+          `?action=query&format=json&origin=*` +
+          `&list=search&srnamespace=6&srlimit=12` +
+          `&srsearch=${encodeURIComponent(q)}`;
+
+        const sresp = await fetch(searchUrl, {
+          headers: { 'User-Agent': 'aichatwar-agent-manager/1.0 (wikimedia commons search)', 'Accept': 'application/json' },
+        });
+        if (!sresp.ok) return [];
+        const sdata: any = await sresp.json().catch(() => null);
+        const hits: any[] = Array.isArray(sdata?.query?.search) ? sdata.query.search : [];
+        const titles: string[] = hits
+          .map((h: any) => (typeof h?.title === 'string' ? h.title : ''))
+          .filter(Boolean)
+          .slice(0, 8);
+        if (titles.length === 0) return [];
+
+        // Resolve titles to imageinfo URLs.
+        const infoUrl =
+          `https://commons.wikimedia.org/w/api.php` +
+          `?action=query&format=json&origin=*` +
+          `&prop=imageinfo&iiprop=url|mime` +
+          `&iiurlwidth=1024` +
+          `&titles=${encodeURIComponent(titles.join('|'))}`;
+
+        const iresp = await fetch(infoUrl, {
+          headers: { 'User-Agent': 'aichatwar-agent-manager/1.0 (wikimedia commons imageinfo)', 'Accept': 'application/json' },
+        });
+        if (!iresp.ok) return [];
+        const idata: any = await iresp.json().catch(() => null);
+        const pages = idata?.query?.pages || {};
+        const out: string[] = [];
+        for (const key of Object.keys(pages)) {
+          const p = pages[key];
+          const ii = Array.isArray(p?.imageinfo) ? p.imageinfo[0] : null;
+          const mime = String(ii?.mime || '').toLowerCase();
+          const url = (ii?.thumburl || ii?.url) as any;
+          if (typeof url !== 'string' || !url.startsWith('https://')) continue;
+          if (!mime.startsWith('image/')) continue;
+          // Avoid SVG (import endpoint rejects it by design)
+          if (mime.includes('svg')) continue;
+          out.push(url);
+        }
+        return out;
+      };
+
+      const isReachableImageUrl = async (url: string): Promise<boolean> => {
+        try {
+          if (!url || typeof url !== 'string') return false;
+          const u = new URL(url);
+          if (u.protocol !== 'https:') return false;
+          // Prefer HEAD (no download). Some hosts disallow HEAD; fall back to a tiny GET.
+          const head = await fetch(url, { method: 'HEAD', redirect: 'follow' as any });
+          if (head.ok) {
+            const ct = String(head.headers.get('content-type') || '').toLowerCase();
+            if (ct.startsWith('image/')) return true;
+            // Some CDNs omit content-type on HEAD; allow ok status as best-effort.
+            if (!ct) return true;
+          }
+          // Fallback: request 1 byte
+          const get = await fetch(url, {
+            method: 'GET',
+            headers: { Range: 'bytes=0-0' },
+            redirect: 'follow' as any,
+          });
+          if (!get.ok) return false;
+          const ct = String(get.headers.get('content-type') || '').toLowerCase();
+          return ct.startsWith('image/');
+        } catch {
+          return false;
+        }
+      };
+
+      const normalizeWebImageUrl = (url: string): string => {
+        // Keep normalization lightweight; do NOT download or import images.
+        try {
+          const u = new URL(url);
+          if (u.protocol !== 'https:') return url;
+          // Drop query params for stability (best-effort)
+          // NOTE: some CDNs require query params; we only strip for Wikimedia originals.
+          if (u.host === 'upload.wikimedia.org') {
+            u.search = '';
+            return u.toString();
+          }
+          return url;
+        } catch {
+          return url;
+        }
       };
 
       // Process posts
       if (response.posts && Array.isArray(response.posts)) {
         for (const post of response.posts) {
           try {
-            // v2: prefer keywords-based image search query
+            // v2: prefer keywords-based imageSearchQuery from AI gateway
             const imageSearchQuery =
               typeof (post as any).imageSearchQuery === 'string' ? String((post as any).imageSearchQuery) : '';
 
-            // v1 fallback: accept explicit URLs if present (older models / older prompt)
+            // v1 fallback: accept explicit URLs if present (older models)
             const sourceImageUrls: string[] =
               post.mediaUrls && Array.isArray(post.mediaUrls) && post.mediaUrls.length > 0 ? post.mediaUrls : [];
 
-            // Convert public image URL(s) into Media IDs in media service (uploaded to storage + registered)
-            const mediaIds: string[] = [];
+            // Candidate URL directly from older model output
+            const legacyUrlCandidate = normalizeWebImageUrl(sourceImageUrls[0] || '');
             const mediaUrlsForEvent: string[] = [];
-            let chosenImage: { source: 'model_url' | 'wikimedia' | 'loremflickr' | 'external_url'; query?: string; sourceUrl?: string } | undefined;
+            const mediaIds: string[] = [];
+            let chosenImage: { source: 'model_url' | 'external_url'; sourceUrl?: string } | undefined;
 
-            // Only take 1 for now to keep drafts lightweight
-            const firstUrl = sourceImageUrls[0] ? normalizeWebImageUrl(sourceImageUrls[0]) : undefined;
+            let finalUrl: string | undefined;
+            let pickedFrom: 'legacy_url' | 'openverse' | 'wikimedia' | 'picsum' | undefined;
+            if (legacyUrlCandidate && legacyUrlCandidate.startsWith('https://')) {
+              const reachable = await isReachableImageUrl(legacyUrlCandidate);
+              if (reachable) {
+                finalUrl = legacyUrlCandidate;
+                pickedFrom = 'legacy_url';
+              } else {
+                console.warn(`[AgentFeedAnswerReceivedListener] Image URL not reachable (scanId ${scanId}); falling back`, {
+                  url: legacyUrlCandidate.slice(0, 120),
+                });
+              }
+            }
 
-            // If the model didn't provide a URL, use Wikimedia search based on keywords.
-            let searchedUrl: string | undefined;
-            let searchedQueryUsed: string | undefined;
-            if (!firstUrl) {
-              const candidates: string[] = [];
-              const normalizedFromModel = imageSearchQuery.trim()
-                ? normalizeImageSearchQuery(imageSearchQuery, String(post.content || ''))
-                : '';
-              const derived = normalizeImageSearchQuery(deriveKeywordsFromText(String(post.content || '')), String(post.content || ''));
-              if (normalizedFromModel) candidates.push(normalizedFromModel);
-              if (derived && !candidates.includes(derived)) candidates.push(derived);
-              // Broaden to increase Wikimedia hit-rate (Commons often doesn't have brand-specific items).
-              for (const base of [...candidates]) {
-                const toks = base.split(/\s+/).filter(Boolean);
-                const last2 = toks.slice(-2).join(' ');
-                const last1 = toks.slice(-1).join(' ');
-                if (last2 && !candidates.includes(last2)) candidates.push(last2);
-                if (last1 && !candidates.includes(last1)) candidates.push(last1);
+            // Main path: use Openverse search on the model-provided query.
+            if (!finalUrl) {
+              const q0 = imageSearchQuery.trim();
+              const tokens0 = tokenize(q0);
+              const tokensFromContent = tokenize(String(post.content || '')).slice(0, 6);
+              const attemptQueries: string[] = [];
+              if (q0) attemptQueries.push(q0.replace(/,/g, ' '));
+              if (tokens0.length > 0) attemptQueries.push(tokens0.join(' '));
+              if (tokensFromContent.length > 0) attemptQueries.push(tokensFromContent.join(' '));
+              // Generic last attempt before switching providers
+              attemptQueries.push('skincare product');
+
+              const scored: Array<{ url: string; score: number; title?: string; tags?: string[] }> = [];
+              for (const aq of attemptQueries) {
+                if (!aq) continue;
+                console.log(`[AgentFeedAnswerReceivedListener] Openverse search (scanId ${scanId}):`, { query: aq });
+                const candidates = await searchOpenverseCandidates(aq);
+                const tokens = tokenize(aq);
+                for (const c of candidates) {
+                  const candidate = normalizeWebImageUrl(c.url);
+                  if (!candidate.startsWith('https://')) continue;
+                  if (!isLikelyRasterImageUrl(candidate)) continue;
+                  // Relevance filter: require at least 2 token hits across title/tags/url to avoid random postcards, etc.
+                  const s = scoreCandidate({ ...c, url: candidate }, tokens);
+                  if (s < 4) continue;
+                  scored.push({ url: candidate, score: s, title: c.title, tags: c.tags });
+                }
+                // If we already have strong candidates, stop expanding.
+                if (scored.length >= 8) break;
               }
 
-              console.log(`[AgentFeedAnswerReceivedListener] Wikimedia query candidates for scanId ${scanId}:`, {
-                providedByModel: imageSearchQuery.trim() ? imageSearchQuery.trim() : undefined,
-                candidates,
-              });
-
-              for (const q of candidates) {
-                const urls = await searchWikimediaCommonsThumbUrls(q);
-                // Deterministic shuffle based on scanId+query so different posts don't always pick the first result.
-                const seed = shortSeed(`${scanId}:${q}`);
-                const shuffled = [...urls].sort((a, b) => shortSeed(seed + a).localeCompare(shortSeed(seed + b)));
-                const picked = shuffled.find((u) => !recentlyUsedImageSourceUrls.has(u)) || shuffled[0];
-
-                console.log(`[AgentFeedAnswerReceivedListener] Wikimedia search attempt for scanId ${scanId}:`, {
-                  query: q,
-                  found: !!picked,
-                  urlHost: picked ? new URL(picked).host : undefined,
-                  // Show enough to debug without giant logs
-                  urlSample: picked ? `${picked.slice(0, 96)}...` : undefined,
-                  results: urls.length,
-                });
-
-                if (picked) {
-                  searchedUrl = picked;
-                  searchedQueryUsed = q;
+              scored.sort((a, b) => b.score - a.score);
+              for (const pick of scored.slice(0, 12)) {
+                const ok = await isReachableImageUrl(pick.url);
+                if (ok) {
+                  finalUrl = pick.url;
+                  pickedFrom = 'openverse';
+                  console.log(`[AgentFeedAnswerReceivedListener] Openverse picked image (scanId ${scanId}):`, {
+                    url: pick.url.slice(0, 140),
+                    score: pick.score,
+                    title: pick.title,
+                  });
                   break;
                 }
               }
             }
 
-            const primaryUrl = firstUrl || searchedUrl;
-
-            if (!primaryUrl) {
-              // If we couldn't find any image via URL or Wikimedia search, use a deterministic fallback
-              // so drafts don't end up with "No image attached".
-              const fallbackUrl = buildWebImageFallbackUrl(post.content || '', `${scanId}:${post.content || ''}`);
-              console.warn(`[AgentFeedAnswerReceivedListener] No image URL found (scanId ${scanId}); importing fallback: ${fallbackUrl}`);
-              chosenImage = { source: 'loremflickr', sourceUrl: fallbackUrl, query: deriveKeywordsFromText(String(post.content || '')) || undefined };
-              try {
-                const importedFallback = await importImageFromUrl({
-                  userId: ownerUserId,
-                  agentId,
-                  sourceUrl: fallbackUrl,
-                  container: 'posts',
-                  expiresSeconds: 7200,
-                });
-                mediaIds.push(importedFallback.id);
-                if (importedFallback.downloadUrl) mediaUrlsForEvent.push(importedFallback.downloadUrl);
-                else if (importedFallback.url) mediaUrlsForEvent.push(importedFallback.url);
-              } catch (fallbackError: any) {
-                console.error(`[AgentFeedAnswerReceivedListener] Fallback import failed (${fallbackUrl}) scanId ${scanId}:`, fallbackError.message);
-                // Last resort: keep external URL if safe
-                if (isLikelyRasterImageUrl(fallbackUrl)) {
-                  chosenImage = { source: 'external_url', sourceUrl: fallbackUrl, query: undefined };
-                  mediaUrlsForEvent.push(fallbackUrl);
+            if (!finalUrl) {
+              // Wikimedia Commons fallback (more likely to be semantically relevant than random picsum).
+              const qW = imageSearchQuery?.trim() || String(post.content || '').slice(0, 120);
+              console.log(`[AgentFeedAnswerReceivedListener] Wikimedia fallback search (scanId ${scanId}):`, { query: qW });
+              const urls = await searchWikimediaCommonsImageUrls(qW);
+              for (const u of urls) {
+                const candidate = normalizeWebImageUrl(u);
+                if (!candidate.startsWith('https://')) continue;
+                if (!isLikelyRasterImageUrl(candidate)) continue;
+                const ok = await isReachableImageUrl(candidate);
+                if (ok) {
+                  finalUrl = candidate;
+                  pickedFrom = 'wikimedia';
+                  console.log(`[AgentFeedAnswerReceivedListener] Wikimedia picked image (scanId ${scanId}):`, { url: candidate.slice(0, 140) });
+                  break;
                 }
               }
-            } else if (primaryUrl) {
-              chosenImage = firstUrl
-                ? { source: 'model_url', sourceUrl: firstUrl, query: imageSearchQuery.trim() || undefined }
-                : { source: 'wikimedia', sourceUrl: searchedUrl, query: searchedQueryUsed || imageSearchQuery.trim() || undefined };
-              try {
-                const imported = await importImageFromUrl({
-                  userId: ownerUserId, // owner can review/delete
-                  agentId,
-                  sourceUrl: primaryUrl,
-                  container: 'posts',
-                  // Longer-lived preview URL for events/logs; the UI will re-hydrate signed URLs on fetch anyway.
-                  expiresSeconds: 7200,
-                });
-                mediaIds.push(imported.id);
-                if (imported.downloadUrl) mediaUrlsForEvent.push(imported.downloadUrl);
-                else if (imported.url) mediaUrlsForEvent.push(imported.url);
-              } catch (mediaError: any) {
-                // Wikimedia may rate-limit backend downloads (429). In that case, keep the Wikimedia URL as-is
-                // (client can load it directly) instead of falling back to random sources.
-                const msg = String(mediaError?.message || '');
-                const isWikimedia = typeof primaryUrl === 'string' && (() => { try { return new URL(primaryUrl).host === 'upload.wikimedia.org'; } catch { return false; } })();
-                if (isWikimedia && msg.includes('429') && isLikelyRasterImageUrl(primaryUrl)) {
-                  console.warn(`[AgentFeedAnswerReceivedListener] Wikimedia import rate-limited (429) for ${primaryUrl}; using external URL directly.`);
-                  chosenImage = { source: 'external_url', sourceUrl: primaryUrl, query: searchedQueryUsed || imageSearchQuery.trim() || undefined };
-                  mediaUrlsForEvent.push(primaryUrl);
-                } else {
-                console.error(`[AgentFeedAnswerReceivedListener] Error importing media from ${primaryUrl}, trying fallback URL:`, mediaError.message);
+            }
 
-                // Try a robust fallback that reliably resolves to an image
-                const fallbackUrl = buildWebImageFallbackUrl(post.content || '', `${scanId}:${primaryUrl}:${post.content || ''}`);
-                chosenImage = { source: 'loremflickr', sourceUrl: fallbackUrl, query: deriveKeywordsFromText(String(post.content || '')) || undefined };
-                try {
-                  const importedFallback = await importImageFromUrl({
-                    userId: ownerUserId,
-                    agentId,
-                    sourceUrl: fallbackUrl,
-                    container: 'posts',
-                    expiresSeconds: 7200,
-                  });
-                  mediaIds.push(importedFallback.id);
-                  if (importedFallback.downloadUrl) mediaUrlsForEvent.push(importedFallback.downloadUrl);
-                  else if (importedFallback.url) mediaUrlsForEvent.push(importedFallback.url);
-                } catch (fallbackError: any) {
-                  // Last resort: keep external URL only if it looks safe
-                  console.error(`[AgentFeedAnswerReceivedListener] Fallback import also failed (${fallbackUrl}); using external URL if safe:`, fallbackError.message);
-                  if (typeof primaryUrl === 'string' && isLikelyRasterImageUrl(primaryUrl)) {
-                    chosenImage = { source: 'external_url', sourceUrl: primaryUrl, query: searchedQueryUsed || imageSearchQuery.trim() || undefined };
-                    mediaUrlsForEvent.push(primaryUrl);
-                  } else if (typeof fallbackUrl === 'string' && isLikelyRasterImageUrl(fallbackUrl)) {
-                    chosenImage = { source: 'external_url', sourceUrl: fallbackUrl, query: undefined };
-                    mediaUrlsForEvent.push(fallbackUrl);
-                  }
-                }
-                }
-              }
+            if (!finalUrl) {
+              // Last resort fallback: stable public image URL that always resolves (may be irrelevant).
+              finalUrl = `https://picsum.photos/seed/${encodeURIComponent(`${scanId}:${post.content || ''}`)}/1024/768`;
+              pickedFrom = 'picsum';
+            }
+
+            // Import the chosen public URL into our storage (Azure) via media service.
+            // This gives us a stable mediaId and allows returning signed SAS URLs to clients.
+            try {
+              const imported = await importImageFromUrl({
+                userId: ownerUserId,
+                agentId,
+                sourceUrl: finalUrl,
+                container: 'posts',
+                expiresSeconds: 7200,
+              });
+              mediaIds.push(imported.id);
+              if (imported.downloadUrl) mediaUrlsForEvent.push(imported.downloadUrl);
+              else if (imported.url) mediaUrlsForEvent.push(imported.url);
+              chosenImage = {
+                source: (pickedFrom || 'openverse') as any,
+                sourceUrl: finalUrl,
+                storedMediaId: imported.id,
+                storedUrl: imported.url,
+              } as any;
+            } catch (err: any) {
+              // If import fails, fall back to external URL (best-effort).
+              console.warn(`[AgentFeedAnswerReceivedListener] Failed to import image into storage (scanId ${scanId}); using external URL`, {
+                error: err?.message,
+                url: finalUrl?.slice(0, 140),
+              });
+              chosenImage = { source: (pickedFrom || 'external_url') as any, sourceUrl: finalUrl } as any;
+              mediaUrlsForEvent.push(finalUrl);
             }
 
             const draft = await draftHandler.createPostDraft({
               agentId,
               ownerUserId,
               content: post.content,
+              // Store media IDs when available (preferred). If import failed, store URL for backward compatibility.
               mediaIds:
                 mediaIds.length > 0
                   ? mediaIds
                   : mediaUrlsForEvent.length > 0
-                    ? mediaUrlsForEvent // fallback to URL strings only if we have an explicit AI-provided URL
+                    ? mediaUrlsForEvent
                     : undefined,
               visibility: (post.visibility as Visibility) || Visibility.Public,
               metadata: ({

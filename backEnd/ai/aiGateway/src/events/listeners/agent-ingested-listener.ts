@@ -198,6 +198,9 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
     
     enhancedInstructions = enhancedInstructions + chatInstructions;
 
+    // NOTE: Image sourcing is handled by backend search (query -> URL). Do not instruct the assistant
+    // to provide image URLs directly here.
+
     // If no character attributes and no base prompt, ensure we at least have the agent name
     if (!enhancedInstructions.trim() && agentName) {
       enhancedInstructions = `You are ${agentName}.`;

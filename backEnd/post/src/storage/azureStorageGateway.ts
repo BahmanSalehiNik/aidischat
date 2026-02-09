@@ -55,6 +55,12 @@ export class ReadOnlyAzureStorageGateway {
   parseBlobUrl(blobUrl: string): { container: string; blobName: string } | null {
     try {
       const url = new URL(blobUrl);
+      // Only accept URLs that actually point to THIS storage account.
+      // Otherwise we might accidentally "sign" arbitrary external URLs and generate broken SAS URLs.
+      const expectedHost = `${this.account}.blob.core.windows.net`;
+      if (url.host !== expectedHost) {
+        return null;
+      }
       const pathParts = url.pathname.split('/').filter(Boolean);
       if (pathParts.length < 2) {
         return null;

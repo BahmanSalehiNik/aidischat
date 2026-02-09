@@ -1,5 +1,5 @@
-import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, Switch, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, Alert, Image } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore, Theme } from '../../store/themeStore';
@@ -9,12 +9,42 @@ import { SettingsHeader } from '../../components/settings/SettingsHeader';
 import { SettingsSection } from '../../components/settings/SettingsSection';
 import { SettingRow } from '../../components/settings/SettingRow';
 import { ThemeOptions } from '../../components/settings/ThemeOptions';
+import { mediaApi, profileApi } from '../../utils/api';
+import { useCallback, useState } from 'react';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const { theme, setTheme } = useThemeStore();
   const insets = useSafeAreaInsets();
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  const loadAvatar = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      // Respect "no avatar": if profilePicture is cleared, show placeholder even if photos exist.
+      const res = await profileApi.getUserProfileView(String(user.id));
+      const p = (res as any)?.profile || res;
+      const canonical = p?.profilePicture?.url;
+      if (!canonical) {
+        setAvatarUrl(null);
+        return;
+      }
+
+      const list = await mediaApi.listByOwner(String(user.id), 'profile', { limit: 1, expiresSeconds: 60 * 60 * 6 });
+      const first = Array.isArray(list) && list.length ? list[0] : null;
+      const url = first?.downloadUrl || first?.url || null;
+      setAvatarUrl(url ? String(url) : null);
+    } catch {
+      setAvatarUrl(null);
+    }
+  }, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadAvatar();
+    }, [loadAvatar])
+  );
 
   const handleLogout = () => {
     Alert.alert(
@@ -45,7 +75,29 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <SettingsHeader topInset={Math.max(insets.top, 12)} onBack={() => router.back()} />
+      <SettingsHeader
+        topInset={Math.max(insets.top, 12)}
+        onBack={() => router.back()}
+        rightElement={
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => {
+              if (!user?.id) return;
+              router.push({
+                pathname: '/(main)/EntityProfileScreen',
+                params: { entityType: 'user', entityId: String(user.id) },
+              });
+            }}
+            style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F2F2F7', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}
+          >
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={{ width: '100%', height: '100%' }} />
+            ) : (
+              <Ionicons name="person" size={18} color="#8E8E93" />
+            )}
+          </TouchableOpacity>
+        }
+      />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <SettingsSection title="Account">

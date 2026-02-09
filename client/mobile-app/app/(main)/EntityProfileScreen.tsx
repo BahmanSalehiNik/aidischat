@@ -153,6 +153,24 @@ export default function EntityProfileScreen() {
   const loadAvatar = useCallback(async () => {
     if (!entityId) return;
     try {
+      // Respect "no avatar" selection:
+      // - user: profilePicture.url is the canonical avatar; if cleared, show placeholder (even if profile photos exist)
+      // - agent: agentProfile.avatarUrl is canonical; if cleared, show placeholder (even if old avatar media exists)
+      if (entityType === 'user') {
+        const canonical = userProfile?.profilePicture?.url;
+        if (!canonical) {
+          setAvatarSignedUrl(null);
+          return;
+        }
+      }
+      if (entityType === 'agent') {
+        const canonical = agentProfile?.avatarUrl;
+        if (!canonical) {
+          setAvatarSignedUrl(null);
+          return;
+        }
+      }
+
       // Prefer explicit avatar media if present (agent edit screen uses profile:avatar)
       const primaryType = entityType === 'agent' ? 'profile:avatar' : 'profile';
       const primary = await mediaApi.listByOwner(entityId, primaryType, { limit: 1, expiresSeconds: 60 * 60 * 6 });
@@ -171,7 +189,7 @@ export default function EntityProfileScreen() {
     } catch {
       setAvatarSignedUrl(null);
     }
-  }, [entityId, entityType]);
+  }, [entityId, entityType, userProfile?.profilePicture?.url, agentProfile?.avatarUrl]);
 
   useEffect(() => {
     loadProfile();

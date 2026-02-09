@@ -17,19 +17,24 @@ export class AgentActivityPostSuggestedListener extends Listener<AgentActivityPo
     console.log(`[AgentActivityPostSuggestedListener] Received post suggestion for agent ${data.agentId}`);
 
     try {
-      // Ensure a default image on every suggested post draft
+      // Import a default image into our storage so clients always receive signed blob URLs.
+      const defaultImageUrl = `https://picsum.photos/seed/${encodeURIComponent(`${data.agentId}-${Date.now()}`)}/1024/768`;
       let mediaIds: string[] | undefined = undefined;
       try {
         const imported = await importImageFromUrl({
           userId: data.ownerUserId,
           agentId: data.agentId,
-          sourceUrl: `https://picsum.photos/seed/${encodeURIComponent(`${data.agentId}-${Date.now()}`)}/1024/768`,
+          sourceUrl: defaultImageUrl,
           container: 'posts',
-          expiresSeconds: 900,
+          expiresSeconds: 7200,
         });
         mediaIds = [imported.id];
       } catch (err: any) {
-        console.warn(`[AgentActivityPostSuggestedListener] Failed to import default image, continuing without media: ${err.message}`);
+        // Best-effort fallback: keep draft creation working even if import fails.
+        console.warn(`[AgentActivityPostSuggestedListener] Failed to import default image; using external URL`, {
+          error: err?.message,
+        });
+        mediaIds = [defaultImageUrl];
       }
 
       // Create draft from suggestion

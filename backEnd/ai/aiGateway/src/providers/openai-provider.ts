@@ -254,6 +254,7 @@ export class OpenAIProvider extends BaseAiProvider {
     try {
       // Convert tools format if provided
       const tools: any[] = [];
+
       if (request.tools && request.tools.length > 0) {
         // OpenAI expects tools in a specific format
         // For now, we'll support function calling tools

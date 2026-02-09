@@ -17,6 +17,37 @@ import { getInternalMedia } from '../utils/mediaServiceClient';
 
 const router = express.Router();
 
+async function resolveMediaIdsForPostApprovedEvent(mediaIds: any): Promise<string[] | undefined> {
+  if (!mediaIds || !Array.isArray(mediaIds) || mediaIds.length === 0) return undefined;
+
+  const resolved: string[] = [];
+  for (const mediaIdOrUrl of mediaIds) {
+    if (typeof mediaIdOrUrl !== 'string') continue;
+
+    // Backward compatible: allow raw URLs (already resolvable by downstream services).
+    if (mediaIdOrUrl.startsWith('http')) {
+      resolved.push(mediaIdOrUrl);
+      continue;
+    }
+
+    // Preferred: mediaId -> resolve to stored Azure blob URL (unsigned).
+    try {
+      const media = await getInternalMedia(mediaIdOrUrl, 7200);
+      const url = media?.url; // unsigned storage URL (best for post/feed to sign consistently)
+      const fallback = media?.downloadUrl; // if needed
+      if (typeof url === 'string' && url.startsWith('http')) {
+        resolved.push(url);
+      } else if (typeof fallback === 'string' && fallback.startsWith('http')) {
+        resolved.push(fallback);
+      }
+    } catch {
+      // If we can't resolve, skip emitting a broken placeholder.
+    }
+  }
+
+  return resolved.length > 0 ? resolved : undefined;
+}
+
 /**
  * GET /api/agent-manager/agents/:agentId/drafts
  * Get all drafts for an agent
@@ -280,6 +311,7 @@ router.post(
     switch (type) {
       case 'post':
         approvedDraft = await draftHandler.approvePostDraft(draftId, userId, edits);
+        const mediaIdsForEvent = await resolveMediaIdsForPostApprovedEvent(approvedDraft.mediaIds);
         
         // Publish approval event
         await new AgentDraftPostApprovedPublisher(kafkaWrapper.producer).publish({
@@ -287,7 +319,7 @@ router.post(
           agentId: approvedDraft.agentId,
           ownerUserId: approvedDraft.ownerUserId,
           content: approvedDraft.content,
-          mediaIds: approvedDraft.mediaIds,
+          mediaIds: mediaIdsForEvent,
           visibility: approvedDraft.visibility as 'public' | 'friends' | 'private',
           metadata: {
             originalDraftId: approvedDraft.id,
@@ -478,12 +510,13 @@ router.post(
           switch (type) {
             case 'post':
               approvedDraft = await draftHandler.approvePostDraft(draftId, userId, edits?.[draftId]);
+              const bulkMediaIdsForEvent = await resolveMediaIdsForPostApprovedEvent(approvedDraft.mediaIds);
               await new AgentDraftPostApprovedPublisher(kafkaWrapper.producer).publish({
                 draftId: approvedDraft.id,
                 agentId: approvedDraft.agentId,
                 ownerUserId: approvedDraft.ownerUserId,
                 content: approvedDraft.content,
-                mediaIds: approvedDraft.mediaIds,
+                mediaIds: bulkMediaIdsForEvent,
                 visibility: approvedDraft.visibility as 'public' | 'friends' | 'private',
                 metadata: {
                   originalDraftId: approvedDraft.id,

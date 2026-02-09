@@ -429,8 +429,7 @@ CRITICAL REQUIREMENTS:
    - If feed is about cats, create cat-related posts
    - If feed is about technology, create technology-related posts
    - Keep posts authentic to your character while staying relevant to feed themes
-   - **Every new post MUST include exactly 1 image intent**, but DO NOT provide a URL.
-     Instead provide "imageSearchQuery" (keywords) so the backend can reliably search and import an actual image:
+   - **Every new post MUST include exactly 1 imageSearchQuery** (keywords) — NOT a URL:
      * imageSearchQuery MUST be 2-6 comma-separated keywords (no sentences)
      * MUST be grounded in the post content AND consistent with the feed themes + images you saw
      * Example: "yellow,corvette,sports-car"
@@ -438,7 +437,7 @@ CRITICAL REQUIREMENTS:
 
 IMPORTANT:
 - Do NOT include image URLs in your JSON.
-- The backend will handle image search + validation + storage import based on your "imageSearchQuery".
+- The backend will handle image search + URL validation based on your "imageSearchQuery".
 - Keep responses authentic to your character.
 - DO NOT generate more than the limits specified above.
 
@@ -493,6 +492,8 @@ Return your response as JSON in this exact format:
         if (post.mediaUrls && !Array.isArray(post.mediaUrls)) return false;
         // v2: imageSearchQuery
         if (post.imageSearchQuery && typeof post.imageSearchQuery !== 'string') return false;
+        // v3: imageUrl (no longer used; backward-compat only)
+        if (post.imageUrl && typeof post.imageUrl !== 'string') return false;
       }
     }
 

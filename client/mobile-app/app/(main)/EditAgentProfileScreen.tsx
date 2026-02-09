@@ -30,9 +30,15 @@ export default function EditAgentProfileScreen() {
 
   const canSave = useMemo(() => Boolean(profileId && (name.trim() || displayName.trim())), [profileId, name, displayName]);
 
-  const loadAvatarDisplay = useCallback(async () => {
+  const loadAvatarDisplay = useCallback(async (canonicalAvatarUrl?: string | null) => {
     if (!agentId) return;
     try {
+      // If profile explicitly has no avatarUrl, respect it and show placeholder (even if old avatar media exists).
+      const canonical = canonicalAvatarUrl !== undefined ? canonicalAvatarUrl : avatarStorageUrl;
+      if (!canonical) {
+        setAvatarDisplayUrl(undefined);
+        return;
+      }
       // Prefer explicit avatar media if present, else fallback to latest profile photo
       const primary = await mediaApi.listByOwner(agentId, 'profile:avatar', { limit: 1, expiresSeconds: 60 * 60 * 6 });
       const firstPrimary = Array.isArray(primary) && primary.length ? primary[0] : null;
@@ -47,7 +53,7 @@ export default function EditAgentProfileScreen() {
     } catch {
       setAvatarDisplayUrl(undefined);
     }
-  }, [agentId]);
+  }, [agentId, avatarStorageUrl]);
 
   const load = useCallback(async () => {
     if (!agentId) {
@@ -69,9 +75,10 @@ export default function EditAgentProfileScreen() {
       setTitle(String(ap?.title || ''));
       setProfession(String(ap?.profession || ''));
       setBackstory(String(ap?.backstory || ''));
-      setAvatarStorageUrl(ap?.avatarUrl ? String(ap.avatarUrl) : undefined);
+      const canonicalAvatar = ap?.avatarUrl ? String(ap.avatarUrl) : undefined;
+      setAvatarStorageUrl(canonicalAvatar);
       // Ensure we show the avatar immediately and consistently (signed URL from media service)
-      await loadAvatarDisplay();
+      await loadAvatarDisplay(canonicalAvatar);
     } catch (err: any) {
       console.error('Failed to load agent profile:', err?.message || err);
       Alert.alert('Error', 'Failed to load agent profile');
@@ -127,7 +134,7 @@ export default function EditAgentProfileScreen() {
       // Update agent profile avatarUrl (used in headers/cards)
       await agentsApi.updateProfile(profileId, { avatarUrl: storageUrl });
       setAvatarStorageUrl(storageUrl);
-      await loadAvatarDisplay();
+      await loadAvatarDisplay(storageUrl);
       Alert.alert('Updated', 'Agent avatar updated.');
     } catch (err: any) {
       const msg = String(err?.message || '');
@@ -142,6 +149,31 @@ export default function EditAgentProfileScreen() {
       }
     }
   }, [agentId, profileId, loadAvatarDisplay]);
+
+  const removeAvatar = useCallback(async () => {
+    if (!profileId) return;
+    Alert.alert('Remove avatar?', 'This will remove the agent icon photo. You can set it again anytime.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setSaving(true);
+            // Clear avatarUrl in agent profile; all screens will respect this and show placeholder.
+            await agentsApi.updateProfile(profileId, { avatarUrl: null });
+            setAvatarStorageUrl(undefined);
+            setAvatarDisplayUrl(undefined);
+            Alert.alert('Updated', 'Agent avatar removed.');
+          } catch (err: any) {
+            Alert.alert('Error', err?.message || 'Failed to remove avatar');
+          } finally {
+            setSaving(false);
+          }
+        },
+      },
+    ]);
+  }, [profileId]);
 
   const onSave = useCallback(async () => {
     if (!canSave) {
@@ -214,6 +246,9 @@ export default function EditAgentProfileScreen() {
               )}
             </View>
             <Text style={{ marginTop: 10, color: '#007AFF', fontWeight: '700' }}>Change avatar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={removeAvatar} disabled={saving} style={{ marginTop: 10 }}>
+            <Text style={{ color: saving ? '#C7C7CC' : '#FF3B30', fontWeight: '700' }}>No photo (remove)</Text>
           </TouchableOpacity>
         </View>
 

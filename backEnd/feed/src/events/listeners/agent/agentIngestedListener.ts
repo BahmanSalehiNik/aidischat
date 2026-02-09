@@ -28,6 +28,8 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
     const character: any = (data as any).character;
     const name = character?.displayName || character?.name;
     const avatarUrl = character?.avatarUrl;
+    const hasAvatarField =
+      character && Object.prototype.hasOwnProperty.call(character, 'avatarUrl');
 
     if (!agentId) {
       await this.ack();
@@ -39,19 +41,30 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
       // crash the consumer on OCC conflicts. We therefore update via updateOne (no save() OCC),
       // and only move forward when incomingVersion is newer than what's stored.
       if (incomingVersion !== undefined) {
+        const $set: any = {
+          isAgent: true,
+          ownerUserId,
+          displayName: typeof name === 'string' ? name.trim() : undefined,
+          version: incomingVersion,
+        };
+        const $unset: any = {};
+        if (hasAvatarField) {
+          if (typeof avatarUrl === 'string' && avatarUrl.trim()) {
+            $set.avatarUrl = avatarUrl.trim();
+          } else {
+            // Explicitly cleared in event -> remove from projection (do not keep stale value)
+            $unset.avatarUrl = '';
+          }
+        }
+
         await User.updateOne(
           {
             _id: agentId,
             $or: [{ version: { $exists: false } }, { version: { $lt: incomingVersion } }],
           },
           {
-            $set: {
-              isAgent: true,
-              ownerUserId,
-              displayName: typeof name === 'string' ? name.trim() : undefined,
-              avatarUrl: typeof avatarUrl === 'string' ? avatarUrl.trim() : undefined,
-              version: incomingVersion,
-            },
+            $set,
+            ...(Object.keys($unset).length ? { $unset } : {}),
             $setOnInsert: {
               email: undefined,
               status: 'active',
@@ -65,15 +78,24 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
       }
 
       // No version: best-effort upsert.
+      const $set: any = {
+        isAgent: true,
+        ownerUserId,
+        displayName: typeof name === 'string' ? name.trim() : undefined,
+      };
+      const $unset: any = {};
+      if (hasAvatarField) {
+        if (typeof avatarUrl === 'string' && avatarUrl.trim()) {
+          $set.avatarUrl = avatarUrl.trim();
+        } else {
+          $unset.avatarUrl = '';
+        }
+      }
       await User.updateOne(
         { _id: agentId },
         {
-          $set: {
-            isAgent: true,
-            ownerUserId,
-            displayName: typeof name === 'string' ? name.trim() : undefined,
-            avatarUrl: typeof avatarUrl === 'string' ? avatarUrl.trim() : undefined,
-          },
+          $set,
+          ...(Object.keys($unset).length ? { $unset } : {}),
           $setOnInsert: {
             email: undefined,
             status: 'active',

@@ -1,14 +1,15 @@
-import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl, Image, Alert } from 'react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useState, useEffect, useCallback } from 'react';
-import { authApi, postApi, chatHistoryApi, ChatSession } from '../../utils/api';
+import { authApi, postApi, chatHistoryApi, ChatSession, mediaApi, profileApi, agentsApi, AgentWithProfile } from '../../utils/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PostCard, Post } from '../../components/feed/PostCard';
 import { profileScreenStyles as styles } from '../../styles/profile/profileScreenStyles';
 import { PostDetailModal } from './PostDetailModal';
 import { SessionItem } from '../../components/chat/SessionItem';
+import { AgentCard } from '../../components/agents/AgentCard';
 
 type TabType = 'posts' | 'agents' | 'friends' | 'chatHistory';
 
@@ -17,6 +18,7 @@ export default function ProfileScreen() {
   const params = useLocalSearchParams<{ activeTab?: string }>();
   const { user } = useAuthStore();
   const [profileData, setProfileData] = useState<any>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('posts');
 
@@ -29,6 +31,8 @@ export default function ProfileScreen() {
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [agents, setAgents] = useState<AgentWithProfile[]>([]);
+  const [loadingAgents, setLoadingAgents] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [showPostModal, setShowPostModal] = useState(false);
   const insets = useSafeAreaInsets();
@@ -64,6 +68,27 @@ export default function ProfileScreen() {
     loadProfile();
   }, []);
 
+  const loadAvatar = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      // Respect "no avatar" choice: if profilePicture is cleared, show placeholder even if photos exist.
+      const res = await profileApi.getUserProfileView(String(user.id));
+      const p = (res as any)?.profile || res;
+      const canonical = p?.profilePicture?.url;
+      if (!canonical) {
+        setAvatarUrl(null);
+        return;
+      }
+
+      const list = await mediaApi.listByOwner(String(user.id), 'profile', { limit: 1, expiresSeconds: 60 * 60 * 6 });
+      const first = Array.isArray(list) && list.length ? list[0] : null;
+      const url = first?.downloadUrl || first?.url || null;
+      setAvatarUrl(url ? String(url) : null);
+    } catch {
+      setAvatarUrl(null);
+    }
+  }, [user?.id]);
+
   const loadChatHistory = useCallback(async () => {
     if (!user?.id) return;
     
@@ -85,23 +110,44 @@ export default function ProfileScreen() {
     }
   }, [user?.id]);
 
+  const loadAgents = useCallback(async () => {
+    try {
+      setLoadingAgents(true);
+      const data = await agentsApi.getAgents();
+      const list = Array.isArray(data) ? data : [];
+      setAgents(list);
+      setCounts((prev) => ({ ...prev, agents: list.length }));
+    } catch (error: any) {
+      console.error('Error loading agents:', error);
+      setAgents([]);
+    } finally {
+      setLoadingAgents(false);
+      setRefreshing(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeTab === 'posts' && user?.id) {
       loadUserPosts();
     } else if (activeTab === 'chatHistory' && user?.id) {
       loadChatHistory();
+    } else if (activeTab === 'agents' && user?.id) {
+      loadAgents();
     }
   }, [activeTab, user?.id, loadUserPosts, loadChatHistory]);
 
   // Reload data when tab becomes active
   useFocusEffect(
     useCallback(() => {
+      loadAvatar();
       if (activeTab === 'posts' && user?.id) {
         loadUserPosts();
       } else if (activeTab === 'chatHistory' && user?.id) {
         loadChatHistory();
+      } else if (activeTab === 'agents' && user?.id) {
+        loadAgents();
       }
-    }, [activeTab, user?.id, loadUserPosts, loadChatHistory])
+    }, [activeTab, user?.id, loadUserPosts, loadChatHistory, loadAvatar])
   );
 
   const loadProfile = async () => {
@@ -122,6 +168,8 @@ export default function ProfileScreen() {
       loadUserPosts();
     } else if (activeTab === 'chatHistory') {
       loadChatHistory();
+    } else if (activeTab === 'agents') {
+      loadAgents();
     } else {
       setRefreshing(false);
     }
@@ -215,9 +263,20 @@ export default function ProfileScreen() {
                 });
               }}
             >
-              <Ionicons name="person-circle" size={100} color="#C7C7CC" />
+              <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: '#F2F2F7', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
+                {avatarUrl ? (
+                  <Image source={{ uri: avatarUrl }} style={{ width: '100%', height: '100%' }} />
+                ) : (
+                  <Ionicons name="person" size={54} color="#C7C7CC" />
+                )}
+              </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.editAvatarButton}>
+            <TouchableOpacity
+              style={styles.editAvatarButton}
+              onPress={() => {
+                router.push('/(main)/EditUserProfileScreen');
+              }}
+            >
               <Ionicons name="camera" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
@@ -364,21 +423,53 @@ export default function ProfileScreen() {
                 <Text style={styles.sectionTitle}>Agents</Text>
                 <Text style={styles.sectionCount}>{counts.agents} agents</Text>
               </View>
-              <View style={styles.emptyState}>
-                <Ionicons name="sparkles" size={64} color="#C7C7CC" />
-                <Text style={styles.emptyStateTitle}>No Agents Yet</Text>
-                <Text style={styles.emptyStateText}>
-                  Create your first AI agent to get started
-                </Text>
-                <TouchableOpacity
-                  style={styles.emptyStateButton}
-                  onPress={() => {
-                    // TODO: Navigate to create agent screen
-                  }}
-                >
-                  <Text style={styles.emptyStateButtonText}>Create Agent</Text>
-                </TouchableOpacity>
-              </View>
+              {loadingAgents ? (
+                <View style={styles.postsLoadingContainer}>
+                  <ActivityIndicator size="large" color="#007AFF" />
+                </View>
+              ) : agents.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="sparkles-outline" size={64} color="#C7C7CC" />
+                  <Text style={styles.emptyStateTitle}>No Agents Yet</Text>
+                  <Text style={styles.emptyStateText}>Create your first AI agent to get started</Text>
+                  <TouchableOpacity style={styles.emptyStateButton} onPress={() => router.push('/(main)/CreateAgentScreen')}>
+                    <Text style={styles.emptyStateButtonText}>Create Agent</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={{ gap: 12 }}>
+                  {agents.map((item) => (
+                    <AgentCard
+                      key={item.agent.id}
+                      agent={item}
+                      onPress={() => {
+                        router.push({
+                          pathname: '/(main)/AgentDetailScreen',
+                          params: { agentId: item.agent.id },
+                        });
+                      }}
+                      onProfilePress={() => {
+                        router.push({
+                          pathname: '/(main)/EntityProfileScreen',
+                          params: { entityType: 'agent', entityId: String(item.agent.id) },
+                        });
+                      }}
+                      onEdit={() => {
+                        const agentId = item.agent.id;
+                        const profileId = item.agent.agentProfileId;
+                        if (!agentId || !profileId) {
+                          Alert.alert('Error', 'Agent profile is not ready yet. Please try again in a moment.');
+                          return;
+                        }
+                        router.push({
+                          pathname: '/(main)/EditAgentProfileScreen',
+                          params: { agentId: String(agentId), profileId: String(profileId) },
+                        });
+                      }}
+                    />
+                  ))}
+                </View>
+              )}
             </View>
           )}
 

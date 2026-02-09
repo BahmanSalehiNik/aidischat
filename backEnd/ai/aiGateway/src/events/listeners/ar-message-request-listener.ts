@@ -72,33 +72,11 @@ export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
       threadId = await this.getOrCreateThread(roomId, agentId, assistantId, apiKey);
     }
 
-    // Build system prompt with AR marker instructions
+    // Build system prompt (AR mode: no special avatar/marker instructions)
     // characterAttributes might be in metadata, otherwise use empty
     const characterAttributes = (agentProfile.metadata?.characterAttributes || agentProfile.metadata?.character) as CharacterAttributes | undefined;
     const baseSystemPrompt = PromptBuilder.buildSystemPrompt(agentProfile.systemPrompt || '', characterAttributes);
-    
-    const arSystemPrompt = `${baseSystemPrompt}
-
-=== AR VIDEO CHAT MODE ACTIVATED ===
-You are in an AR video chat conversation. The 3D avatar and TTS system REQUIRE emotion and movement markers in your responses.
-
-MANDATORY MARKER FORMAT (use EXACTLY this format with single quotes):
-- Emotion markers: ['happy'], ['sad'], ['angry'], ['surprised'], ['calm'], ['excited'], ['thoughtful'], ['concerned'], ['neutral']
-- Movement markers: ['idle'], ['thinking'], ['smiling'], ['frown'], ['talking'], ['listening'], ['wave'], ['nod'], ['point']
-
-CRITICAL RULES:
-1. EVERY response MUST start with: ['emotion']['movement'] followed by your text
-2. When your emotion or movement changes, add new markers: ['newemotion']['newmovement']text
-3. Use the EXACT format shown above - single quotes inside square brackets
-4. Do NOT skip markers - they are required for the 3D avatar to function
-5. Place markers at the beginning of phrases where emotion/movement applies
-
-REQUIRED EXAMPLES (copy this format exactly):
-['happy']['smiling']Hello! How are you doing today?
-['thoughtful']['thinking']Let me think about that... ['excited']['talking']I have a great idea!
-['calm']['listening']I understand. ['happy']['nod']That sounds wonderful!
-
-WARNING: If you do not include markers, the 3D avatar will not display emotions or movements correctly. Always start with ['emotion']['movement'] before your text.`;
+    const arSystemPrompt = baseSystemPrompt;
 
     // Publish stream start event
     await new ARStreamStartPublisher(kafkaWrapper.producer).publish({
@@ -112,23 +90,17 @@ WARNING: If you do not include markers, the 3D avatar will not display emotions 
 
     console.log(`✅ [ARMessageRequestListener] Published AR stream start for message ${messageId}`);
 
-    // Stream response with markers
+    // Stream response (plain text; no avatar/marker prompt injection)
     let chunkIndex = 0;
     let fullContent = '';
 
     try {
       // Check if provider supports streaming
       if (typeof (provider as any).streamResponse === 'function') {
-        // For OpenAI Assistants API, prepend AR instructions to the user message
-        // since system prompt might not be applied during streaming
-        const messageWithARInstructions = agentProfile.modelProvider === 'openai' && assistantId
-          ? `[AR MODE: You MUST use emotion and movement markers in ['value'] format. Start with ['emotion']['movement'] before your text. Example: ['happy']['smiling']Hello!]\n\n${userMessage}`
-          : userMessage;
-        
         // Use streaming method
         await (provider as any).streamResponse(
           {
-            message: messageWithARInstructions,
+            message: userMessage,
             systemPrompt: arSystemPrompt,
             modelName: agentProfile.modelName,
             temperature: 0.7,
@@ -139,11 +111,6 @@ WARNING: If you do not include markers, the 3D avatar will not display emotions 
           async (chunk: string) => {
             if (chunk) {
               fullContent += chunk;
-              
-              // Log chunk content to debug marker generation
-              if (chunkIndex === 0 || chunk.includes("['") || chunk.includes("]")) {
-                console.log(`🎭 [ARMessageRequestListener] Chunk ${chunkIndex}:`, chunk.substring(0, 200));
-              }
               
               // Publish chunk event
               await new ARStreamChunkPublisher(kafkaWrapper.producer).publish({
@@ -178,20 +145,11 @@ WARNING: If you do not include markers, the 3D avatar will not display emotions 
         }
 
         fullContent = response.content;
-        
-        // Log full response to debug marker generation
-        console.log(`🎭 [ARMessageRequestListener] Full AI response (first 500 chars):`, fullContent.substring(0, 500));
-        console.log(`🎭 [ARMessageRequestListener] Contains markers:`, /\[['"]/.test(fullContent));
 
         // Split into chunks (simulate streaming)
         const chunkSize = 50; // Characters per chunk
         for (let i = 0; i < fullContent.length; i += chunkSize) {
           const chunk = fullContent.substring(i, i + chunkSize);
-          
-          // Log first chunk to see if markers are present
-          if (chunkIndex === 0) {
-            console.log(`🎭 [ARMessageRequestListener] First chunk:`, chunk);
-          }
           
           await new ARStreamChunkPublisher(kafkaWrapper.producer).publish({
             streamId,
