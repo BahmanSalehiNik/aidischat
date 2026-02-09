@@ -7,6 +7,7 @@ const GroupIdFreindshipAccepted = "post-friendship-accepted";
 const GroupIdFreindshipRequested = "post-friendship-requested";
 const GroupIdFreindshipUpdated = "post-friendship-updated";
 const GroupIdMediaCreated = "post-media-created";
+const GroupIdAgentIngested = "post-agent-ingested";
 
 export { 
     PostQueueGroupeName, 
@@ -17,5 +18,6 @@ export {
     GroupIdFreindshipAccepted,
     GroupIdFreindshipRequested,
     GroupIdFreindshipUpdated,
-    GroupIdMediaCreated
+    GroupIdMediaCreated,
+    GroupIdAgentIngested
 };

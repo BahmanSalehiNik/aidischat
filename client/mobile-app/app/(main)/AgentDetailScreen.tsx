@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicat
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { agentsApi, AgentWithProfile } from '../../utils/api';
+import { agentsApi, AgentWithProfile, mediaApi } from '../../utils/api';
 import { formatBreedLabel } from '../../constants/agentConstants';
 
 const getStatusColor = (status: string) => {
@@ -38,12 +38,45 @@ export default function AgentDetailScreen() {
   const params = useLocalSearchParams<{ agentId: string }>();
   const [agent, setAgent] = useState<AgentWithProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [signedAvatarUrl, setSignedAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (params.agentId) {
       loadAgent();
     }
   }, [params.agentId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const agentId = String(params.agentId || '');
+    const raw = agent?.agentProfile?.avatarUrl;
+    if (!agentId || !raw) {
+      setSignedAvatarUrl(null);
+      return;
+    }
+    if (String(raw).includes('?')) {
+      setSignedAvatarUrl(String(raw));
+      return;
+    }
+    (async () => {
+      try {
+        const primary = await mediaApi.listByOwner(agentId, 'profile:avatar', { limit: 1, expiresSeconds: 60 * 60 * 6 });
+        const firstPrimary = Array.isArray(primary) && primary.length ? primary[0] : null;
+        const fallback = !firstPrimary
+          ? await mediaApi.listByOwner(agentId, 'profile', { limit: 1, expiresSeconds: 60 * 60 * 6 })
+          : null;
+        const firstFallback = Array.isArray(fallback) && fallback?.length ? fallback[0] : null;
+        const m = firstPrimary || firstFallback;
+        const url = m?.downloadUrl || m?.url || raw;
+        if (!cancelled) setSignedAvatarUrl(url ? String(url) : null);
+      } catch {
+        if (!cancelled) setSignedAvatarUrl(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [params.agentId, agent?.agentProfile?.avatarUrl]);
 
   const loadAgent = async () => {
     try {
@@ -98,7 +131,7 @@ export default function AgentDetailScreen() {
         {/* Profile Header */}
         <View style={{ alignItems: 'center', marginBottom: 24 }}>
           {profile?.avatarUrl ? (
-            <Image source={{ uri: profile.avatarUrl }} style={{ width: 120, height: 120, borderRadius: 60, marginBottom: 16 }} />
+            <Image source={{ uri: String(signedAvatarUrl || profile.avatarUrl) }} style={{ width: 120, height: 120, borderRadius: 60, marginBottom: 16 }} />
           ) : (
             <View style={{ width: 120, height: 120, borderRadius: 60, backgroundColor: '#F2F2F7', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
               <Ionicons name="sparkles" size={48} color="#8E8E93" />

@@ -42,7 +42,9 @@ userSchema.statics.build = (attrs: UserAttrs) => {
     _id: attrs.id,
     email: attrs.email,
     status: attrs.status,
-    version: attrs.version
+    version: attrs.version,
+    isAgent: attrs.isAgent ?? false,
+    ownerUserId: attrs.ownerUserId,
   });
 };
 

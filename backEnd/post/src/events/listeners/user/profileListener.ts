@@ -15,7 +15,7 @@ class ProfileCreatedListener extends Listener<ProfileCreatedEvent>{
             throw new NotFoundError();
         }
         
-        const profile = await Profile.build({
+        const profile: any = Profile.build({
             id: processedMessage.id,
             userId: user.id,
             username: processedMessage.username,
@@ -36,10 +36,16 @@ class ProfileUpdatedListener extends Listener<ProfileUpdatedEvent>{
     
     async onMessage(processedMessage: ProfileUpdatedEvent['data'], msg: EachMessagePayload){
         console.log('Profile updated event received:', processedMessage);
-        const profile = await Profile.findById(processedMessage.id);
-        if(!profile){
-            throw new NotFoundError();
-        }
+        // Upsert: profiles might not exist if created out-of-band or if ProfileCreated was missed.
+        const existing = await Profile.findById(processedMessage.id);
+        const profile: any = existing || Profile.build({
+            id: processedMessage.id,
+            userId: processedMessage.user as any,
+            username: processedMessage.username,
+            avatarUrl: processedMessage.profilePicture?.url,
+            privacy: processedMessage.privacy,
+            version: processedMessage.version
+        } as any);
         
         profile.username = processedMessage.username;
         profile.avatarUrl = processedMessage.profilePicture?.url;

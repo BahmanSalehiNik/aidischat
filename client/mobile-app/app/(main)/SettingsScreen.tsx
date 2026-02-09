@@ -50,6 +50,12 @@ export default function SettingsScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <SettingsSection title="Account">
           <SettingRow
+            icon="create-outline"
+            label="Edit Profile"
+            onPress={() => router.push('/(main)/EditUserProfileScreen')}
+            rightElement={<Ionicons name="chevron-forward" size={20} color="#C7C7CC" />}
+          />
+          <SettingRow
             icon="person-outline"
             label="Email"
             value={user?.email || 'Not available'}

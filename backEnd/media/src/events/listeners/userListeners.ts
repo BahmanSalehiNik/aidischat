@@ -9,8 +9,20 @@ class UserCreatedListener extends Listener<UserCreatedEvent>{
     
     async onMessage(processedMessage: UserCreatedEvent['data'], msg: EachMessagePayload){
         console.log('User created event received:', processedMessage);
-        const user = User.build(processedMessage);
-        await user.save();
+
+        // Upsert to handle duplicate events and allow agents (isAgent/ownerUserId) to be updated safely.
+        const existing = await User.findById(processedMessage.id);
+        if (existing) {
+            existing.email = processedMessage.email;
+            existing.status = processedMessage.status as any;
+            existing.version = processedMessage.version as any;
+            existing.isAgent = (processedMessage as any).isAgent ?? existing.isAgent;
+            existing.ownerUserId = (processedMessage as any).ownerUserId ?? existing.ownerUserId;
+            await existing.save();
+        } else {
+            const user = User.build(processedMessage as any);
+            await user.save();
+        }
         
         // Manual acknowledgment - only after successful save
         await this.ack();

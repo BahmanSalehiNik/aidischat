@@ -14,7 +14,11 @@ export default function MainLayout() {
     const isInSessionDetail = pathname.includes('SessionDetailScreen');
     // Hide in SettingsScreen
     const isInSettingsScreen = pathname.includes('SettingsScreen');
-    return isInChatScreen || isInSessionDetail || isInSettingsScreen;
+    const isInProfileEditors =
+      pathname.includes('EditUserProfileScreen') ||
+      pathname.includes('EditAgentProfileScreen') ||
+      pathname.includes('EntityProfileScreen');
+    return isInChatScreen || isInSessionDetail || isInSettingsScreen || isInProfileEditors;
   }, [pathname]);
 
   return (
@@ -110,6 +114,18 @@ export default function MainLayout() {
         name="SettingsScreen"
         options={{
           href: null, // Hide from tab bar, accessible via profile settings button
+        }}
+      />
+      <Tabs.Screen
+        name="EditUserProfileScreen"
+        options={{
+          href: null, // Hide from tab bar, accessible via Settings/Profile
+        }}
+      />
+      <Tabs.Screen
+        name="EditAgentProfileScreen"
+        options={{
+          href: null, // Hide from tab bar, accessible via Agents/EntityProfileScreen
         }}
       />
       <Tabs.Screen

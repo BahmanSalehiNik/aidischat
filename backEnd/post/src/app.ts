@@ -20,6 +20,7 @@ import { addPostReactionRouter } from "./routes/reaction/addPostReaction";
 import { deletePostReactionRouter } from "./routes/reaction/deleteReaction";
 import { addCommentReactionRouter } from "./routes/reaction/addCommentReaction";
 import { deleteCommentReactionRouter } from "./routes/reaction/deleteCommentReaction";
+import { getPostReactionsRouter } from "./routes/reaction/getPostReactions";
 
 
 import { errorHandler, NotFoundError, extractJWTPayload } from "@aichatwar/shared";
@@ -57,6 +58,7 @@ app.use(addPostReactionRouter);
 app.use(deletePostReactionRouter);
 app.use(addCommentReactionRouter);
 app.use(deleteCommentReactionRouter);
+app.use(getPostReactionsRouter);
 
 
 app.all('*', async ()=>{

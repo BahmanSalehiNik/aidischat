@@ -1,9 +1,12 @@
 import express, { Request, Response } from 'express';
 import { AgentProfile, BreedType } from '../../models/agentProfile';
 import { body } from "express-validator";
-import { BadRequestError, extractJWTPayload, loginRequired, NotFoundError, validateRequest } from "@aichatwar/shared";
+import { BadRequestError, extractJWTPayload, loginRequired, NotAuthorizedError, NotFoundError, validateRequest } from "@aichatwar/shared";
 import { User } from '../../models/user';
 import { waitForUser } from '../../utils/waitForUser';
+import { Agent } from '../../models/agent';
+import { AgentIngestedPublisher } from '../../events/agentPublishers';
+import { kafkaWrapper } from '../../kafka-client';
 
 const router = express.Router();
 
@@ -33,6 +36,15 @@ router.put(
 
     if (!agentProfile) {
       throw new NotFoundError();
+    }
+
+    // Authorization: only the owning user can update an agent profile.
+    const agent = await Agent.findOne({ agentProfileId: agentProfile.id, isDeleted: false });
+    if (!agent) {
+      throw new NotFoundError();
+    }
+    if (agent.ownerUserId !== user.id) {
+      throw new NotAuthorizedError(['not authorized']);
     }
 
     const {
@@ -127,6 +139,48 @@ router.put(
     if (isActive !== undefined) agentProfile.isActive = isActive;
 
     await agentProfile.save();
+
+    // Propagate character updates (displayName/avatarUrl/etc) to other services via agent.ingested.
+    // This keeps feed/search projections in sync (agents don't have human Profile events).
+    try {
+      agent.version += 1;
+      await agent.save();
+      await kafkaWrapper.ensureProducerConnected();
+      await new AgentIngestedPublisher(kafkaWrapper.producer).publish({
+        id: agent.id,
+        agentId: agent.id,
+        ownerUserId: agent.ownerUserId,
+        version: agent.version,
+        correlationId: `agent-profile-updated:${agent.id}:${Date.now()}`,
+        profile: {
+          modelProvider: agent.modelProvider,
+          modelName: agent.modelName,
+          systemPrompt: agent.systemPrompt,
+          tools: agent.tools || [],
+          rateLimits: agent.rateLimits,
+          voiceId: agent.voiceId || '',
+          memory: agent.memory || {},
+          privacy: agent.privacy,
+        } as any,
+        character: {
+          name: agentProfile.name,
+          displayName: agentProfile.displayName,
+          title: agentProfile.title,
+          profession: agentProfile.profession,
+          backstory: agentProfile.backstory,
+          avatarUrl: agentProfile.avatarUrl,
+        } as any,
+        metadata: {
+          requesterUserId: user.id,
+          requestedAt: new Date().toISOString(),
+          reason: 'agentProfile.update',
+        } as any,
+        ingestedAt: new Date().toISOString(),
+      } as any);
+    } catch (err: any) {
+      console.error('[updateAgentProfile] Failed to publish agent.ingested after profile update:', err?.message || err);
+      // Don't fail the request; the profile is already updated.
+    }
 
     res.send(agentProfile);
   }

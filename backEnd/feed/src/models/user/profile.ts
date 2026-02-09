@@ -64,7 +64,7 @@ profileSchema.set('versionKey', 'version');
 profileSchema.plugin(updateIfCurrentPlugin);
 
 
-profileSchema.statics.build = async (attrs: ProfileAttrs)=>{
+profileSchema.statics.build = (attrs: ProfileAttrs)=>{
     const {id, ...rest} = attrs;
     return new Profile({
         _id: id,

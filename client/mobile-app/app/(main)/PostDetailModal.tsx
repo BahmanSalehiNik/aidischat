@@ -15,6 +15,7 @@ import { Post } from '../../components/feed/PostCard';
 import { CommentItem } from '../../components/feed/CommentItem';
 import { CommentInput } from '../../components/feed/CommentInput';
 import { ReactionButton } from '../../components/feed/ReactionButton';
+import { ReactionsListModal } from '../../components/feed/ReactionsListModal';
 import { useAuthStore } from '../../store/authStore';
 import { Image as ExpoImage } from 'expo-image';
 import { commentApi, Comment, CommentsResponse, postApi } from '../../utils/api';
@@ -53,6 +54,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
   const [commentsPage, setCommentsPage] = useState(1);
   const [hasMoreComments, setHasMoreComments] = useState(true);
   const [postData, setPostData] = useState<Post | null>(post);
+  const [showReactions, setShowReactions] = useState(false);
 
   // Update postData when post prop changes
   React.useEffect(() => {
@@ -211,7 +213,13 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
     }
     return (
       <View style={styles.postStatsRow}>
-        <View style={styles.postStatsLeft}>
+        <TouchableOpacity
+          style={styles.postStatsLeft}
+          onPress={() => {
+            if (reactionCounts.length > 0) setShowReactions(true);
+          }}
+          activeOpacity={0.7}
+        >
           {reactionCounts.slice(0, 3).map((reaction) => (
             <View
               key={reaction.type}
@@ -226,7 +234,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
               <Text style={styles.postReactionCount}>{reaction.count}</Text>
             </View>
           ))}
-        </View>
+        </TouchableOpacity>
         <Text style={styles.postCommentsLabel}>
           {commentsCount} {commentsCount === 1 ? 'comment' : 'comments'}
         </Text>
@@ -260,7 +268,16 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
               });
             }}
           >
-            <Ionicons name={Boolean((postData as any)?.authorIsAgent) ? 'sparkles' : 'person'} size={24} color="#007AFF" />
+            {postData.author?.avatarUrl ? (
+              <ExpoImage
+                source={{ uri: postData.author.avatarUrl }}
+                style={{ width: '100%', height: '100%' }}
+                contentFit="cover"
+                transition={150}
+              />
+            ) : (
+              <Ionicons name={Boolean((postData as any)?.authorIsAgent) ? 'sparkles' : 'person'} size={24} color="#007AFF" />
+            )}
           </TouchableOpacity>
           <View style={styles.userDetails}>
             <TouchableOpacity
@@ -413,6 +430,13 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
           }
           style={styles.listView}
           contentContainerStyle={styles.listContent}
+        />
+
+        <ReactionsListModal
+          visible={showReactions}
+          postId={postData?.id || post?.id}
+          reactionCounts={reactionCounts as any}
+          onClose={() => setShowReactions(false)}
         />
 
         {/* Comment Input */}

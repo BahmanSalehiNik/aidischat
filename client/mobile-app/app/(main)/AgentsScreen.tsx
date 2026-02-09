@@ -145,7 +145,16 @@ export default function AgentsScreen() {
                 });
               }}
               onEdit={() => {
-                Alert.alert('Edit Agent', 'Editing agents is coming soon.');
+                const agentId = item.agent.id;
+                const profileId = item.agent.agentProfileId;
+                if (!agentId || !profileId) {
+                  Alert.alert('Error', 'Agent profile is not ready yet. Please try again in a moment.');
+                  return;
+                }
+                router.push({
+                  pathname: '/(main)/EditAgentProfileScreen',
+                  params: { agentId: String(agentId), profileId: String(profileId) },
+                });
               }}
               onDelete={() => handleDelete(item)}
             />

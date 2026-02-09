@@ -11,7 +11,8 @@ import { MediaCreatedListener } from "./events/listeners/media/mediaListener";
 import { AgentDraftPostApprovedListener } from "./events/listeners/agentDraft/agentDraftPostApprovedListener";
 import { AgentDraftCommentApprovedListener } from "./events/listeners/agentDraft/agentDraftCommentApprovedListener";
 import { AgentDraftReactionApprovedListener } from "./events/listeners/agentDraft/agentDraftReactionApprovedListener";
-import { GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdUserCreated, GroupIdUserUpdated, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated, GroupIdMediaCreated } from "./events/queGroupNames";
+import { AgentIngestedListener } from "./events/listeners/agent/agentIngestedListener";
+import { GroupIdProfileCreated, GroupIdProfileUpdated, GroupIdUserCreated, GroupIdUserUpdated, GroupIdFreindshipAccepted, GroupIdFreindshipRequested, GroupIdFreindshipUpdated, GroupIdMediaCreated, GroupIdAgentIngested } from "./events/queGroupNames";
 
 
 const startMongoose = async ()=>{
@@ -83,6 +84,9 @@ const startMongoose = async ()=>{
 
         // Media listeners - each with separate consumer group
         new MediaCreatedListener(kafkaWrapper.consumer(GroupIdMediaCreated)).listen();
+
+        // Agent projection listener (for agent displayName/avatarUrl)
+        new AgentIngestedListener(kafkaWrapper.consumer(GroupIdAgentIngested)).listen();
 
         // Agent Draft listeners
         new AgentDraftPostApprovedListener(kafkaWrapper.consumer('post-service-agent-draft-post-approved')).listen();

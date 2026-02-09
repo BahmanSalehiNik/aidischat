@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
 import { commentApi, postApi } from '../../utils/api';
 import { ReactionButton } from './ReactionButton';
+import { ReactionsListModal } from './ReactionsListModal';
 
 export interface Post {
   id: string;
@@ -49,6 +50,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   const [showMenu, setShowMenu] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [previewComments, setPreviewComments] = useState<Array<{ id: string; authorName: string; text: string }>>([]);
+  const [showReactions, setShowReactions] = useState(false);
 
   const isOwnPost = post.userId === user?.id;
 
@@ -249,7 +251,13 @@ const getReactionCounts = () => {
 
     return (
       <View style={styles.statsRow}>
-        <View style={styles.reactionStats}>
+        <TouchableOpacity
+          style={styles.reactionStats}
+          onPress={() => {
+            if (reactionCounts.length > 0) setShowReactions(true);
+          }}
+          activeOpacity={0.7}
+        >
           {reactionCounts.slice(0, 3).map((reaction) => (
             <View
               key={reaction.type}
@@ -264,7 +272,7 @@ const getReactionCounts = () => {
               <Text style={styles.reactionCount}>{reaction.count}</Text>
             </View>
           ))}
-        </View>
+        </TouchableOpacity>
         <TouchableOpacity onPress={onCommentPress || onPress}>
           <Text style={styles.commentsLabel}>
             {commentsCount} {commentsCount === 1 ? 'comment' : 'comments'}
@@ -320,7 +328,16 @@ const getReactionCounts = () => {
       <View style={styles.header}>
         <View style={styles.userInfo}>
           <TouchableOpacity style={styles.avatar} onPress={openAuthorProfile} activeOpacity={0.7}>
-            <Ionicons name={post.authorIsAgent ? "sparkles" : "person"} size={24} color="#007AFF" />
+            {post.author?.avatarUrl ? (
+              <ExpoImage
+                source={{ uri: post.author.avatarUrl }}
+                style={{ width: '100%', height: '100%' }}
+                contentFit="cover"
+                transition={150}
+              />
+            ) : (
+              <Ionicons name={post.authorIsAgent ? "sparkles" : "person"} size={24} color="#007AFF" />
+            )}
           </TouchableOpacity>
           <View style={styles.userDetails}>
             <TouchableOpacity onPress={openAuthorProfile} activeOpacity={0.7}>
@@ -443,6 +460,13 @@ const getReactionCounts = () => {
           </View>
         </Pressable>
       </Modal>
+
+      <ReactionsListModal
+        visible={showReactions}
+        postId={post.id}
+        reactionCounts={reactionCounts as any}
+        onClose={() => setShowReactions(false)}
+      />
     </TouchableOpacity>
   );
 };
@@ -474,6 +498,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    overflow: 'hidden',
   },
   userDetails: {
     flex: 1,

@@ -61,6 +61,13 @@ router.get(
     if (requestedUserId) {
       // Profile page mode: all posts are owned by requestedUserId (due to query.userId)
       if (requestedUserId !== currentUserId) {
+        // Special-case: if requestedUserId is an agent owned by the viewer, allow full access.
+        // This enables agent owners to see their agent's friends/private posts on the agent profile page.
+        const requestedUser = await User.findById(requestedUserId).select('isAgent ownerUserId').lean();
+        const viewerOwnsAgent = Boolean((requestedUser as any)?.isAgent && (requestedUser as any)?.ownerUserId === currentUserId);
+        if (viewerOwnsAgent) {
+          filteredPosts = posts;
+        } else {
         const friendship = await Friendship.findOne({
           status: FriendshipStatus.Accepted,
           $or: [
@@ -76,6 +83,7 @@ router.get(
           // friends
           return isFriend;
         });
+        }
       }
     } else {
       // Global mode: safest default without N+1 friendship checks
@@ -92,7 +100,7 @@ router.get(
 
     // Fetch user information for fallback (email)
     const users = await User.find({ _id: { $in: userIds } })
-      .select('_id email')
+      .select('_id email isAgent displayName avatarUrl')
       .lean();
 
     // Create maps for quick lookup
@@ -146,10 +154,16 @@ router.get(
       const profile = profileMap.get(postUserId);
       const user = userMap.get(postUserId);
       
-      // Determine the display name: prefer username, fallback to email prefix
+      const isAgent = Boolean((post as any).authorIsAgent || (user as any)?.isAgent);
+
+      // Determine the display name:
+      // - For humans: prefer profile.username, fallback to email prefix
+      // - For agents: prefer user.displayName (from agent.ingested projection)
       let displayName: string | undefined;
       if (profile?.username) {
         displayName = profile.username;
+      } else if (isAgent && (user as any)?.displayName) {
+        displayName = String((user as any).displayName);
       } else if (user?.email) {
         // Extract name from email (e.g., "john@example.com" -> "john")
         displayName = user.email.split('@')[0];
@@ -159,7 +173,7 @@ router.get(
         if (postUserId === currentUserId) {
           displayName = 'You';
         } else if (postUserId) {
-          displayName = `User ${postUserId.slice(0, 8)}`;
+          displayName = isAgent ? `Agent ${postUserId.slice(0, 8)}` : `User ${postUserId.slice(0, 8)}`;
         } else {
           displayName = 'User';
         }
@@ -268,6 +282,23 @@ router.get(
         });
       }
 
+      // Sign author avatarUrl.
+      // - For agents: prefer user.avatarUrl (from agent.ingested projection), fallback to profile.avatarUrl
+      // - For humans: profile.avatarUrl
+      let authorAvatarUrl: string | undefined = isAgent
+        ? (user as any)?.avatarUrl || profile?.avatarUrl
+        : profile?.avatarUrl;
+      if (azureGateway && authorAvatarUrl && typeof authorAvatarUrl === 'string' && !authorAvatarUrl.includes('?')) {
+        const parsedAvatar = azureGateway.parseBlobUrl(authorAvatarUrl);
+        if (parsedAvatar) {
+          try {
+            authorAvatarUrl = await azureGateway.generateDownloadUrl(parsedAvatar.container, parsedAvatar.blobName, 60 * 60 * 6);
+          } catch {
+            // best-effort: keep unsigned url
+          }
+        }
+      }
+
       return {
         ...post,
         media: mediaWithSignedUrls,
@@ -279,7 +310,7 @@ router.get(
           userId: post.userId,
           name: displayName,
           email: user?.email,
-          avatarUrl: profile?.avatarUrl,
+          avatarUrl: authorAvatarUrl,
         },
       };
     }));

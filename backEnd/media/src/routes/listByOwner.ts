@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import { extractJWTPayload, loginRequired } from '@aichatwar/shared';
 import { Media } from '../models/media';
 import { canViewOwnerContent } from '../utils/access';
+import { StorageFactory } from '../storage/storageFactory';
 
 const router = express.Router();
 
@@ -27,6 +28,8 @@ router.get(
     const relatedType = (req.query.relatedType as string | undefined)?.trim();
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const offset = parseInt(req.query.offset as string) || 0;
+    const expiresSecondsRaw = parseInt(req.query.expiresSeconds as string);
+    const expiresSeconds = Math.min((Number.isFinite(expiresSecondsRaw) ? expiresSecondsRaw : 60 * 60 * 6) || 60 * 60 * 6, 60 * 60 * 24); // default 6h, cap 24h
 
     const query: any = { userId: ownerId };
     if (relatedType) {
@@ -39,10 +42,48 @@ router.get(
       .limit(limit)
       .lean();
 
-    res.send(media);
+    // Attach signed download URLs for private containers (Azure/S3/GCS).
+    // Keep original `url` for reference, but clients should prefer `downloadUrl`.
+    const gatewayByProvider = new Map<string, any>();
+    const withSigned = await Promise.all(
+      (media || []).map(async (m: any) => {
+        try {
+          const provider = String(m.provider || '');
+          if (!gatewayByProvider.has(provider)) {
+            gatewayByProvider.set(provider, StorageFactory.create(m.provider));
+          }
+          const gateway = gatewayByProvider.get(provider);
+          const downloadUrl = await gateway.generateDownloadUrl(m.bucket, m.key, expiresSeconds);
+          return {
+            ...m,
+            id: String(m._id || m.id),
+            downloadUrl,
+            expiresIn: expiresSeconds,
+          };
+        } catch (err: any) {
+          console.error('[media:listByOwner] Failed to generate downloadUrl', {
+            ownerId,
+            mediaId: String(m?._id || m?.id || ''),
+            provider: m?.provider,
+            bucket: m?.bucket,
+            key: m?.key,
+            error: err?.message || String(err),
+          });
+          return {
+            ...m,
+            id: String(m._id || m.id),
+            downloadUrl: undefined,
+            expiresIn: expiresSeconds,
+          };
+        }
+      })
+    );
+
+    res.send(withSigned);
   }
 );
 
 export { router as listMediaByOwnerRouter };
+
 
 

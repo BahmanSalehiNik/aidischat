@@ -60,6 +60,19 @@ async function buildSignedMedia(media: any[] | undefined | null) {
   );
 }
 
+async function signBlobUrlIfNeeded(url: string | undefined): Promise<string | undefined> {
+  if (!url || typeof url !== 'string') return url;
+  if (!azureGateway) return url;
+  if (url.includes('?')) return url; // already signed
+  const parsed = azureGateway.parseBlobUrl(url);
+  if (!parsed) return url;
+  try {
+    return await azureGateway.generateDownloadUrl(parsed.container, parsed.blobName, 60 * 60 * 6);
+  } catch {
+    return url;
+  }
+}
+
 /**
  * Helper function to get recent public posts as trending-like format
  */
@@ -114,7 +127,7 @@ async function buildTrendingItems(
       .select('userId username avatarUrl')
       .lean(),
     User.find({ _id: { $in: trendingAuthorIds } })
-      .select('_id email isAgent ownerUserId displayName')
+      .select('_id email isAgent ownerUserId displayName avatarUrl')
       .lean(),
   ]);
 
@@ -150,6 +163,12 @@ async function buildTrendingItems(
       }
 
       const mediaWithSignedUrls = await buildSignedMedia(entry.media);
+      // For agents, prefer the agent's own avatarUrl (from agent.ingested projection) over any Profile.avatarUrl.
+      // This keeps feed consistent with the explicit avatar selection.
+      const rawAvatarUrl = user?.isAgent
+        ? ((user as any)?.avatarUrl || profile?.avatarUrl)
+        : profile?.avatarUrl;
+      const signedAvatarUrl = await signBlobUrlIfNeeded(rawAvatarUrl);
       
       // Get reactionsSummary and commentsCount from post projection
       const post = postMap.get(entry.postId);
@@ -166,7 +185,7 @@ async function buildTrendingItems(
           userId: entry.authorId,
           name: displayName,
           email: user?.email,
-          avatarUrl: profile?.avatarUrl,
+          avatarUrl: signedAvatarUrl,
         },
         content: entry.content,
         media: mediaWithSignedUrls,
@@ -341,7 +360,7 @@ router.get('/api/feeds',
       .select('userId username avatarUrl')
       .lean(),
     User.find({ _id: { $in: authorIds } })
-      .select('_id email isAgent ownerUserId displayName')
+      .select('_id email isAgent ownerUserId displayName avatarUrl')
       .lean(),
   ]);
 
@@ -394,6 +413,13 @@ router.get('/api/feeds',
     
     const mediaWithSignedUrls = await buildSignedMedia(post.media);
     
+    // For agents, prefer the agent's own avatarUrl (from agent.ingested projection) over any Profile.avatarUrl.
+    // This keeps feed consistent with the explicit avatar selection.
+    const rawAvatarUrl = user?.isAgent
+      ? ((user as any)?.avatarUrl || profile?.avatarUrl)
+      : profile?.avatarUrl;
+    const signedAvatarUrl = await signBlobUrlIfNeeded(rawAvatarUrl);
+    
     // Get current user's reaction
     const postIdStr = post._id?.toString() || post.id?.toString() || String(post._id || post.id);
     const userReaction = userReactionMap.get(postIdStr);
@@ -407,7 +433,7 @@ router.get('/api/feeds',
           userId: post.userId,
           name: displayName,
           email: user?.email,
-          avatarUrl: profile?.avatarUrl,
+          avatarUrl: signedAvatarUrl,
         },
         content: post.content,
         media: mediaWithSignedUrls,

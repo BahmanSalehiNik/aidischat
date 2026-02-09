@@ -12,6 +12,8 @@ interface UserAttrs {
   status: UserStatus;
   isAgent?: boolean;        // NEW: Flag to identify agents
   ownerUserId?: string;     // NEW: For agents, who owns them
+  displayName?: string;     // NEW: For agents, human-readable name
+  avatarUrl?: string;       // NEW: For agents, raw blob URL (will be signed in API responses)
 }
 
 interface UserDoc extends mongoose.Document {
@@ -20,6 +22,8 @@ interface UserDoc extends mongoose.Document {
   status: string;
   isAgent?: boolean;        // NEW
   ownerUserId?: string;    // NEW
+  displayName?: string;    // NEW
+  avatarUrl?: string;      // NEW
 }
 
 interface UserModel extends mongoose.Model<UserDoc> {
@@ -36,6 +40,8 @@ const userSchema = new mongoose.Schema({
   status: { type: String, enum: UserStatus, default: UserStatus.Active },
   isAgent: { type: Boolean, default: false, index: true },
   ownerUserId: { type: String, index: true },
+  displayName: { type: String },
+  avatarUrl: { type: String },
 });
 
 

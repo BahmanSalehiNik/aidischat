@@ -15,10 +15,19 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
   async onMessage(data: AgentIngestedEvent['data'], _msg: EachMessagePayload) {
     const agentId = data.agentId || data.id;
     const ownerUserId = data.ownerUserId;
-    const version = data.version;
+    const incomingVersion = (() => {
+      const v: any = (data as any).version;
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string' && v.trim()) {
+        const n = parseInt(v, 10);
+        return Number.isFinite(n) ? n : undefined;
+      }
+      return undefined;
+    })();
 
     const character: any = (data as any).character;
     const name = character?.displayName || character?.name;
+    const avatarUrl = character?.avatarUrl;
 
     if (!agentId) {
       await this.ack();
@@ -26,30 +35,53 @@ export class AgentIngestedListener extends Listener<AgentIngestedEvent> {
     }
 
     try {
-      const user = await User.findById(agentId);
-      if (user) {
-        // AgentIngested can arrive before/after UserCreated; just set fields we know.
-        user.isAgent = true;
-        user.ownerUserId = ownerUserId;
-        if (typeof name === 'string' && name.trim()) {
-          (user as any).displayName = name.trim();
-        }
-        // Keep the max version we see to avoid going backwards.
-        if (typeof version === 'number' && (!user.version || user.version < version)) {
-          user.version = version;
-        }
-        await user.save();
-      } else {
-        await User.build({
-          id: agentId,
-          email: undefined,
-          status: 'active' as any,
-          version: typeof version === 'number' ? version : 0,
-          isAgent: true,
-          ownerUserId,
-          displayName: typeof name === 'string' ? name.trim() : undefined,
-        } as any).save();
+      // NOTE: This is a projection for UI. We want monotonic, best-effort updates and must not
+      // crash the consumer on OCC conflicts. We therefore update via updateOne (no save() OCC),
+      // and only move forward when incomingVersion is newer than what's stored.
+      if (incomingVersion !== undefined) {
+        await User.updateOne(
+          {
+            _id: agentId,
+            $or: [{ version: { $exists: false } }, { version: { $lt: incomingVersion } }],
+          },
+          {
+            $set: {
+              isAgent: true,
+              ownerUserId,
+              displayName: typeof name === 'string' ? name.trim() : undefined,
+              avatarUrl: typeof avatarUrl === 'string' ? avatarUrl.trim() : undefined,
+              version: incomingVersion,
+            },
+            $setOnInsert: {
+              email: undefined,
+              status: 'active',
+            },
+          },
+          { upsert: true }
+        );
+
+        await this.ack();
+        return;
       }
+
+      // No version: best-effort upsert.
+      await User.updateOne(
+        { _id: agentId },
+        {
+          $set: {
+            isAgent: true,
+            ownerUserId,
+            displayName: typeof name === 'string' ? name.trim() : undefined,
+            avatarUrl: typeof avatarUrl === 'string' ? avatarUrl.trim() : undefined,
+          },
+          $setOnInsert: {
+            email: undefined,
+            status: 'active',
+            version: 0,
+          },
+        },
+        { upsert: true }
+      );
     } catch (err) {
       console.error('[AgentIngestedListener] Failed to upsert agent displayName:', err);
       throw err;

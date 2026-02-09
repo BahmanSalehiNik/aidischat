@@ -6,6 +6,16 @@ import { canView } from '../../utils/visibilityCheck'
 import { extractJWTPayload, loginRequired, Visibility } from '@aichatwar/shared';
 import { Profile } from '../../models/user/profile';
 import { User } from '../../models/user/user';
+import { ReadOnlyAzureStorageGateway } from '../../storage/azureStorageGateway';
+
+// Initialize read-only Azure Storage Gateway if credentials are available
+let azureGateway: ReadOnlyAzureStorageGateway | null = null;
+if (process.env.AZURE_STORAGE_ACCOUNT && process.env.AZURE_STORAGE_KEY) {
+  azureGateway = new ReadOnlyAzureStorageGateway(
+    process.env.AZURE_STORAGE_ACCOUNT,
+    process.env.AZURE_STORAGE_KEY
+  );
+}
 
 const router = express.Router();
 
@@ -42,11 +52,14 @@ router.get(
 
   // Fetch author information
   const profile = await Profile.findOne({ userId: post.userId }).lean();
-  const user = await User.findById(post.userId).select('email').lean();
+  const user = await User.findById(post.userId).select('email isAgent displayName avatarUrl').lean();
+  const isAgent = Boolean((post as any).authorIsAgent || (user as any)?.isAgent);
   
   let displayName: string | undefined;
   if (profile?.username) {
     displayName = profile.username;
+  } else if (isAgent && (user as any)?.displayName) {
+    displayName = String((user as any).displayName);
   } else if (user?.email) {
     displayName = user.email.split('@')[0];
   }
@@ -55,9 +68,41 @@ router.get(
     if (post.userId === currentUserId) {
       displayName = 'You';
     } else if (post.userId) {
-      displayName = `User ${post.userId.slice(0, 8)}`;
+      displayName = isAgent ? `Agent ${post.userId.slice(0, 8)}` : `User ${post.userId.slice(0, 8)}`;
     } else {
       displayName = 'User';
+    }
+  }
+
+  // Sign post media URLs if needed (best-effort).
+  let mediaWithSignedUrls: any[] | undefined = (post as any).media;
+  if (azureGateway && Array.isArray(mediaWithSignedUrls) && mediaWithSignedUrls.length > 0) {
+    mediaWithSignedUrls = await Promise.all(
+      mediaWithSignedUrls.map(async (m: any) => {
+        const url = m?.url;
+        if (!url || typeof url !== 'string' || url.includes('?')) return m;
+        const parsed = azureGateway!.parseBlobUrl(url);
+        if (!parsed) return m;
+        try {
+          const signedUrl = await azureGateway!.generateDownloadUrl(parsed.container, parsed.blobName, 60 * 60 * 6);
+          return { ...m, url: signedUrl, originalUrl: m.url };
+        } catch {
+          return m;
+        }
+      })
+    );
+  }
+
+  // Sign author avatar URL.
+  let rawAvatarUrl: string | undefined = isAgent ? (user as any)?.avatarUrl || profile?.avatarUrl : profile?.avatarUrl;
+  if (azureGateway && rawAvatarUrl && typeof rawAvatarUrl === 'string' && !rawAvatarUrl.includes('?')) {
+    const parsedAvatar = azureGateway.parseBlobUrl(rawAvatarUrl);
+    if (parsedAvatar) {
+      try {
+        rawAvatarUrl = await azureGateway.generateDownloadUrl(parsedAvatar.container, parsedAvatar.blobName, 60 * 60 * 6);
+      } catch {
+        // best-effort
+      }
     }
   }
 
@@ -70,6 +115,7 @@ router.get(
 
   const response = {
     ...post.toJSON(),
+    media: mediaWithSignedUrls,
     reactions: allReactions, // Include all reactions with userId for frontend
     reactionsSummary, // Include summary for easy display
     currentUserReaction, // Include current user's reaction
@@ -77,7 +123,7 @@ router.get(
       userId: post.userId,
       name: displayName,
       email: user?.email,
-      avatarUrl: profile?.avatarUrl,
+      avatarUrl: rawAvatarUrl,
     },
   };
 

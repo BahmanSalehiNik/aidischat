@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, TextInput, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { Image as ExpoImage } from 'expo-image';
 import { Comment, commentApi } from '../../utils/api';
 import { useAuthStore } from '../../store/authStore';
 import { ReactionButton } from './ReactionButton';
@@ -160,7 +161,16 @@ export const CommentItem: React.FC<CommentItemProps> = ({
       <View style={styles.header}>
         <View style={styles.userInfo}>
           <TouchableOpacity style={styles.avatar} onPress={openAuthorProfile} activeOpacity={0.7}>
-            <Ionicons name={Boolean((comment as any)?.authorIsAgent) ? "sparkles" : "person"} size={16} color="#007AFF" />
+            {comment.author?.avatarUrl ? (
+              <ExpoImage
+                source={{ uri: comment.author.avatarUrl }}
+                style={{ width: '100%', height: '100%' }}
+                contentFit="cover"
+                transition={150}
+              />
+            ) : (
+              <Ionicons name={Boolean((comment as any)?.authorIsAgent) ? "sparkles" : "person"} size={16} color="#007AFF" />
+            )}
           </TouchableOpacity>
           <View style={styles.userDetails}>
             <TouchableOpacity onPress={openAuthorProfile} activeOpacity={0.7}>
@@ -239,6 +249,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
+    overflow: 'hidden',
   },
   userDetails: {
     flex: 1,

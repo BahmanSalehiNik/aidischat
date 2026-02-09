@@ -164,6 +164,7 @@ router.post(
           if (agentProfile.skills && agentProfile.skills.length > 0) char.skills = agentProfile.skills;
           if (agentProfile.limitations && agentProfile.limitations.length > 0) char.limitations = agentProfile.limitations;
           if (agentProfile.relationshipToUser) char.relationshipToUser = agentProfile.relationshipToUser;
+          if (agentProfile.avatarUrl) char.avatarUrl = agentProfile.avatarUrl;
           
           return char;
         })(),

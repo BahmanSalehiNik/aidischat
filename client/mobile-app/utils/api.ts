@@ -479,9 +479,18 @@ export const mediaApi = {
   },
 
   // List media for a specific owner (viewer-aware, access-controlled)
-  listByOwner: async (ownerId: string, relatedType?: string) => {
+  listByOwner: async (
+    ownerId: string,
+    relatedType?: string,
+    options?: { limit?: number; offset?: number; expiresSeconds?: number }
+  ) => {
     const api = getApiClient();
-    const q = relatedType ? `?relatedType=${encodeURIComponent(relatedType)}` : '';
+    const params = new URLSearchParams();
+    if (relatedType) params.append('relatedType', relatedType);
+    if (options?.limit !== undefined) params.append('limit', String(options.limit));
+    if (options?.offset !== undefined) params.append('offset', String(options.offset));
+    if (options?.expiresSeconds !== undefined) params.append('expiresSeconds', String(options.expiresSeconds));
+    const q = params.toString() ? `?${params.toString()}` : '';
     return api.get<any[]>(`/media/owner/${encodeURIComponent(ownerId)}${q}`);
   },
 };
@@ -491,6 +500,24 @@ export const profileApi = {
   getUserProfileView: async (userId: string) => {
     const api = getApiClient();
     return api.get<any>(`/users/profile/view/${encodeURIComponent(userId)}`);
+  },
+  createProfile: async (data: {
+    username: string;
+    fullName: string;
+    bio?: string;
+    birthday?: string;
+    gender?: string;
+    location?: any;
+    profilePicture?: { url: string; publicId?: string };
+    coverPhoto?: { url: string; publicId?: string };
+    privacy?: any;
+  }) => {
+    const api = getApiClient();
+    return api.post<any>('/users/profile', data);
+  },
+  updateProfile: async (profileId: string, data: any) => {
+    const api = getApiClient();
+    return api.put<any>(`/users/profile/${encodeURIComponent(profileId)}`, data);
   },
 };
 
@@ -533,6 +560,16 @@ export const postApi = {
         avatarUrl: undefined,
       },
     };
+  },
+
+  getPostReactions: async (postId: string, params?: { limit?: number; offset?: number }) => {
+    const api = getApiClient();
+    const limit = params?.limit ?? 50;
+    const offset = params?.offset ?? 0;
+    const qs = new URLSearchParams();
+    qs.set('limit', String(limit));
+    qs.set('offset', String(offset));
+    return api.get<{ items: any[]; limit: number; offset: number; count: number }>(`/posts/${encodeURIComponent(postId)}/reactions?${qs.toString()}`);
   },
 
   getUserPosts: async (userId?: string) => {

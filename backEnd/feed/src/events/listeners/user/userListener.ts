@@ -11,29 +11,55 @@ class UserCreatedListener extends Listener<UserCreatedEvent>{
     async onMessage(processedMessage: UserCreatedEvent['data'], msg: EachMessagePayload){
         try {
             console.log('User created event received:', processedMessage);
-            
-            // Check if user already exists (handle duplicate events)
-            const existing = await User.findOne({ _id: processedMessage.id });
-            if (existing) {
-                // Update existing user
-                existing.email = processedMessage.email;
-                existing.version = processedMessage.version;
-                existing.status = processedMessage.status;
-                existing.isAgent = processedMessage.isAgent ?? false;
-                existing.ownerUserId = processedMessage.ownerUserId;
-                await existing.save();
-                console.log(`[UserCreatedListener] Updated existing user: ${processedMessage.id}`);
-            } else {
-                // Create new user
-                const user = User.build(processedMessage);
-                await user.save();
-                console.log(`[UserCreatedListener] Created new user: ${processedMessage.id}`);
-            }
+
+            // Projection write: avoid OCC VersionError by using monotonic upsert.
+            const incomingVersion = (processedMessage as any).version;
+            // 1) Try to update existing doc if (and only if) this event is newer than stored version.
+            await User.updateOne(
+                {
+                    _id: processedMessage.id,
+                    $or: [{ version: { $exists: false } }, { version: { $lt: incomingVersion } }],
+                },
+                {
+                    $set: {
+                        email: processedMessage.email,
+                        status: processedMessage.status as any,
+                        version: incomingVersion,
+                        isAgent: (processedMessage as any).isAgent ?? false,
+                        ownerUserId: (processedMessage as any).ownerUserId,
+                    },
+                },
+                { upsert: false }
+            );
+
+            // 2) Ensure the doc exists (insert only). This prevents duplicate-key upserts when the
+            // version predicate doesn't match an existing document.
+            await User.updateOne(
+                { _id: processedMessage.id },
+                {
+                    $setOnInsert: {
+                        email: processedMessage.email,
+                        status: processedMessage.status as any,
+                        version: incomingVersion,
+                        isAgent: (processedMessage as any).isAgent ?? false,
+                        ownerUserId: (processedMessage as any).ownerUserId,
+                    },
+                },
+                { upsert: true }
+            );
             
             // Manual acknowledgment - only after successful save
             await this.ack();
         } catch (error: any) {
             console.error(`[UserCreatedListener] Error processing user created event for ${processedMessage.id}:`, error);
+            // Projection consumers should be resilient. Duplicate key errors can happen with concurrent upserts.
+            // Treat as success and ack to avoid getting stuck on this offset.
+            if (error?.code === 11000 || String(error?.message || '').includes('E11000')) {
+                try {
+                    await this.ack();
+                } catch {}
+                return;
+            }
             // Don't ack on error - let Kafka retry or move to DLQ
             throw error;
         }
@@ -46,12 +72,34 @@ class UserUpdatedListener extends Listener<UserUpdatedEvent>{
     
     async onMessage(processedMessage: UserUpdatedEvent['data'], msg: EachMessagePayload){
         console.log('User updated event received:', processedMessage);
-        const user = await User.findByEvent({id: processedMessage.id, version: processedMessage.version});
-        if(!user){
-            throw new NotFoundError();
-        }
-        user.status = processedMessage.status;
-        await user.save();
+        // Projection write: avoid OCC errors; only move forward.
+        const incomingVersion = (processedMessage as any).version;
+        // 1) Update existing doc only if this event is newer.
+        await User.updateOne(
+          {
+            _id: processedMessage.id,
+            $or: [{ version: { $exists: false } }, { version: { $lt: incomingVersion } }],
+          },
+          {
+            $set: {
+              status: processedMessage.status as any,
+              version: incomingVersion,
+            },
+          },
+          { upsert: false }
+        );
+
+        // 2) Insert-only safeguard.
+        await User.updateOne(
+          { _id: processedMessage.id },
+          {
+            $setOnInsert: {
+              status: processedMessage.status as any,
+              version: incomingVersion,
+            },
+          },
+          { upsert: true }
+        );
 
         // Update user status projection for filtering
         const isSuggestible =

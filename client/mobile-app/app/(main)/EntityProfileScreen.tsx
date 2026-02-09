@@ -3,9 +3,10 @@ import { View, Text, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicat
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../store/authStore';
-import { agentPublicApi, mediaApi, postApi, profileApi } from '../../utils/api';
+import { agentPublicApi, agentsApi, mediaApi, postApi, profileApi } from '../../utils/api';
 import { StorageContainers } from '../../utils/storageContainers';
 import { PostCard, Post } from '../../components/feed/PostCard';
 
@@ -34,6 +35,7 @@ export default function EntityProfileScreen() {
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [photos, setPhotos] = useState<any[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [avatarSignedUrl, setAvatarSignedUrl] = useState<string | null>(null);
 
   const canEdit = useMemo(() => {
     if (!user?.id) return false;
@@ -42,13 +44,28 @@ export default function EntityProfileScreen() {
     return Boolean(agent?.ownerUserId && agent.ownerUserId === user.id);
   }, [user?.id, entityType, entityId, agent?.ownerUserId]);
 
+  const userProfileId = useMemo(() => {
+    const p = userProfile;
+    return String(p?.id || p?._id || '');
+  }, [userProfile]);
+
+  const agentProfileId = useMemo(() => {
+    // Prefer agent.agentProfileId (stable), fallback to agentProfile._id (lean response).
+    const id = agent?.agentProfileId || agentProfile?.id || agentProfile?._id;
+    return String(id || '');
+  }, [agent?.agentProfileId, agentProfile]);
+
   const header = useMemo(() => {
     if (entityType === 'agent') {
       const name = agentProfile?.displayName || agentProfile?.name || 'Agent';
+      const headline =
+        agentProfile?.title ||
+        agentProfile?.profession ||
+        undefined;
       return {
         title: name,
-        subtitle: 'AI Agent',
-        avatarUrl: agentProfile?.avatarUrl,
+        subtitle: headline || 'AI Agent',
+        avatarUrl: avatarSignedUrl || agentProfile?.avatarUrl,
         coverUrl: undefined,
       };
     }
@@ -56,10 +73,23 @@ export default function EntityProfileScreen() {
     return {
       title: name,
       subtitle: userProfile?.username ? `@${userProfile.username}` : undefined,
-      avatarUrl: userProfile?.profilePicture?.url,
+      avatarUrl: avatarSignedUrl || userProfile?.profilePicture?.url,
       coverUrl: userProfile?.coverPhoto?.url,
     };
-  }, [entityType, userProfile, agentProfile]);
+  }, [entityType, userProfile, agentProfile, avatarSignedUrl]);
+
+  const aboutLines = useMemo(() => {
+    if (entityType === 'agent') {
+      const lines: string[] = [];
+      if (agentProfile?.title) lines.push(String(agentProfile.title));
+      if (agentProfile?.profession) lines.push(String(agentProfile.profession));
+      if (agentProfile?.backstory) lines.push(String(agentProfile.backstory));
+      return lines.filter(Boolean);
+    }
+    const lines: string[] = [];
+    if (userProfile?.bio) lines.push(String(userProfile.bio));
+    return lines.filter(Boolean);
+  }, [entityType, agentProfile, userProfile]);
 
   const loadProfile = useCallback(async () => {
     if (!entityId) return;
@@ -110,7 +140,7 @@ export default function EntityProfileScreen() {
     if (!entityId) return;
     try {
       setLoadingPhotos(true);
-      const list = await mediaApi.listByOwner(entityId, 'profile');
+      const list = await mediaApi.listByOwner(entityId, 'profile', { limit: 60, expiresSeconds: 60 * 60 * 6 });
       setPhotos(Array.isArray(list) ? list : []);
     } catch (err: any) {
       // If forbidden, just show empty to avoid a harsh UX.
@@ -120,15 +150,49 @@ export default function EntityProfileScreen() {
     }
   }, [entityId]);
 
+  const loadAvatar = useCallback(async () => {
+    if (!entityId) return;
+    try {
+      // Prefer explicit avatar media if present (agent edit screen uses profile:avatar)
+      const primaryType = entityType === 'agent' ? 'profile:avatar' : 'profile';
+      const primary = await mediaApi.listByOwner(entityId, primaryType, { limit: 1, expiresSeconds: 60 * 60 * 6 });
+      const firstPrimary = Array.isArray(primary) && primary.length ? primary[0] : null;
+
+      // Fallback: if agent doesn't have an explicit avatar media record, use latest profile photo.
+      const fallback =
+        entityType === 'agent' && !firstPrimary
+          ? await mediaApi.listByOwner(entityId, 'profile', { limit: 1, expiresSeconds: 60 * 60 * 6 })
+          : null;
+      const firstFallback = Array.isArray(fallback) && fallback?.length ? fallback[0] : null;
+
+      const candidate = firstPrimary || firstFallback;
+      const url = candidate?.downloadUrl || candidate?.url || null;
+      setAvatarSignedUrl(url ? String(url) : null);
+    } catch {
+      setAvatarSignedUrl(null);
+    }
+  }, [entityId, entityType]);
+
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
 
+  // When navigating back from edit screens, refresh avatar/profile so the header updates immediately.
+  useFocusEffect(
+    useCallback(() => {
+      if (!entityId) return;
+      // Load profile (agentProfile/avatarUrl fields) and also reload the signed avatar media record.
+      loadProfile();
+      loadAvatar();
+    }, [entityId, allowed, loadProfile, loadAvatar])
+  );
+
   useEffect(() => {
     if (!allowed) return;
+    loadAvatar();
     if (activeTab === 'posts') loadPosts();
     if (activeTab === 'photos') loadPhotos();
-  }, [allowed, activeTab, loadPosts, loadPhotos]);
+  }, [allowed, activeTab, loadAvatar, loadPosts, loadPhotos]);
 
   const pickAndUploadPhotos = useCallback(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -147,6 +211,7 @@ export default function EntityProfileScreen() {
     if (result.canceled || !result.assets?.length) return;
 
     try {
+      let lastStorageUrl: string | null = null;
       for (const asset of result.assets as any[]) {
         const mimeType = asset.mimeType && asset.mimeType !== 'unknown' ? asset.mimeType : 'image/jpeg';
         const filename = asset.fileName || `profile_${Date.now()}.jpg`;
@@ -163,6 +228,7 @@ export default function EntityProfileScreen() {
 
         await mediaApi.uploadFile(upload.uploadUrl, asset.uri, mimeType, upload.provider);
         const storageUrl = upload.uploadUrl.split('?')[0];
+        lastStorageUrl = storageUrl;
 
         await mediaApi.createMedia({
           provider: upload.provider,
@@ -176,13 +242,50 @@ export default function EntityProfileScreen() {
         });
       }
 
+      // Treat uploaded photos as "profile photo" for the owner for a straightforward UX.
+      // (This updates the avatar/cover sources used by the profile header.)
+      if (canEdit && lastStorageUrl) {
+        if (entityType === 'user' && userProfileId) {
+          await profileApi.updateProfile(userProfileId, {
+            profilePicture: { url: lastStorageUrl },
+          });
+          await loadProfile();
+        }
+        if (entityType === 'agent' && agentProfileId) {
+          // Important: Don't overwrite an explicitly chosen avatar with an arbitrary uploaded photo.
+          // Only use the last uploaded photo as a fallback avatar if no explicit avatar exists.
+          let hasExplicitAvatar = false;
+          try {
+            const avatarMedia = await mediaApi.listByOwner(entityId, 'profile:avatar', { limit: 1, expiresSeconds: 60 * 60 * 6 });
+            hasExplicitAvatar = Array.isArray(avatarMedia) && avatarMedia.length > 0;
+          } catch {
+            // ignore and treat as missing
+          }
+
+          if (!hasExplicitAvatar) {
+            await agentsApi.updateProfile(agentProfileId, {
+              avatarUrl: lastStorageUrl,
+            });
+            await loadProfile();
+          }
+        }
+      }
+
       await loadPhotos();
       setActiveTab('photos');
     } catch (err: any) {
-      console.error('Upload failed:', err?.message || err);
-      Alert.alert('Error', 'Failed to upload photo(s)');
+      const msg = String(err?.message || '');
+      console.error('Upload failed:', msg || err);
+      if (msg.includes('401')) {
+        Alert.alert(
+          'Not authorized',
+          'Upload was rejected by the media service (401). Please log out and log back in. If you recently changed JWT secrets in Kubernetes, restart the media service pods so all services share the same JWT_DEV.'
+        );
+      } else {
+        Alert.alert('Error', 'Failed to upload photo(s)');
+      }
     }
-  }, [entityId, entityType, loadPhotos]);
+  }, [entityId, entityType, canEdit, userProfileId, agentProfileId, loadPhotos, loadProfile]);
 
   if (loading) {
     return (
@@ -231,13 +334,34 @@ export default function EntityProfileScreen() {
             </View>
 
             {canEdit ? (
-              <TouchableOpacity
-                onPress={pickAndUploadPhotos}
-                style={{ backgroundColor: '#007AFF', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}
-              >
-                <Ionicons name="camera" size={18} color="#FFFFFF" />
-                <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Add Photo</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (entityType === 'user') router.push('/(main)/EditUserProfileScreen');
+                    else {
+                      if (!agentProfileId) {
+                        Alert.alert('Error', 'Agent profile is not ready yet. Please try again in a moment.');
+                        return;
+                      }
+                      router.push({
+                        pathname: '/(main)/EditAgentProfileScreen',
+                        params: { agentId: entityId, profileId: agentProfileId },
+                      });
+                    }
+                  }}
+                  style={{ backgroundColor: '#F2F2F7', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                >
+                  <Ionicons name="create-outline" size={18} color="#000000" />
+                  <Text style={{ color: '#000000', fontWeight: '700' }}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={pickAndUploadPhotos}
+                  style={{ backgroundColor: '#007AFF', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                >
+                  <Ionicons name="camera" size={18} color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Add Photo</Text>
+                </TouchableOpacity>
+              </View>
             ) : null}
           </View>
 
@@ -253,6 +377,20 @@ export default function EntityProfileScreen() {
             </View>
             {header.subtitle ? (
               <Text style={{ marginTop: 4, color: '#8E8E93' }}>{header.subtitle}</Text>
+            ) : null}
+
+            {aboutLines.length ? (
+              <View style={{ marginTop: 10, gap: 6 }}>
+                {aboutLines.slice(0, 3).map((line, idx) => (
+                  <Text
+                    key={`${entityType}:about:${idx}`}
+                    style={{ color: '#000000', lineHeight: 20 }}
+                    numberOfLines={idx === 2 ? 5 : 2}
+                  >
+                    {line}
+                  </Text>
+                ))}
+              </View>
             ) : null}
           </View>
         </View>
@@ -330,9 +468,12 @@ export default function EntityProfileScreen() {
                   </View>
                 ) : (
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                    {photos.slice(0, 60).map((m: any) => (
-                      <View key={m.id} style={{ width: '31.5%', aspectRatio: 1, backgroundColor: '#F2F2F7', borderRadius: 8, overflow: 'hidden' }}>
-                        <Image source={{ uri: m.url }} style={{ width: '100%', height: '100%' }} />
+                    {photos.slice(0, 60).map((m: any, idx: number) => (
+                      <View
+                        key={String(m?.id || m?._id || m?.key || m?.url || `photo:${idx}`)}
+                        style={{ width: '31.5%', aspectRatio: 1, backgroundColor: '#F2F2F7', borderRadius: 8, overflow: 'hidden' }}
+                      >
+                        <Image source={{ uri: String(m?.downloadUrl || m?.url || '') }} style={{ width: '100%', height: '100%' }} />
                       </View>
                     ))}
                   </View>
@@ -345,5 +486,6 @@ export default function EntityProfileScreen() {
     </SafeAreaView>
   );
 }
+
 
 
