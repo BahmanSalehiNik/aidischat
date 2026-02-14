@@ -7,6 +7,7 @@ import { AiMessageReplyPublisher } from '../publishers/ai-message-reply-publishe
 import { kafkaWrapper } from '../../kafka-client';
 import OpenAI from 'openai';
 import { AssistantThread } from '../../models/assistant-thread';
+import { costTrackingService } from '../../services/cost';
 
 /**
  * MVP behavior:
@@ -146,7 +147,7 @@ export class AgentReplyMessageCreatedListener extends Listener<MessageCreatedEve
     }
 
     const assistantId = agentProfile.modelProvider === 'openai' ? agentProfile.providerAgentId : undefined;
-    const response = await provider.generateResponse({
+    const providerRequest = {
       message: messageWithContext,
       systemPrompt,
       modelName: agentProfile.modelName,
@@ -155,7 +156,39 @@ export class AgentReplyMessageCreatedListener extends Listener<MessageCreatedEve
       tools: agentProfile.tools,
       assistantId,
       threadId,
-    });
+    };
+
+    const limit = await costTrackingService.assertWithinLimits(agentProfile.ownerUserId);
+    if (!limit.ok) {
+      await new AiMessageReplyPublisher(kafkaWrapper.producer).publish({
+        originalMessageId: replyMessageId,
+        roomId,
+        agentId,
+        ownerUserId: agentProfile.ownerUserId,
+        content: limit.message,
+        replyToMessageId: data.replyToMessageId || undefined,
+      });
+      await this.ack();
+      return;
+    }
+
+    const response = await costTrackingService.trackGenerateResponse(
+      {
+        idempotencyKey: `ai:reply_to_agent:${replyMessageId}:${agentId}`,
+        ownerUserId: agentProfile.ownerUserId,
+        agentId,
+        feature: 'reply_to_agent',
+        provider: agentProfile.modelProvider,
+        modelName: agentProfile.modelName,
+        request: providerRequest,
+        metadata: {
+          roomId,
+          replyMessageId,
+          replyToMessageId: data.replyToMessageId,
+        },
+      },
+      () => provider.generateResponse(providerRequest)
+    );
 
     if (response.error || !response.content) {
       console.error(`[AgentReplyMessageCreated] Provider response error:`, response.error);

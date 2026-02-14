@@ -7,6 +7,7 @@ import { PromptBuilder, CharacterAttributes } from '../../prompt-engineering';
 import { ARStreamStartPublisher, ARStreamChunkPublisher, ARStreamEndPublisher } from '../publishers/ar-stream-publishers';
 import { kafkaWrapper } from '../../kafka-client';
 import crypto from 'crypto';
+import { costTrackingService } from '../../services/cost';
 
 export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
   readonly topic = Subjects.ARMessageRequest;
@@ -78,6 +79,36 @@ export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
     const baseSystemPrompt = PromptBuilder.buildSystemPrompt(agentProfile.systemPrompt || '', characterAttributes);
     const arSystemPrompt = baseSystemPrompt;
 
+    const limit = await costTrackingService.assertWithinLimits(userId);
+    if (!limit.ok) {
+      const streamId = `stream-${messageId}`;
+      await new ARStreamStartPublisher(kafkaWrapper.producer).publish({
+        streamId,
+        messageId,
+        roomId,
+        agentId,
+        userId,
+        startedAt: new Date().toISOString(),
+      });
+      await new ARStreamChunkPublisher(kafkaWrapper.producer).publish({
+        streamId,
+        messageId,
+        roomId,
+        chunk: limit.message,
+        chunkIndex: 0,
+        timestamp: new Date().toISOString(),
+        isFinal: true,
+      });
+      await new ARStreamEndPublisher(kafkaWrapper.producer).publish({
+        streamId,
+        messageId,
+        roomId,
+        totalChunks: 1,
+        endedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
     // Publish stream start event
     await new ARStreamStartPublisher(kafkaWrapper.producer).publish({
       streamId,
@@ -129,7 +160,7 @@ export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
         );
       } else {
         // Fallback: Generate full response and split into chunks
-        const response = await provider.generateResponse({
+        const providerRequest = {
           message: userMessage,
           systemPrompt: arSystemPrompt,
           modelName: agentProfile.modelName,
@@ -137,7 +168,21 @@ export class ARMessageRequestListener extends Listener<ARMessageRequestEvent> {
           maxTokens: 1000,
           assistantId,
           threadId,
-        });
+        };
+
+        const response = await costTrackingService.trackGenerateResponse(
+          {
+            idempotencyKey: `ai:ar_message:${messageId}:${agentId}`,
+            ownerUserId: userId,
+            agentId,
+            feature: 'ar_message',
+            provider: agentProfile.modelProvider,
+            modelName: agentProfile.modelName,
+            request: providerRequest,
+            metadata: { roomId, messageId, streamId },
+          },
+          () => provider.generateResponse(providerRequest)
+        );
 
         if (response.error || !response.content) {
           console.error(`❌ [ARMessageRequestListener] Failed to generate response:`, response.error);

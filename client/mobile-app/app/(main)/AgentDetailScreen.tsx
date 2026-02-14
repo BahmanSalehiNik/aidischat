@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicat
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { agentsApi, AgentWithProfile, mediaApi } from '../../utils/api';
+import { agentsApi, AgentWithProfile, mediaApi, roomApi, usageApi, type UsageBreakdownItem } from '../../utils/api';
 import { formatBreedLabel } from '../../constants/agentConstants';
 
 const getStatusColor = (status: string) => {
@@ -39,11 +39,27 @@ export default function AgentDetailScreen() {
   const [agent, setAgent] = useState<AgentWithProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [signedAvatarUrl, setSignedAvatarUrl] = useState<string | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [agentUsage, setAgentUsage] = useState<{
+    from: string;
+    to: string;
+    totalCostMicros: number;
+    totalTokens: number;
+    calls: number;
+  } | null>(null);
+  const [startingChat, setStartingChat] = useState(false);
 
   useEffect(() => {
     if (params.agentId) {
       loadAgent();
     }
+  }, [params.agentId]);
+
+  useEffect(() => {
+    if (params.agentId) {
+      loadAgentUsage();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.agentId]);
 
   useEffect(() => {
@@ -95,6 +111,82 @@ export default function AgentDetailScreen() {
       router.back();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const usdFromMicros = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`;
+
+  const loadAgentUsage = async () => {
+    const agentId = String(params.agentId || '');
+    if (!agentId) return;
+    try {
+      setUsageLoading(true);
+      const to = new Date();
+      const from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const res = await usageApi.getBreakdown({ from: from.toISOString(), to: to.toISOString(), limit: 200 });
+      const items: UsageBreakdownItem[] = Array.isArray(res.items) ? res.items : [];
+      const mine = items.filter((i) => String(i.agentId || '') === agentId);
+
+      const totalCostMicros = mine.reduce((sum, i) => sum + Number(i.totalCostMicros || 0), 0);
+      const totalTokens = mine.reduce((sum, i) => sum + Number(i.totalTokens || 0), 0);
+      const calls = mine.reduce((sum, i) => sum + Number(i.calls || 0), 0);
+
+      setAgentUsage({
+        from: res.from,
+        to: res.to,
+        totalCostMicros,
+        totalTokens,
+        calls,
+      });
+    } catch (e: any) {
+      console.warn('[AgentDetailScreen] Failed to load agent usage:', e?.message || e);
+      setAgentUsage(null);
+    } finally {
+      setUsageLoading(false);
+    }
+  };
+
+  const handleStartPrivateChat = async () => {
+    const agentId = String(params.agentId || '');
+    if (!agentId) return;
+    if (!agent?.agent) return;
+
+    try {
+      setStartingChat(true);
+
+      const profile = agent.agentProfile;
+      const displayName = profile?.displayName || profile?.name || 'Agent';
+      const roomName = `Chat with ${displayName}`;
+
+      // Create a DM room for the user (owner participant is auto-added by backend).
+      // NOTE: Room service uses `type: 'dm'` (not 'direct').
+      const room: any = await roomApi.createRoom({
+        type: 'dm',
+        name: roomName,
+        visibility: 'private',
+      });
+
+      const roomId = String(room?.id || '');
+      if (!roomId) {
+        throw new Error('Room creation did not return a room id');
+      }
+
+      // Add the agent to the room (no invite UX; we do it automatically).
+      await roomApi.addParticipant(roomId, {
+        participantId: agentId,
+        participantType: 'agent',
+        role: 'member',
+      });
+
+      router.push({
+        pathname: '/(main)/chat/ChatScreen',
+        params: { roomId },
+      });
+    } catch (e: any) {
+      console.error('[AgentDetailScreen] Failed to start private chat:', e);
+      Alert.alert('Error', e?.message || 'Failed to start chat. Please try again.');
+    } finally {
+      setStartingChat(false);
     }
   };
 
@@ -159,13 +251,57 @@ export default function AgentDetailScreen() {
         {/* Model Info */}
         <View style={{ backgroundColor: '#F9F9F9', borderRadius: 12, padding: 16, marginBottom: 24 }}>
           <Text style={{ fontSize: 14, fontWeight: '600', color: '#000000', marginBottom: 8 }}>Agent Information</Text>
-          <Text style={{ fontSize: 14, color: '#8E8E93' }}>
-            {agent.agent.id}
+          <Text style={{ fontSize: 13, color: '#8E8E93' }}>
+            Provider: {agent.agent.modelProvider}
           </Text>
+          <Text style={{ fontSize: 13, color: '#8E8E93', marginTop: 4 }}>
+            Model: {agent.agent.modelName}
+          </Text>
+        </View>
+
+        {/* Usage */}
+        <View style={{ backgroundColor: '#F9F9F9', borderRadius: 12, padding: 16, marginBottom: 24 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#000000' }}>Usage (last 30 days)</Text>
+            {usageLoading ? <ActivityIndicator size="small" color="#007AFF" /> : null}
+          </View>
+          {agentUsage ? (
+            <>
+              <Text style={{ fontSize: 12, color: '#8E8E93' }}>Estimated cost: {usdFromMicros(agentUsage.totalCostMicros)}</Text>
+              <Text style={{ fontSize: 12, color: '#8E8E93', marginTop: 4 }}>
+                Calls: {agentUsage.calls} • Tokens: {agentUsage.totalTokens.toLocaleString()}
+              </Text>
+            </>
+          ) : (
+            <Text style={{ fontSize: 12, color: '#8E8E93' }}>No usage data yet.</Text>
+          )}
         </View>
 
         {/* Action Buttons */}
         <View style={{ gap: 12 }}>
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#34C759',
+              borderRadius: 12,
+              padding: 16,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: startingChat ? 0.7 : 1,
+            }}
+            disabled={startingChat}
+            onPress={handleStartPrivateChat}
+          >
+            {startingChat ? (
+              <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+            ) : (
+              <Ionicons name="chatbubbles" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+            )}
+            <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>
+              Chat
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={{
               backgroundColor: '#007AFF',

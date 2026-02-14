@@ -890,6 +890,110 @@ export const debugApi = {
   },
 };
 
+// Usage / Cost API (Phase 2)
+export type UsageCurrentResponse = {
+  ownerUserId: string;
+  tierName: string;
+  limits: {
+    dailyMessageLimit: number | null;
+    dailyTokenLimit: number | null;
+    dailyCostCapMicros: number | null;
+    capBehavior: 'hard' | 'soft' | 'budget';
+  };
+  day: {
+    day: string;
+    totalAiCalls: number;
+    totalMessages: number;
+    totalTokens: number;
+    totalCostMicros: number;
+    percentOfCostCap: number | null;
+    percentOfTokenCap: number | null;
+    percentOfMessageCap: number | null;
+  };
+  monthToDate: {
+    month: string;
+    totalAiCalls: number;
+    totalMessages: number;
+    totalTokens: number;
+    totalCostMicros: number;
+  };
+  timestamp: string;
+};
+
+export type UsageBreakdownItem = {
+  agentId?: string;
+  provider: string;
+  modelName: string;
+  feature: string;
+  calls: number;
+  errors: number;
+  totalTokens: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalCostMicros: number;
+};
+
+export type UsageBreakdownResponse = {
+  ownerUserId: string;
+  from: string;
+  to: string;
+  limit: number;
+  items: UsageBreakdownItem[];
+};
+
+export type UsageForecastResponse = {
+  ownerUserId: string;
+  month: string;
+  monthToDateCostMicros: number;
+  daysElapsed: number;
+  daysInMonth: number;
+  projectedCostMicros: number;
+  timestamp: string;
+};
+
+export type CostAlertItem = {
+  id: string;
+  day: string;
+  metric: string;
+  threshold: number;
+  severity: 'info' | 'warning' | 'critical';
+  currentValue: number;
+  limitValue: number;
+  message: string;
+  acknowledged: boolean;
+  createdAt: string;
+};
+
+export type CostAlertsResponse = {
+  ownerUserId: string;
+  days: number;
+  items: CostAlertItem[];
+};
+
+export const usageApi = {
+  getCurrent: async (): Promise<UsageCurrentResponse> => {
+    const api = getApiClient();
+    return api.get<UsageCurrentResponse>('/usage/current');
+  },
+  getBreakdown: async (params?: { from?: string; to?: string; limit?: number }): Promise<UsageBreakdownResponse> => {
+    const api = getApiClient();
+    const qs = new URLSearchParams();
+    if (params?.from) qs.set('from', params.from);
+    if (params?.to) qs.set('to', params.to);
+    if (params?.limit != null) qs.set('limit', String(params.limit));
+    const q = qs.toString();
+    return api.get<UsageBreakdownResponse>(`/usage/breakdown${q ? `?${q}` : ''}`);
+  },
+  getForecast: async (): Promise<UsageForecastResponse> => {
+    const api = getApiClient();
+    return api.get<UsageForecastResponse>('/usage/forecast');
+  },
+  getAlerts: async (days: number = 7): Promise<CostAlertsResponse> => {
+    const api = getApiClient();
+    return api.get<CostAlertsResponse>(`/alerts?days=${encodeURIComponent(String(days))}`);
+  },
+};
+
 // Agents API
 export interface AgentProfile {
   id: string;

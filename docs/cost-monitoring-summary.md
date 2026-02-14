@@ -74,6 +74,91 @@ Implement comprehensive cost monitoring and usage caps to:
 
 ---
 
+## 💵 Token rates, model changes, and cost totals (implementation detail)
+
+### How token rates are stored
+
+In `aiGateway`, token pricing is stored in Mongo in the `TokenRate` collection:
+
+- **Key**: `{ provider, modelName, effectiveDate }`
+- **Values**: `inputCostPerMillionMicros`, `outputCostPerMillionMicros` (USD micros per 1,000,000 tokens)
+
+This allows **multiple prices over time** for the same model/provider (provider pricing changes).
+
+### How cost is calculated
+
+For each LLM call (`LlmInteraction`), we compute:
+
+$$cost = round(promptTokens \\times inputRate/1{,}000{,}000) + round(completionTokens \\times outputRate/1{,}000{,}000)$$
+
+Where the selected rate is the **latest `TokenRate`** whose `effectiveDate` is **<= the interaction timestamp**.
+
+### Why “rate changes” automatically sum correctly
+
+Because we persist `estimatedCostMicros` per call, totals (per user/day/agent) naturally include mixed pricing.
+
+Example:
+- 230 tokens at rate $0.023/token (older effective date)
+- later, model/rate changes to $0.30/token
+- 340 tokens at the new rate
+
+These become **two interactions** (or two sets of interactions) with different effective rates; the total is simply the sum of their `estimatedCostMicros`.
+
+### Seeding OpenAI default rates (script)
+
+For now (before admin UI / periodic sync), seed OpenAI model pricing into Mongo using:
+
+- `backEnd/ai/aiGateway/scripts/seed-openai-token-rates.js`
+
+It inserts `TokenRate` rows for an `effectiveDate` (idempotent).
+
+---
+
+## 📡 Usage APIs (Phase 2)
+
+Usage is exposed via `aiGateway` (proxied through `api-gateway`).
+
+### User visibility (self-service)
+
+- A **regular user** can only see **their own** usage/limits/costs (backed by their JWT `id`).
+- Later, these values can be translated to **credits** in the UI (for easier interpretation), while internally we keep storing USD micros for accuracy.
+
+Endpoints (new user-friendly paths):
+
+- `GET /api/usage/current`
+- `GET /api/usage/history?days=30`
+- `GET /api/usage/breakdown?from=<iso>&to=<iso>&limit=50`
+- `GET /api/usage/forecast`
+- `GET /api/alerts?days=7`
+
+Compatibility (old paths still work):
+
+- `GET /api/ai-gateway/usage/current`
+- `GET /api/ai-gateway/usage/history?days=30`
+- `GET /api/ai-gateway/usage/breakdown?from=<iso>&to=<iso>&limit=50`
+- `GET /api/ai-gateway/usage/forecast`
+- `GET /api/ai-gateway/alerts?days=7`
+
+### Admin visibility
+
+- An **admin** should be able to see platform-wide cost/usage across all users/agents.
+- Admin endpoints are planned next (RBAC + `/api/admin/costs/*` style routes).
+
+### MVP note
+
+- For the **MVP**, we assume only two roles exist: **user** and **admin**.
+
+---
+
+## 📱 Mobile app placement (where users see usage/cost)
+
+For the MVP, usage/cost is surfaced in two places:
+
+- **My Profile** (`ProfileScreen`): shows **Usage & limits** (today + month-to-date + forecast).
+- **Agent Details** (`AgentDetailScreen`): shows **Usage (last 30 days)** for that specific agent.
+
+---
+
 ## 🚨 Alert Strategy
 
 | Threshold | Action | Channels |

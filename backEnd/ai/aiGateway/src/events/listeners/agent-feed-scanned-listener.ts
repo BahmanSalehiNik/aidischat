@@ -8,6 +8,8 @@ import { kafkaWrapper } from '../../kafka-client';
 import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
 import { Publisher } from '@aichatwar/shared';
+import { costTrackingService } from '../../services/cost';
+import type { AiProviderRequest } from '../../providers/base-provider';
 
 // In-memory storage for feed analysis thread IDs (TODO: Move to database)
 // Key: agentId, Value: threadId
@@ -176,7 +178,10 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
 
       // Generate response using the provider
       // Use same assistant/model as chat to ensure consistency
-      const response = await provider.generateResponse({
+      const responseFormat: AiProviderRequest['responseFormat'] =
+        agentProfile.modelProvider === 'openai' ? 'json_object' : 'text';
+
+      const providerRequest: AiProviderRequest = {
         message: feedAnalysisPrompt,
         systemPrompt: agentProfile.systemPrompt, // Base system prompt (character details already in assistant for OpenAI)
         modelName: agentProfile.modelName,
@@ -186,8 +191,40 @@ export class AgentFeedScannedListener extends Listener<AgentFeedScannedEvent> {
         assistantId: assistantId, // Use same assistant as chat
         threadId: analysisThreadId, // Use dedicated analysis thread
         imageUrls: uniqueImageUrls,
-        responseFormat: agentProfile.modelProvider === 'openai' ? 'json_object' : 'text',
-      });
+        responseFormat,
+      };
+
+      const limit = await costTrackingService.assertWithinLimits(ownerUserId);
+      if (!limit.ok) {
+        await new AgentFeedDigestedPublisher(kafkaWrapper.producer).publish({
+          scanId,
+          agentId,
+          digestedAt: new Date().toISOString(),
+          status: 'error',
+          error: limit.message,
+        });
+        await this.ack();
+        return;
+      }
+
+      const response = await costTrackingService.trackGenerateResponse(
+        {
+          idempotencyKey: `ai:feed_scan:${scanId}:${agentId}`,
+          ownerUserId,
+          agentId,
+          feature: 'feed_scan',
+          provider: agentProfile.modelProvider,
+          modelName: agentProfile.modelName,
+          request: providerRequest,
+          metadata: {
+            scanId,
+            roomId: (data as any).roomId,
+            correlationId,
+            feedEntryIds: (data as any).feedEntryIds,
+          },
+        },
+        () => provider.generateResponse(providerRequest)
+      );
 
       if (response.error || !response.content) {
         console.error(`[AgentFeedScannedListener] Failed to generate response for agent ${agentId}:`, response.error);
@@ -776,7 +813,7 @@ export class AgentDraftRevisionRequestListener extends Listener<AgentDraftUpdate
         threadId = await this.getOrCreateRevisionThread(agentId, assistantId, apiKey);
       }
 
-      const response = await provider.generateResponse({
+      const providerRequest = {
         message,
         systemPrompt,
         modelName: agentProfile.modelName,
@@ -785,7 +822,31 @@ export class AgentDraftRevisionRequestListener extends Listener<AgentDraftUpdate
         tools: agentProfile.tools,
         assistantId,
         threadId,
-      });
+      };
+
+      const limit = await costTrackingService.assertWithinLimits(agentProfile.ownerUserId);
+      if (!limit.ok) {
+        // For draft revisions we don't emit a user-visible message here; let the caller retry/handle.
+        throw new Error(limit.message);
+      }
+
+      const response = await costTrackingService.trackGenerateResponse(
+        {
+          idempotencyKey: `ai:draft_revision:${draftId}:${agentId}:${data.timestamp}`,
+          ownerUserId: agentProfile.ownerUserId,
+          agentId,
+          feature: 'draft_revision',
+          provider: agentProfile.modelProvider,
+          modelName: agentProfile.modelName,
+          request: providerRequest,
+          metadata: {
+            draftId,
+            agentId,
+            timestamp: data.timestamp,
+          },
+        },
+        () => provider.generateResponse(providerRequest)
+      );
 
       if (response.error || !response.content) {
         throw new Error(response.error || 'Empty revision response');

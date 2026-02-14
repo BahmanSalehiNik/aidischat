@@ -1,6 +1,7 @@
 // src/index.ts
 import mongoose from 'mongoose';
 import { kafkaWrapper } from './kafka-client';
+import { app } from './app';
 import { AiMessageCreatedListener } from './events/listeners/ai-message-created-listener';
 import { AgentUpdatedListener } from './events/listeners/agent-updated-listener';
 import { AgentIngestedListener } from './events/listeners/agent-ingested-listener';
@@ -8,6 +9,7 @@ import { AgentFeedScannedListener } from './events/listeners/agent-feed-scanned-
 import { ARMessageRequestListener } from './events/listeners/ar-message-request-listener';
 import { AgentReplyMessageCreatedListener } from './events/listeners/agent-reply-message-created-listener';
 import { AgentDraftRevisionRequestListener } from './events/listeners/agent-feed-scanned-listener';
+import { costAlertMonitoringJob } from './jobs/cost-alert-monitoring-job';
 
 const startService = async () => {
   // Validate environment variables
@@ -25,6 +27,15 @@ const startService = async () => {
     // ------------ Mongoose ----------
     await mongoose.connect(process.env.MONGO_URI);
     console.log('✅ Connected to MongoDB');
+
+    // ------------ HTTP -------------
+    const port = Number(process.env.PORT || 3000);
+    app.listen(port, () => {
+      console.log(`✅ AI Gateway HTTP server listening on port ${port}`);
+    });
+
+    // ------------ Jobs -------------
+    costAlertMonitoringJob.start();
 
     // ------------ Kafka ------------
     console.log('Connecting to Kafka at:', process.env.KAFKA_BROKER_URL);

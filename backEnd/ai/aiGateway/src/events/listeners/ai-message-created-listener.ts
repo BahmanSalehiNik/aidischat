@@ -9,6 +9,7 @@ import { AiMessageReplyPublisher } from '../publishers/ai-message-reply-publishe
 import { kafkaWrapper } from '../../kafka-client';
 import { PromptBuilder, CharacterAttributes } from '../../prompt-engineering';
 import OpenAI from 'openai';
+import { costTrackingService } from '../../services/cost';
 
 export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
   readonly topic = Subjects.AiMessageCreated;
@@ -217,7 +218,7 @@ export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
       willUseAssistantsAPI: agentProfile.modelProvider === 'openai' && !!assistantId && !!threadId,
     });
     
-    const response = await provider.generateResponse({
+    const providerRequest = {
       message: messageWithContext,
       systemPrompt: systemPrompt,
       modelName: agentProfile.modelName,
@@ -226,7 +227,38 @@ export class AiMessageCreatedListener extends Listener<AiMessageCreatedEvent> {
       tools: agentProfile.tools,
       assistantId: assistantId,
       threadId: threadId,
-    });
+    };
+
+    const limit = await costTrackingService.assertWithinLimits(ownerUserId);
+    if (!limit.ok) {
+      await new AiMessageReplyPublisher(kafkaWrapper.producer).publish({
+        originalMessageId,
+        roomId,
+        agentId,
+        ownerUserId,
+        content: limit.message,
+      });
+      return;
+    }
+
+    const response = await costTrackingService.trackGenerateResponse(
+      {
+        idempotencyKey: `ai:chat_reply:${originalMessageId}:${agentId}`,
+        ownerUserId,
+        agentId,
+        feature: 'chat_reply',
+        provider: agentProfile.modelProvider,
+        modelName: agentProfile.modelName,
+        request: providerRequest,
+        metadata: {
+          roomId,
+          originalMessageId,
+          senderId,
+          senderType,
+        },
+      },
+      () => provider.generateResponse(providerRequest)
+    );
 
     if (response.error || !response.content) {
       console.error(`Failed to generate response for agent ${agentId}:`, response.error);

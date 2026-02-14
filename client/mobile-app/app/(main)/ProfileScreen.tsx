@@ -3,7 +3,7 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useState, useEffect, useCallback } from 'react';
-import { authApi, postApi, chatHistoryApi, ChatSession, mediaApi, profileApi, agentsApi, AgentWithProfile } from '../../utils/api';
+import { authApi, postApi, chatHistoryApi, ChatSession, mediaApi, profileApi, agentsApi, AgentWithProfile, usageApi, type UsageCurrentResponse, type UsageForecastResponse } from '../../utils/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PostCard, Post } from '../../components/feed/PostCard';
 import { profileScreenStyles as styles } from '../../styles/profile/profileScreenStyles';
@@ -45,6 +45,35 @@ export default function ProfileScreen() {
   });
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [loadingChatHistory, setLoadingChatHistory] = useState(false);
+  const [usageCurrent, setUsageCurrent] = useState<UsageCurrentResponse | null>(null);
+  const [usageForecast, setUsageForecast] = useState<UsageForecastResponse | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+
+  const usdFromMicros = (micros: number | null | undefined) => {
+    const v = Number(micros ?? 0) / 1_000_000;
+    return `$${v.toFixed(2)}`;
+  };
+
+  const pct = (ratio: number | null | undefined) => {
+    if (ratio == null) return '—';
+    return `${Math.round(ratio * 100)}%`;
+  };
+
+  const loadUsage = useCallback(async () => {
+    try {
+      setUsageLoading(true);
+      const [current, forecast] = await Promise.all([usageApi.getCurrent(), usageApi.getForecast()]);
+      setUsageCurrent(current);
+      setUsageForecast(forecast);
+    } catch (e: any) {
+      // Best-effort: don't block profile screen if usage endpoints fail.
+      console.warn('[ProfileScreen] Failed to load usage:', e?.message || e);
+      setUsageCurrent(null);
+      setUsageForecast(null);
+    } finally {
+      setUsageLoading(false);
+    }
+  }, []);
 
   const loadUserPosts = useCallback(async () => {
     if (!user?.id) return;
@@ -140,6 +169,7 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       loadAvatar();
+      loadUsage();
       if (activeTab === 'posts' && user?.id) {
         loadUserPosts();
       } else if (activeTab === 'chatHistory' && user?.id) {
@@ -147,7 +177,7 @@ export default function ProfileScreen() {
       } else if (activeTab === 'agents' && user?.id) {
         loadAgents();
       }
-    }, [activeTab, user?.id, loadUserPosts, loadChatHistory, loadAvatar])
+    }, [activeTab, user?.id, loadUserPosts, loadChatHistory, loadAgents, loadAvatar, loadUsage])
   );
 
   const loadProfile = async () => {
@@ -305,6 +335,41 @@ export default function ProfileScreen() {
             <Ionicons name="add-circle" size={20} color="#FFFFFF" />
             <Text style={styles.addPostButtonText}>Add Post</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Usage & limits (Phase 2) */}
+        <View style={{ backgroundColor: '#F9F9F9', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#000000' }}>Usage & limits</Text>
+            {usageLoading ? <ActivityIndicator size="small" color="#007AFF" /> : null}
+          </View>
+
+          {usageCurrent ? (
+            <>
+              <Text style={{ fontSize: 12, color: '#8E8E93', marginBottom: 8 }}>
+                Today: {usdFromMicros(usageCurrent.day.totalCostMicros)} / {usdFromMicros(usageCurrent.limits.dailyCostCapMicros)} ({pct(usageCurrent.day.percentOfCostCap)})
+              </Text>
+              <View style={{ height: 8, backgroundColor: '#E5E5EA', borderRadius: 999, overflow: 'hidden', marginBottom: 12 }}>
+                <View
+                  style={{
+                    height: 8,
+                    width: `${Math.min(100, Math.round((usageCurrent.day.percentOfCostCap ?? 0) * 100))}%`,
+                    backgroundColor: (usageCurrent.day.percentOfCostCap ?? 0) >= 1 ? '#FF3B30' : '#007AFF',
+                  }}
+                />
+              </View>
+
+              <Text style={{ fontSize: 12, color: '#8E8E93' }}>
+                Month-to-date: {usdFromMicros(usageCurrent.monthToDate.totalCostMicros)}
+                {usageForecast ? ` • Forecast: ${usdFromMicros(usageForecast.projectedCostMicros)}` : ''}
+              </Text>
+              <Text style={{ fontSize: 11, color: '#8E8E93', marginTop: 6 }}>
+                Estimated cost (USD). Credits coming soon.
+              </Text>
+            </>
+          ) : (
+            <Text style={{ fontSize: 12, color: '#8E8E93' }}>Usage data not available yet.</Text>
+          )}
         </View>
 
         {/* Tab Selector */}

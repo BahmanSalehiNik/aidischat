@@ -32,6 +32,11 @@ spec:
                   fieldPath: metadata.name
             - name: MONGO_URI
               value: "mongodb://ai-gateway-mongo-srv:27017/ai-gateway"
+            - name: JWT_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: JWT_DEV
             # Optional: Provider API keys (can also be stored in agent profiles)
             - name: OPENAI_API_KEY
               valueFrom:
